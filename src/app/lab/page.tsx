@@ -5,11 +5,13 @@ import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { Palette } from "@/components/lab/palette";
 import { FaultPanel } from "@/components/lab/fault-panel";
 import { VerifyPanel } from "@/components/lab/verify-panel";
+import { WaveformPanel } from "@/components/lab/waveform-panel";
+import { PresetMenu } from "@/components/lab/preset-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useSpecStore } from "@/stores/spec-store";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { Redo2, Trash2, Undo2 } from "lucide-react";
@@ -54,6 +56,7 @@ export default function LabPage() {
         </div>
 
         <div className="ml-auto flex gap-2">
+          <PresetMenu />
           <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo}>
             <Undo2 /> Undo
           </Button>
@@ -71,8 +74,24 @@ export default function LabPage() {
           <Palette />
         </Card>
 
-        <div className="min-h-[560px]">
-          <CircuitCanvas />
+        <div className="flex min-h-[560px] flex-col gap-4">
+          <div className="min-h-[360px] flex-1">
+            <CircuitCanvas />
+          </div>
+          <Card className="max-h-[360px] overflow-auto py-0">
+            <CardHeader className="pt-4 pb-3">
+              <CardTitle className="text-base">
+                Timing
+                <span className="text-muted-foreground ml-2 text-xs font-normal">
+                  unit-delay, Gray-code sweep
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <Separator />
+            <CardContent className="px-0">
+              <WaveformPanel />
+            </CardContent>
+          </Card>
         </div>
 
         <Card className="min-h-0 overflow-auto py-0">
