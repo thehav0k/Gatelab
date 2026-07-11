@@ -301,3 +301,43 @@ describe("verify — sanity of the row data", () => {
     expect(result.rows[0]?.actual).toBe(L0);
   });
 });
+
+describe("verify — input ORDER, not just input names", () => {
+  /**
+   * THE BUG THIS PINS.
+   *
+   * The circuit's switches are sorted by LABEL (A, B, S). The function's
+   * variables are in DECLARATION order (S, A, B) — and for a multiplexer that is
+   * the natural way to write it. Matching them up positionally checks every row
+   * against the wrong input combination, so a perfectly correct mux gets reported
+   * as wrong, which is the single most damaging thing this bridge could do.
+   *
+   * The variable's POSITION IN THE FUNCTION decides its bit, not its position in
+   * the alphabet.
+   */
+  it("verifies a 2-to-1 mux declared as F(S,A,B), not F(A,B,S)", () => {
+    const spec = fnOf("F(S,A,B) = S'*A + S*B");
+    expect(spec.variables).toEqual(["S", "A", "B"]);
+
+    const doc = built(spec);
+    const result = verify(doc, spec);
+
+    expect(result.error).toBeNull();
+    expect(result.ok, JSON.stringify(result.mismatches)).toBe(true);
+  });
+
+  it("reports each row's inputs in the FUNCTION's variable order", () => {
+    const spec = fnOf("F(S,A,B) = S'*A + S*B");
+    const result = verify(built(spec), spec);
+
+    expect(result.inputLabels).toEqual(["S", "A", "B"]);
+
+    // Minterm 4 is S=1, A=0, B=0 under the MSB contract.
+    expect(result.rows[4]?.inputs).toEqual([1, 0, 0]);
+  });
+
+  it("still works when the declared order happens to be alphabetical", () => {
+    const spec = fnOf("F(A,B,C) = A'B + BC");
+    expect(verify(built(spec), spec).ok).toBe(true);
+  });
+});

@@ -57,40 +57,56 @@ export interface VerifyResult {
 /**
  * Map the circuit's switches onto the expected function's variables.
  *
- * Both sides are sorted by label, and both obey the same MSB contract
- * (`variables[0]` is the high bit). If these two ever disagree the bridge would
- * lie in the most confusing possible way — a correct circuit reported as wrong —
- * so the round-trip property test in synth.test.ts pins them together.
+ * THE TRAP, AND IT IS A NASTY ONE. The netlist sorts its input ports by LABEL
+ * (A, B, S). The function lists its variables in DECLARATION order (S, A, B) —
+ * and for something like a multiplexer, `F(S, A, B)` is the natural way to write
+ * it. Line those two up positionally and every row gets checked against the wrong
+ * input combination, so a PERFECTLY CORRECT circuit is reported as wrong. That is
+ * the single most damaging thing this bridge could possibly do.
+ *
+ * A variable's bit is decided by its position IN THE FUNCTION, never by its
+ * position in the alphabet. So we build an explicit map from each switch to the
+ * variable index it drives, and use that everywhere.
  */
-function alignInputs(
-  netlist: SimNetlist,
-  expected: BooleanFunction,
-): { labels: string[]; error: string | null } {
-  const labels = netlist.inputs.map((p) => p.label);
+interface Alignment {
+  /** The function's variables, in the function's order. */
+  readonly labels: string[];
+  /** For netlist.inputs[i], the index of the variable it drives. */
+  readonly variableOf: number[];
+  readonly error: string | null;
+}
+
+function alignInputs(netlist: SimNetlist, expected: BooleanFunction): Alignment {
+  const switches = netlist.inputs.map((p) => p.label);
   const wanted = [...expected.variables];
 
-  if (labels.length !== wanted.length) {
-    return {
-      labels,
-      error: `The circuit has ${labels.length} input switch${
-        labels.length === 1 ? "" : "es"
-      } (${labels.join(", ") || "none"}), but ${expected.name} has ${
+  const fail = (error: string): Alignment => ({
+    labels: wanted,
+    variableOf: [],
+    error,
+  });
+
+  if (switches.length !== wanted.length) {
+    return fail(
+      `The circuit has ${switches.length} input switch${
+        switches.length === 1 ? "" : "es"
+      } (${switches.join(", ") || "none"}), but ${expected.name} has ${
         wanted.length
       } variable${wanted.length === 1 ? "" : "s"} (${wanted.join(", ")}).`,
-    };
+    );
   }
 
-  const mismatched = labels.filter((l) => !wanted.includes(l));
-  if (mismatched.length > 0) {
-    return {
-      labels,
-      error: `Label your input switches ${wanted.join(
+  const variableOf = switches.map((label) => wanted.indexOf(label));
+  const missing = switches.filter((_, i) => variableOf[i] === -1);
+  if (missing.length > 0) {
+    return fail(
+      `Label your input switches ${wanted.join(
         ", ",
-      )} so they can be matched to the function's variables. Found: ${labels.join(", ")}.`,
-    };
+      )} so they can be matched to the function's variables. Found: ${switches.join(", ")}.`,
+    );
   }
 
-  return { labels, error: null };
+  return { labels: wanted, variableOf, error: null };
 }
 
 export function verify(
@@ -117,7 +133,7 @@ export function verify(
     return empty("Add an LED to mark which net is the output.");
   }
 
-  const { labels, error } = alignInputs(netlist, expected);
+  const { labels, variableOf, error } = alignInputs(netlist, expected);
   if (error) return empty(error);
 
   const n = labels.length;
@@ -141,12 +157,14 @@ export function verify(
    */
   const nonCombinational = netlist.feedbackLoops.length > 0;
 
+  /** The bit of the variable at position `v` inside minterm `m`. MSB contract. */
+  const bitOfVar = (m: number, v: number): 0 | 1 =>
+    ((m >>> (n - 1 - v)) & 1) as 0 | 1;
+
   for (let m = 0; m < 1 << n; m++) {
-    // THE MSB CONTRACT again: labels[0] is the high bit, exactly as
-    // expected.variables[0] is.
-    const inputs: InputVector = labels.map(
-      (_, i) => ((m >>> (n - 1 - i)) & 1) as 0 | 1,
-    );
+    // Each SWITCH gets the bit of the variable IT drives — not the bit at its own
+    // alphabetical position. See the note on alignInputs.
+    const inputs: InputVector = variableOf.map((v) => bitOfVar(m, v));
 
     const state = evaluate(netlist, inputs);
     const actual = state.values[probe.net] as Logic;
@@ -156,7 +174,10 @@ export function verify(
     // choosing would be a bug in the grader, not in their circuit.
     const ok = want === DONT_CARE ? true : actual === want;
 
-    rows.push({ minterm: m, inputs, expected: want, actual, ok });
+    // Report the row in the FUNCTION's variable order, so the table reads the way
+    // the student wrote the function.
+    const shown = labels.map((_, v) => bitOfVar(m, v));
+    rows.push({ minterm: m, inputs: shown, expected: want, actual, ok });
   }
 
   const mismatches = rows.filter((r) => !r.ok);
