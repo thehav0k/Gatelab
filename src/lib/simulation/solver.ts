@@ -53,8 +53,19 @@ export interface SimState {
 export interface SimOptions {
   readonly maxDeltaCycles?: number;
   /**
-   * What an undriven net starts as. Sweeping a circuit twice — once seeded Z,
-   * once seeded X — and comparing is how M6 detects that a circuit has MEMORY.
+   * The initial value of every CELL OUTPUT — which is what a feedback loop
+   * starts from, and therefore the only thing that can steer it to one stable
+   * state rather than another.
+   *
+   * (Seeding the *net* array instead would do nothing at all: the first thing
+   * the solver does is resolve every net from its drivers, which overwrites it.
+   * That mistake made the two-seed memory check below compare two identical
+   * runs.)
+   *
+   * An acyclic circuit converges to the same fixpoint from ANY seed — its
+   * outputs are a function of its inputs, full stop. A circuit with memory does
+   * not. So running it twice from `L0` and from `L1` and comparing is a sound
+   * test for "this thing has state", and that is exactly what verify() does.
    */
   readonly seed?: Logic;
 }
@@ -76,7 +87,7 @@ export function evaluate(
   const maxCycles = options.maxDeltaCycles ?? DEFAULT_MAX_CYCLES;
   const seed = options.seed ?? LZ;
 
-  let cur = new Uint8Array(nl.netCount).fill(seed);
+  let cur = new Uint8Array(nl.netCount);
   let next = new Uint8Array(nl.netCount);
 
   // Drivers that do not depend on any cell: the rails, plus the switches for
@@ -92,8 +103,10 @@ export function evaluate(
   });
 
   // A cell's current output, so a net can be resolved from all of its drivers
-  // without re-evaluating any of them.
-  const cellOut = new Uint8Array(nl.cells.length).fill(LZ);
+  // without re-evaluating any of them. THIS is what the seed initializes — see
+  // SimOptions.seed. Defaults to Z: a gate that has not been evaluated yet
+  // drives nothing.
+  const cellOut = new Uint8Array(nl.cells.length).fill(seed);
 
   const shorted = new Set(nl.railShorts);
 

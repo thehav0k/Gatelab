@@ -107,7 +107,12 @@ export default function TheoryPage() {
                 <CardTitle className="text-base">Build it</CardTitle>
               </CardHeader>
               <CardContent>
-                <BuildCircuit min={min} variables={analysis.fn.variables} />
+                <BuildCircuit
+                  min={min}
+                  variables={analysis.fn.variables}
+                  fn={analysis.fn}
+                  source={source}
+                />
               </CardContent>
             </Card>
           </div>

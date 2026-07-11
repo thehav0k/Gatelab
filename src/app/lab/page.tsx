@@ -4,8 +4,12 @@ import { useEffect } from "react";
 import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { Palette } from "@/components/lab/palette";
 import { FaultPanel } from "@/components/lab/fault-panel";
+import { VerifyPanel } from "@/components/lab/verify-panel";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { useSpecStore } from "@/stores/spec-store";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { Redo2, Trash2, Undo2 } from "lucide-react";
@@ -18,6 +22,10 @@ export default function LabPage() {
   const canUndo = useCircuitStore((s) => s.past.length > 0);
   const canRedo = useCircuitStore((s) => s.future.length > 0);
   const pendingPin = useCircuitStore((s) => s.pendingPin);
+  const errorCount = useCircuitStore(
+    (s) => s.diagnostics.filter((d) => d.severity === "error").length,
+  );
+  const expected = useSpecStore((s) => s.expected);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -68,13 +76,32 @@ export default function LabPage() {
         </div>
 
         <Card className="min-h-0 overflow-auto py-0">
-          <CardHeader className="pt-4">
-            <CardTitle className="text-base">Faults</CardTitle>
-          </CardHeader>
-          <Separator />
-          <CardContent className="px-0">
-            <FaultPanel />
-          </CardContent>
+          <Tabs defaultValue={expected ? "verify" : "faults"} className="gap-0">
+            <CardHeader className="pt-4 pb-3">
+              <TabsList className="w-full">
+                <TabsTrigger value="faults" className="flex-1">
+                  Faults
+                  {errorCount > 0 && (
+                    <Badge variant="destructive" className="ml-1.5 px-1.5">
+                      {errorCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="verify" className="flex-1">
+                  Verify
+                </TabsTrigger>
+              </TabsList>
+            </CardHeader>
+            <Separator />
+            <CardContent className="px-0">
+              <TabsContent value="faults">
+                <FaultPanel />
+              </TabsContent>
+              <TabsContent value="verify">
+                <VerifyPanel />
+              </TabsContent>
+            </CardContent>
+          </Tabs>
         </Card>
       </div>
     </div>

@@ -2,11 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { CircuitBoard, Cpu } from "lucide-react";
+import { CircuitBoard, ClipboardCheck, Cpu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useCircuitStore } from "@/stores/circuit-store";
+import { useSpecStore } from "@/stores/spec-store";
 import {
   compareStrategies,
   describeDesign,
@@ -16,11 +17,14 @@ import {
   type Strategy,
 } from "@/lib/simulation/synth";
 import type { Minimization } from "@/lib/core-engine/minimizer";
+import type { BooleanFunction } from "@/lib/core-engine/types";
 import { cn } from "@/lib/utils";
 
 interface Props {
   min: Minimization;
   variables: readonly string[];
+  fn: BooleanFunction;
+  source: string;
 }
 
 /**
@@ -31,9 +35,10 @@ interface Props {
  * 2 ICs." is the thing a student is supposed to internalize about why NAND is
  * called a universal gate.
  */
-export function BuildCircuit({ min, variables }: Props) {
+export function BuildCircuit({ min, variables, fn, source }: Props) {
   const router = useRouter();
   const load = useCircuitStore((s) => s.load);
+  const setSpec = useSpecStore((s) => s.setSpec);
   const [strategy, setStrategy] = useState<Strategy>("mixed");
 
   const { designs, constant } = useMemo(() => {
@@ -58,6 +63,9 @@ export function BuildCircuit({ min, variables }: Props) {
     if (!chosen) return;
     const nl = synthesize(min.expression, variables);
     const doc = realize(technologyMap(nl, chosen.strategy), { outputLabel: "F" });
+    // Hand the lab the FUNCTION, not the circuit, so Verify checks the built
+    // board against the algebra rather than against itself.
+    setSpec(fn, source);
     load(doc);
     toast.success(`Built with ${chosen.chipCount} IC${chosen.chipCount === 1 ? "" : "s"}`, {
       description: describeDesign(chosen),
@@ -99,9 +107,24 @@ export function BuildCircuit({ min, variables }: Props) {
         Build this circuit in the lab
       </Button>
 
+      {/* The other direction, and the more interesting one: build it yourself and
+          have the lab tell you where you went wrong. */}
+      <Button
+        variant="outline"
+        className="w-full"
+        onClick={() => {
+          setSpec(fn, source);
+          toast.info(`The lab will now check your circuit against ${fn.name}`);
+          router.push("/lab");
+        }}
+      >
+        <ClipboardCheck />
+        Check a circuit I build myself
+      </Button>
+
       <p className="text-muted-foreground text-xs">
-        Every chip is generated with pin 14 wired to +5V and pin 7 to GND — the
-        step that is easiest to forget by hand.
+        Every generated chip gets pin 14 wired to +5V and pin 7 to GND — the step
+        that is easiest to forget by hand.
       </p>
     </div>
   );
