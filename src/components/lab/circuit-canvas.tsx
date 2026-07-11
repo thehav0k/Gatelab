@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useCircuitStore } from "@/stores/circuit-store";
-import { logicColor, useNetValue } from "@/stores/sim-store";
+import { logicColor, useEndpointValue, useNetValue } from "@/stores/sim-store";
 import { LOGIC_NAMES } from "@/lib/simulation/logic";
 import { GateSymbol } from "./gate-symbol";
 import { GATE_W, IO_H, IO_W, GATE_LABELS, pinsOf } from "@/lib/simulation/parts";
@@ -15,6 +15,7 @@ import type {
   Wire,
 } from "@/lib/simulation/netlist";
 import { pinKey } from "@/lib/simulation/netlist";
+import { holePoint } from "@/lib/simulation/breadboard";
 import { cn } from "@/lib/utils";
 
 const GRID = 8;
@@ -201,14 +202,17 @@ function WireLine({ wire }: { wire: Wire }) {
   const route = useCircuitStore((s) => s.routes.get(wire.id));
   // Subscribes to THIS wire's net only. A switch flip re-renders just the wires
   // whose own value changed, not all of them.
-  const value = useNetValue(wire.a);
+  const value = useEndpointValue(wire.a);
 
-  const na = doc.nodes[wire.a.node];
-  const nb = doc.nodes[wire.b.node];
-  if (!na || !nb) return null;
+  const endpointPos = (end: typeof wire.a): Point | null => {
+    if (end.kind === "hole") return holePoint(end.ref);
+    const node = doc.nodes[end.ref.node];
+    return node ? pinPos(node, end.ref.pin) : null;
+  };
 
-  const a = pinPos(na, wire.a.pin);
-  const b = pinPos(nb, wire.b.pin);
+  const a = endpointPos(wire.a);
+  const b = endpointPos(wire.b);
+  if (!a || !b) return null;
 
   // A route is cosmetic (see router.ts). When there is none, the wire still
   // exists and still conducts — we just draw it as a dashed straight air-wire and

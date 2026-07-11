@@ -22,9 +22,20 @@ different bugs. Every fault we detect is a one-line predicate over a net's
 member set.
 
 Rebuilding is `O(n·α)` and sub-millisecond. **Never optimize it into an
-in-place update** — that is where ghost connections come from. It is also what
-keeps the deferred v2 breadboard purely additive: a 5-hole column strip is just
-more endpoints seeded into the same union-find.
+in-place update** — that is where ghost connections come from.
+
+This invariant has now been cashed in. The breadboard (`breadboard.ts`) is a
+*shorting device* — a 5-hole strip is a hard short, a power rail is one node with
+fifty connections — and neither can be expressed as a point-to-point edge. Adding
+it required seeding the strips into the same union-find and nothing else: the
+solver, the diagnostics, and the verification bridge were not touched. A board
+seated from a synthesized design verifies against the original algebra.
+
+The three facts that make a breadboard a breadboard, all of them load-bearing:
+holes A–E short, F–J short *separately*, and **they never meet** (the centre
+channel is what a DIP straddles — short it and every gate is wired
+input-to-output); and the power rails are **broken at the midpoint**, so a jumper
+in the left half does not power a chip wired to the right half.
 
 **2. Logic is 4-state (`0 | 1 | Z | X`), never boolean.**
 Without `Z` an unconnected input reads as `false`, the circuit silently "works",

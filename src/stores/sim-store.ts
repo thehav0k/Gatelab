@@ -2,7 +2,7 @@
 
 import { createStore, useStore } from "zustand";
 import { LZ, type Logic } from "@/lib/simulation/logic";
-import { pinKey, type NetId, type PinRef } from "@/lib/simulation/netlist";
+import { endpointKey, pinEnd, type Endpoint, type NetId, type PinRef } from "@/lib/simulation/netlist";
 
 /**
  * The high-frequency store: net values.
@@ -37,9 +37,17 @@ export const simStore = createStore<SimStoreState>(() => ({
 
 /** The value on a pin. Subscribes to that pin's net ONLY. */
 export function useNetValue(ref: PinRef | null): Logic {
+  return useEndpointValue(ref ? pinEnd(ref) : null);
+}
+
+/**
+ * The value on any endpoint — a pin, or a hole on the breadboard. One lookup
+ * serves both, because endpointKey() on a pin IS pinKey().
+ */
+export function useEndpointValue(end: Endpoint | null): Logic {
   return useStore(simStore, (s) => {
-    if (!ref) return LZ;
-    const net = s.netOfPin.get(pinKey(ref));
+    if (!end) return LZ;
+    const net = s.netOfPin.get(endpointKey(end));
     if (net === undefined) return LZ;
     const ordinal = s.ordinalOf.get(net);
     if (ordinal === undefined) return LZ;
@@ -50,7 +58,7 @@ export function useNetValue(ref: PinRef | null): Logic {
 /** Read a pin's value without subscribing — for event handlers and rAF loops. */
 export function peekNetValue(ref: PinRef): Logic {
   const s = simStore.getState();
-  const net = s.netOfPin.get(pinKey(ref));
+  const net = s.netOfPin.get(endpointKey(pinEnd(ref)));
   if (net === undefined) return LZ;
   const ordinal = s.ordinalOf.get(net);
   if (ordinal === undefined) return LZ;

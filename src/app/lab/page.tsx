@@ -2,6 +2,9 @@
 
 import { useEffect } from "react";
 import { CircuitCanvas } from "@/components/lab/circuit-canvas";
+import { BreadboardView } from "@/components/lab/breadboard-view";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { toast } from "sonner";
 import { Palette } from "@/components/lab/palette";
 import { FaultPanel } from "@/components/lab/fault-panel";
 import { VerifyPanel } from "@/components/lab/verify-panel";
@@ -28,6 +31,9 @@ export default function LabPage() {
     (s) => s.diagnostics.filter((d) => d.severity === "error").length,
   );
   const expected = useSpecStore((s) => s.expected);
+  const onBoard = useCircuitStore((s) => s.doc.board !== null && s.doc.board !== undefined);
+  const toBreadboard = useCircuitStore((s) => s.toBreadboard);
+  const hasNodes = useCircuitStore((s) => Object.keys(s.doc.nodes).length > 0);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -55,7 +61,41 @@ export default function LabPage() {
           </p>
         </div>
 
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex items-center gap-2">
+          {/* Schematic -> breadboard is a ONE-WAY seat: the board is the physical
+              realization of the schematic, and going back would have to guess a
+              layout it never had. */}
+          <ToggleGroup
+            type="single"
+            size="sm"
+            variant="outline"
+            value={onBoard ? "board" : "schematic"}
+            onValueChange={(v) => {
+              if (v === "board" && !onBoard) {
+                if (!hasNodes) {
+                  toast.error("Build or load a circuit first.");
+                  return;
+                }
+                const unplaced = toBreadboard();
+                if (unplaced.length > 0) {
+                  toast.warning(
+                    `${unplaced.length} part${unplaced.length === 1 ? "" : "s"} did not fit on the board`,
+                  );
+                } else {
+                  toast.success("Seated on a breadboard", {
+                    description:
+                      "Hover a hole to see its whole strip light up — every hole on a strip is the same net.",
+                  });
+                }
+              }
+            }}
+          >
+            <ToggleGroupItem value="schematic" disabled={onBoard}>
+              Schematic
+            </ToggleGroupItem>
+            <ToggleGroupItem value="board">Breadboard</ToggleGroupItem>
+          </ToggleGroup>
+
           <PresetMenu />
           <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo}>
             <Undo2 /> Undo
@@ -76,7 +116,7 @@ export default function LabPage() {
 
         <div className="flex min-h-[560px] flex-col gap-4">
           <div className="min-h-[360px] flex-1">
-            <CircuitCanvas />
+            {onBoard ? <BreadboardView /> : <CircuitCanvas />}
           </div>
           <Card className="max-h-[360px] overflow-auto py-0">
             <CardHeader className="pt-4 pb-3">

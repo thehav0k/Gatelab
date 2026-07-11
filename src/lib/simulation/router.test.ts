@@ -12,7 +12,7 @@ import {
   type OccupancyGrid,
 } from "./router";
 import { elaborate } from "./elaborate";
-import { buildNetIndex, pinKey, type CircuitDocument, type Point } from "./netlist";
+import { buildNetIndex, endpointKey, type CircuitDocument, type Point, type Wire } from "./netlist";
 import { pinsOf } from "./parts";
 import { circuit } from "./testing/build";
 import { realize, synthesize, technologyMap } from "./synth";
@@ -188,8 +188,8 @@ describe("occupancy", () => {
 describe("routeAll — on real boards", () => {
   const netOf = (doc: CircuitDocument) => {
     const index = buildNetIndex(doc, pinsOf);
-    return (wire: { a: { node: string; pin: string } }) => {
-      const id = index.netOfPin.get(pinKey(wire.a as never));
+    return (wire: Wire) => {
+      const id = index.netOfEndpoint.get(endpointKey(wire.a));
       return id ? (index.ordinalOf.get(id) ?? 0) + 1 : 0;
     };
   };

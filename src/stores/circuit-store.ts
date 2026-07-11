@@ -8,6 +8,9 @@ import {
   asNodeId,
   asWireId,
   emptyDocument,
+  endpointKey,
+  holeEnd,
+  pinEnd,
   pinKey,
   type CircuitDocument,
   type CircuitNode,
@@ -21,6 +24,8 @@ import {
 import type { GateOp } from "@/lib/simulation/logic";
 import { arityOf } from "@/lib/simulation/parts";
 import { routeAll, type Route } from "@/lib/simulation/router";
+import { placeOnBreadboard } from "@/lib/simulation/place";
+import { holeKey, stripOf, type HoleRef } from "@/lib/simulation/breadboard";
 import { simStore } from "./sim-store";
 
 /**
@@ -68,8 +73,13 @@ interface CircuitState {
   toggleSwitch: (id: NodeId) => void;
 
   clickPin: (ref: PinRef) => void;
+  /** The breadboard equivalent: click one hole, then another, to lay a jumper. */
+  clickHole: (hole: HoleRef) => void;
+  pendingHole: HoleRef | null;
   cancelWire: () => void;
   deleteWire: (id: WireId) => void;
+  /** Re-seat the current schematic onto a real breadboard. */
+  toBreadboard: () => readonly string[];
 
   load: (doc: CircuitDocument) => void;
   clear: () => void;
@@ -138,15 +148,18 @@ function simulate(doc: CircuitDocument): {
     tick: simStore.getState().tick + 1,
   });
 
-  // Routing is derived from the same topology, and runs on the same pass. Wires
-  // of one net share an id so the router can merge them into a common trunk
-  // instead of running them alongside each other.
-  const { paths } = routeAll(doc, (wire) => {
-    const netId = index.netOfPin.get(pinKey(wire.a));
-    return netId ? (index.ordinalOf.get(netId) ?? 0) + 1 : 0;
-  });
+  // Routing is a SCHEMATIC concern. On a breadboard a jumper is a physical wire
+  // between two holes — it arcs over everything, it does not route around
+  // obstacles, and pretending otherwise would be drawing a schematic on top of a
+  // photograph of a board.
+  const routes = doc.board
+    ? new Map<string, Route | null>()
+    : routeAll(doc, (wire) => {
+        const netId = index.netOfEndpoint.get(endpointKey(wire.a));
+        return netId ? (index.ordinalOf.get(netId) ?? 0) + 1 : 0;
+      }).paths;
 
-  return { index, diagnostics, routes: paths };
+  return { index, diagnostics, routes };
 }
 
 export const useCircuitStore = create<CircuitState>()((set, get) => {
@@ -168,6 +181,7 @@ export const useCircuitStore = create<CircuitState>()((set, get) => {
     doc: emptyDocument(),
     selection: [],
     pendingPin: null,
+    pendingHole: null,
     index: null,
     diagnostics: [],
     routes: new Map(),
@@ -203,10 +217,10 @@ export const useCircuitStore = create<CircuitState>()((set, get) => {
       );
       // Wires to a deleted node go with it. The nets are rebuilt from scratch
       // afterwards, so there is nothing else to clean up.
+      const touches = (e: (typeof doc.wires)[string]["a"]): boolean =>
+        e.kind === "pin" && gone.has(e.ref.node);
       const wires = Object.fromEntries(
-        Object.entries(doc.wires).filter(
-          ([, w]) => !gone.has(w.a.node) && !gone.has(w.b.node),
-        ),
+        Object.entries(doc.wires).filter(([, w]) => !touches(w.a) && !touches(w.b)),
       );
       set({ selection: [] });
       commit({ nodes, wires });
@@ -245,11 +259,57 @@ export const useCircuitStore = create<CircuitState>()((set, get) => {
       set({ pendingPin: null });
       commit({
         ...doc,
-        wires: { ...doc.wires, [id]: { id, a: pendingPin, b: ref } },
+        wires: { ...doc.wires, [id]: { id, a: pinEnd(pendingPin), b: pinEnd(ref) } },
       });
     },
 
-    cancelWire: () => set({ pendingPin: null }),
+    clickHole: (hole) => {
+      const { pendingHole, doc } = get();
+
+      if (!pendingHole) {
+        set({ pendingHole: hole });
+        return;
+      }
+      // Clicking the same hole twice cancels.
+      if (holeKey(pendingHole) === holeKey(hole)) {
+        set({ pendingHole: null });
+        return;
+      }
+      // A jumper between two holes on the SAME strip does nothing — the metal
+      // already connects them. Say so rather than draw a wire that means nothing.
+      if (doc.board && stripOf(doc.board, pendingHole) === stripOf(doc.board, hole)) {
+        set({ pendingHole: null });
+        return;
+      }
+
+      const id = asWireId(nextId("w"));
+      set({ pendingHole: null });
+      commit({
+        ...doc,
+        wires: { ...doc.wires, [id]: { id, a: holeEnd(pendingHole), b: holeEnd(hole) } },
+      });
+    },
+
+    toBreadboard: () => {
+      const { doc } = get();
+      if (doc.board) return [];
+      const { doc: placed, unplaced } = placeOnBreadboard(doc);
+      const { index, diagnostics, routes } = simulate(placed);
+      set({
+        doc: placed,
+        index,
+        diagnostics,
+        routes,
+        past: [],
+        future: [],
+        selection: [],
+        pendingPin: null,
+        pendingHole: null,
+      });
+      return unplaced;
+    },
+
+    cancelWire: () => set({ pendingPin: null, pendingHole: null }),
 
     deleteWire: (id) => {
       const { doc } = get();

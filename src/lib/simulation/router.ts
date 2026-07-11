@@ -1,4 +1,5 @@
-import { pinKey, type CircuitDocument, type CircuitNode, type Point, type Wire } from "./netlist";
+import { pinKey, type CircuitDocument, type CircuitNode, type Endpoint, type Point, type Wire } from "./netlist";
+import { holePoint } from "./breadboard";
 import { pinsOf, GATE_H, GATE_W, IO_H, IO_W } from "./parts";
 import { dipHeight, dipWidth, getIc } from "./ic-library";
 
@@ -426,14 +427,20 @@ export function routeAll(
   const paths = new Map<string, Route | null>();
   const failed: string[] = [];
 
+  /** Where an endpoint physically is — a pin on a part, or a hole on the board. */
+  const pointOf = (end: Endpoint): Point | null => {
+    if (end.kind === "hole") return holePoint(end.ref);
+    const node = doc.nodes[end.ref.node];
+    return node ? pinPoint(node, end.ref.pin) : null;
+  };
+
   const jobs = Object.values(doc.wires)
-    .map((wire) => {
-      const na = doc.nodes[wire.a.node];
-      const nb = doc.nodes[wire.b.node];
-      const from = na ? pinPoint(na, wire.a.pin) : null;
-      const to = nb ? pinPoint(nb, wire.b.pin) : null;
-      return { wire, from, to, net: netOfWire(wire) };
-    })
+    .map((wire) => ({
+      wire,
+      from: pointOf(wire.a),
+      to: pointOf(wire.b),
+      net: netOfWire(wire),
+    }))
     .filter((j): j is typeof j & { from: Point; to: Point } => !!j.from && !!j.to);
 
   jobs.sort((a, b) => {

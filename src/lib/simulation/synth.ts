@@ -3,6 +3,7 @@ import type { GateOp } from "./logic";
 import {
   asNodeId,
   asWireId,
+  pinEnd,
   type CircuitDocument,
   type CircuitNode,
   type NodeDraft,
@@ -374,7 +375,7 @@ export function realize(
   };
   const connect = (a: PinRef, b: PinRef): void => {
     const id = asWireId(`sw${++w}`);
-    wires[id] = { id, a, b };
+    wires[id] = { id, a: pinEnd(a), b: pinEnd(b) };
   };
 
   const { netlist } = design;
@@ -490,7 +491,7 @@ export function realize(
   });
   if (out) connect(out, { node: led, pin: "A" });
 
-  return { nodes, wires };
+  return { nodes, wires, board: null };
 }
 
 /** Longest path from an input — used to lay gates out in columns. */

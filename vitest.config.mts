@@ -16,7 +16,7 @@ export default defineConfig({
       // overwhelmingly defensive guards that `noUncheckedIndexedAccess` forces us
       // to write but that are unreachable by construction (`?? 0`, `if (!node)
       // continue`); testing those would be testing the type system.
-      thresholds: { lines: 95, functions: 93, branches: 83, statements: 93 },
+      thresholds: { lines: 96, functions: 94, branches: 84, statements: 94 },
     },
   },
 });

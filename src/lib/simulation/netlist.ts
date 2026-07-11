@@ -1,4 +1,14 @@
 import type { GateOp, Strength } from "./logic";
+import {
+  DEFAULT_BOARD,
+  allHoles,
+  dipHoles,
+  holeKey,
+  stripOf,
+  type BoardRow,
+  type BreadboardSpec,
+  type HoleRef,
+} from "./breadboard";
 
 /**
  * The circuit document, and the electrical nets derived from it.
@@ -74,12 +84,33 @@ const PIN_KEY_SEP = "::";
 
 export const pinKey = (p: PinRef): string => `${p.node}${PIN_KEY_SEP}${p.pin}`;
 
+/**
+ * A wire endpoint.
+ *
+ * On a schematic it is always a PIN. On a breadboard a jumper runs hole-to-hole,
+ * so it may be a HOLE — and that is the only structural change the board needed.
+ * Everything else about it (nets, solver, diagnostics, verification) is untouched,
+ * because a hole is just one more thing to seed into the same union-find.
+ */
+export type Endpoint =
+  | { readonly kind: "pin"; readonly ref: PinRef }
+  | { readonly kind: "hole"; readonly ref: HoleRef };
+
+export const pinEnd = (ref: PinRef): Endpoint => ({ kind: "pin", ref });
+export const holeEnd = (ref: HoleRef): Endpoint => ({ kind: "hole", ref });
+
+export const endpointKey = (e: Endpoint): string =>
+  e.kind === "pin" ? pinKey(e.ref) : `h${PIN_KEY_SEP}${holeKey(e.ref)}`;
+
 // --- nodes ------------------------------------------------------------------
 
 interface NodeBase {
   readonly id: NodeId;
   readonly label: string;
+  /** Schematic: canvas units. Breadboard: `x` is the COLUMN the part sits in. */
   readonly pos: Point;
+  /** Breadboard only: the row a single-pin part is seated in. ICs straddle E/F. */
+  readonly boardRow?: BoardRow;
 }
 
 /** A schematic gate primitive: AND, OR, NOT… Ideal, so no power pins. */
@@ -130,8 +161,8 @@ export type NodeDraft = CircuitNode extends infer T
 
 export interface Wire {
   readonly id: WireId;
-  readonly a: PinRef;
-  readonly b: PinRef;
+  readonly a: Endpoint;
+  readonly b: Endpoint;
   /**
    * Router output. PURELY VISUAL — electrical connectivity must never depend on
    * routing success. A wire that fails to route is still a wire, and its net is
@@ -143,9 +174,24 @@ export interface Wire {
 export interface CircuitDocument {
   readonly nodes: Readonly<Record<string, CircuitNode>>;
   readonly wires: Readonly<Record<string, Wire>>;
+  /**
+   * Null = schematic mode. Set = breadboard mode, in which a node's `pos.x` is a
+   * COLUMN and its `pos.y` is unused for ICs (they always straddle the channel).
+   */
+  readonly board?: BreadboardSpec | null;
 }
 
-export const emptyDocument = (): CircuitDocument => ({ nodes: {}, wires: {} });
+export const emptyDocument = (): CircuitDocument => ({
+  nodes: {},
+  wires: {},
+  board: null,
+});
+
+export const emptyBoard = (): CircuitDocument => ({
+  nodes: {},
+  wires: {},
+  board: DEFAULT_BOARD,
+});
 
 // --- nets -------------------------------------------------------------------
 
@@ -165,8 +211,15 @@ export interface NetIndex {
   readonly nets: readonly Net[];
   /** Stable ordinal per net — the index into the solver's value buffers. */
   readonly ordinalOf: ReadonlyMap<NetId, number>;
-  /** pinKey -> NetId. A pin absent from this map is connected to nothing. */
+  /**
+   * endpointKey -> NetId. A pin absent from this map is connected to nothing.
+   *
+   * `netOfPin` and `netOfEndpoint` are the SAME map: endpointKey() on a pin
+   * returns exactly pinKey(), so a hole and a pin can share one index without any
+   * of the existing call sites changing.
+   */
   readonly netOfPin: ReadonlyMap<string, NetId>;
+  readonly netOfEndpoint: ReadonlyMap<string, NetId>;
   readonly vcc: NetId | null;
   readonly gnd: NetId | null;
 }
@@ -248,12 +301,56 @@ export function buildNetIndex(
     }
   }
 
-  // 2. Each wire shorts its two endpoints together.
+  // 2. THE BREADBOARD. Seed the board's own shorts before any wire is looked at.
+  //
+  //    This is the whole integration, and it is why Invariant 1 was written the
+  //    way it was: a strip is a set of holes that are already shorted, so we just
+  //    union them. Nothing downstream — solver, diagnostics, verification — knows
+  //    or cares that a board exists.
+  if (doc.board) {
+    const byStrip = new Map<string, string[]>();
+    for (const hole of allHoles(doc.board)) {
+      const key = endpointKey(holeEnd(hole));
+      dsu.add(key);
+      const strip = stripOf(doc.board, hole);
+      const bucket = byStrip.get(strip);
+      if (bucket) bucket.push(key);
+      else byStrip.set(strip, [key]);
+    }
+    // Every hole on a strip is shorted to every other hole on that strip. Note
+    // what is NOT here: any union across the centre channel. A-E and F-J are
+    // different strips, which is exactly what lets a DIP straddle the gap without
+    // shorting its own pins together.
+    for (const holes of byStrip.values()) {
+      const first = holes[0] as string;
+      for (const key of holes) dsu.union(first, key);
+    }
+
+    // 3. A component seated on the board occupies holes, and its pins are shorted
+    //    to whatever else is in them.
+    for (const node of Object.values(doc.nodes)) {
+      for (const seat of seatOf(node, pinsOf)) {
+        const pinK = pinKey(seat.pin);
+        const holeK = endpointKey(holeEnd(seat.hole));
+        if (!specOf.has(pinK)) continue;
+        dsu.add(holeK);
+        dsu.union(pinK, holeK);
+      }
+    }
+  }
+
+  // 4. Each wire shorts its two endpoints together.
   for (const wire of Object.values(doc.wires)) {
-    const ka = pinKey(wire.a);
-    const kb = pinKey(wire.b);
-    // Ignore a wire to a pin that no longer exists (the node was deleted).
-    if (!specOf.has(ka) || !specOf.has(kb)) continue;
+    const ka = endpointKey(wire.a);
+    const kb = endpointKey(wire.b);
+    // Ignore a wire to a PIN that no longer exists (its node was deleted). A hole
+    // always exists for as long as the board does.
+    const exists = (e: Endpoint, key: string): boolean =>
+      e.kind === "hole" ? true : specOf.has(key);
+    if (!exists(wire.a, ka) || !exists(wire.b, kb)) continue;
+
+    dsu.add(ka);
+    dsu.add(kb);
     dsu.union(ka, kb);
   }
 
@@ -287,12 +384,16 @@ export function buildNetIndex(
     let touchesGnd = false;
 
     for (const key of memberKeys) {
+      // Every member of the net is indexed, whether it is a pin or a bare hole.
+      // A hole with nothing in it is still a real endpoint — it has a value, it
+      // can be probed, and a jumper can be plugged into it.
+      netOfPin.set(key, id);
+
       const entry = specOf.get(key);
-      if (!entry) continue;
+      if (!entry) continue; // a hole: no pin spec, so it drives and loads nothing
       const { spec, ref } = entry;
 
       pins.push(ref);
-      netOfPin.set(key, id);
 
       switch (spec.dir) {
         case "out":
@@ -332,7 +433,39 @@ export function buildNetIndex(
     nets.push({ id, kind, pins, drivers, loads, railShort });
   });
 
-  return { nets, ordinalOf, netOfPin, vcc, gnd };
+  return { nets, ordinalOf, netOfPin, netOfEndpoint: netOfPin, vcc, gnd };
+}
+
+/**
+ * Which hole each pin of a seated component occupies.
+ *
+ * An IC straddles the centre channel — see dipHoles. Everything else (switches,
+ * LEDs, rails) is a single-pin part that sits in one hole.
+ */
+export function seatOf(
+  node: CircuitNode,
+  pinsOf: PinResolver,
+): { pin: PinRef; hole: HoleRef }[] {
+  const pins = pinsOf(node);
+  const col = Math.round(node.pos.x);
+
+  if (node.kind === "ic") {
+    const holes = dipHoles({ col }, pins.length);
+    return pins
+      .map((spec, i) => {
+        const hole = holes[i];
+        return hole ? { pin: { node: node.id, pin: spec.name }, hole } : null;
+      })
+      .filter((x): x is { pin: PinRef; hole: HoleRef } => x !== null);
+  }
+
+  // A one-pin part occupies a single hole, named by its column and boardRow.
+  if (!node.boardRow) return [];
+  const row = node.boardRow;
+  return pins.map((spec) => ({
+    pin: { node: node.id, pin: spec.name },
+    hole: { col, row },
+  }));
 }
 
 /** The net a pin sits on, or null if that pin does not exist. */

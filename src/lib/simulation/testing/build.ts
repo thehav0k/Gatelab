@@ -2,12 +2,15 @@ import type { GateOp } from "../logic";
 import {
   asNodeId,
   asWireId,
+  holeEnd,
+  pinEnd,
   type CircuitDocument,
   type CircuitNode,
   type NodeId,
   type PinRef,
   type Wire,
 } from "../netlist";
+import { DEFAULT_BOARD, type BoardRow, type BreadboardSpec } from "../breadboard";
 
 /**
  * A tiny fluent builder for circuits, used by the tests and by the M7 presets.
@@ -18,6 +21,7 @@ export class CircuitBuilder {
   private readonly nodes: Record<string, CircuitNode> = {};
   private readonly wires: Record<string, Wire> = {};
   private wireCount = 0;
+  private spec: BreadboardSpec | null = null;
 
   gate(id: string, op: GateOp, arity = 2, pos = { x: 0, y: 0 }): this {
     this.nodes[id] = {
@@ -57,14 +61,40 @@ export class CircuitBuilder {
     return this;
   }
 
-  /** `wire("U1", "Y", "L1", "A")` */
+  /** `wire("U1", "Y", "L1", "A")` — pin to pin. */
   wire(nodeA: string, pinA: string, nodeB: string, pinB: string): this {
     const id = `w${(this.wireCount += 1)}`;
     this.wires[id] = {
       id: asWireId(id),
-      a: { node: asNodeId(nodeA), pin: pinA },
-      b: { node: asNodeId(nodeB), pin: pinB },
+      a: pinEnd({ node: asNodeId(nodeA), pin: pinA }),
+      b: pinEnd({ node: asNodeId(nodeB), pin: pinB }),
     };
+    return this;
+  }
+
+  /** A breadboard jumper: `jumper(5, "A", 12, "C")`. */
+  jumper(colA: number, rowA: BoardRow, colB: number, rowB: BoardRow): this {
+    const id = `w${(this.wireCount += 1)}`;
+    this.wires[id] = {
+      id: asWireId(id),
+      a: holeEnd({ col: colA, row: rowA }),
+      b: holeEnd({ col: colB, row: rowB }),
+    };
+    return this;
+  }
+
+  /** Put the circuit on a breadboard. */
+  board(spec: BreadboardSpec = DEFAULT_BOARD): this {
+    this.spec = spec;
+    return this;
+  }
+
+  /** Seat a one-pin part in a hole. ICs are seated by their column alone. */
+  seat(id: string, col: number, row: BoardRow): this {
+    const node = this.nodes[id];
+    if (node) {
+      this.nodes[id] = { ...node, pos: { x: col, y: 0 }, boardRow: row };
+    }
     return this;
   }
 
@@ -74,7 +104,11 @@ export class CircuitBuilder {
   }
 
   build(): CircuitDocument {
-    return { nodes: { ...this.nodes }, wires: { ...this.wires } };
+    return {
+      nodes: { ...this.nodes },
+      wires: { ...this.wires },
+      board: this.spec,
+    };
   }
 }
 

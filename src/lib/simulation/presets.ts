@@ -1,6 +1,6 @@
 import { realize, synthesize, technologyMap, type Strategy } from "./synth";
 import { parse } from "@/lib/core-engine/parser";
-import type { CircuitDocument } from "./netlist";
+import { asNodeId, pinEnd, type CircuitDocument, type Endpoint } from "./netlist";
 
 /**
  * Preset macro-circuits.
@@ -144,14 +144,19 @@ export function buildPreset(
     }
 
     for (const [id, wire] of Object.entries(doc.wires)) {
-      const remap = (ref: { node: string; pin: string }) => {
-        const node = doc.nodes[ref.node];
-        return {
-          node: (node?.kind === "switch"
-            ? `${preset.id}_sw_${node.label}`
-            : prefix + ref.node) as typeof wire.a.node,
-          pin: ref.pin,
-        };
+      // Presets are schematic-only, so every endpoint is a pin. Rewrite each one
+      // into this sub-circuit's namespace, except the shared input switches.
+      const remap = (end: Endpoint): Endpoint => {
+        if (end.kind !== "pin") return end;
+        const node = doc.nodes[end.ref.node];
+        return pinEnd({
+          node: asNodeId(
+            node?.kind === "switch"
+              ? `${preset.id}_sw_${node.label}`
+              : prefix + end.ref.node,
+          ),
+          pin: end.ref.pin,
+        });
       };
       const newId = (prefix + id) as typeof wire.id;
       wires[newId] = { id: newId, a: remap(wire.a), b: remap(wire.b) };
@@ -160,7 +165,7 @@ export function buildPreset(
     column += 1;
   }
 
-  return { nodes, wires };
+  return { nodes, wires, board: null };
 }
 
 export const getPreset = (id: string): Preset | undefined =>
