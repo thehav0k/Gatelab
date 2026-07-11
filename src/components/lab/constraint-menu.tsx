@@ -1,6 +1,5 @@
 "use client";
 
-import { toast } from "sonner";
 import { Filter, TriangleAlert } from "lucide-react";
 import {
   DropdownMenu,
@@ -15,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useConstraint, useWorkspaceStore } from "@/stores/workspace-store";
+import { useApplyRule } from "@/hooks/use-apply-rule";
 import { CONSTRAINTS, CUSTOM_ID, violations } from "@/lib/simulation/constraints";
 import { checkCompleteness } from "@/lib/simulation/completeness";
 import { GATE_LABELS } from "@/lib/simulation/parts";
@@ -32,7 +32,7 @@ const PICKABLE: GateOp[] = ["and", "or", "not", "nand", "nor", "xor", "xnor"];
  */
 export function ConstraintMenu() {
   const active = useConstraint();
-  const setConstraintId = useWorkspaceStore((s) => s.setConstraintId);
+  const applyRule = useApplyRule();
   const doc = useCircuitStore((s) => s.doc);
 
   return (
@@ -51,16 +51,7 @@ export function ConstraintMenu() {
             <div key={c.id}>
               {i === 1 && <DropdownMenuSeparator />}
               <DropdownMenuItem
-                onClick={() => {
-                  setConstraintId(c.id);
-                  if (broken.length > 0) {
-                    toast.warning(`${broken.length} part${broken.length === 1 ? "" : "s"} on the board are not allowed`, {
-                      description: broken.map((v) => v.component).join(", "),
-                    });
-                  } else if (c.note) {
-                    toast.info(c.name, { description: c.note, duration: 8000 });
-                  }
-                }}
+                onClick={() => applyRule(c.id)}
                 className="flex-col items-start"
               >
                 <span className="flex w-full items-center gap-2">
@@ -99,16 +90,16 @@ export function ConstraintMenu() {
  */
 function CustomRule() {
   const gates = useWorkspaceStore((s) => s.customGates);
-  const setGates = useWorkspaceStore((s) => s.setCustomGates);
-  const setConstraintId = useWorkspaceStore((s) => s.setConstraintId);
   const activeId = useWorkspaceStore((s) => s.constraintId);
+  const applyRule = useApplyRule();
 
   const check = checkCompleteness(gates);
 
   const toggle = (op: GateOp) => {
     const next = gates.includes(op) ? gates.filter((g) => g !== op) : [...gates, op];
-    setGates(next);
-    setConstraintId(CUSTOM_ID);
+    // Same path as picking a preset: a generated board rebuilds, a hand-wired one
+    // is reported on and left alone.
+    applyRule(CUSTOM_ID, next);
   };
 
   return (
@@ -175,7 +166,7 @@ export function ConstraintViolations() {
     <Alert variant="destructive" className="mb-3">
       <TriangleAlert />
       <AlertTitle>
-        {broken.length} part{broken.length === 1 ? "" : "s"} not allowed under
+        {broken.length} part{broken.length === 1 ? "" : "s"} not allowed under{" "}
         &ldquo;{active.name}&rdquo;
       </AlertTitle>
       <AlertDescription>

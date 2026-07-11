@@ -178,3 +178,18 @@ describe("custom rules", () => {
     expect(verify(doc, fn).ok).toBe(true);
   });
 });
+
+describe("violation messages", () => {
+  it("uses the article that matches the sound, not the letter", () => {
+    // "a AND gate" reads as a typo, and this line is shown on every rule switch.
+    const msg = (op: Parameters<ReturnType<typeof circuit>["gate"]>[1]) =>
+      violations(circuit().gate("G1", op).build(), getConstraint("nand-only"))[0]
+        ?.message ?? "";
+
+    expect(msg("and")).toContain("is an AND gate");
+    expect(msg("or")).toContain("is an OR gate");
+    expect(msg("xor")).toContain("is an XOR gate");
+    expect(msg("nor")).toContain("is a NOR gate");
+    expect(msg("not")).toContain("is a NOT gate");
+  });
+});

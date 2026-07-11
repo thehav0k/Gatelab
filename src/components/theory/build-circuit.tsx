@@ -123,7 +123,8 @@ export function BuildCircuit({ min, variables, fn, source }: Props) {
     );
 
     setSpec(source);
-    load(doc);
+    // Remember WHAT this board is, so changing the gate rule can rebuild it.
+    load(doc, source);
     toast.success(
       `Built with ${chosen.chipCount} IC${chosen.chipCount === 1 ? "" : "s"}`,
       { description: describeDesign(chosen) },

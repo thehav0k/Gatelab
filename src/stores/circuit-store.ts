@@ -98,7 +98,20 @@ interface CircuitState {
   /** Return to the schematic this board came from. */
   toSchematic: () => boolean;
 
-  load: (doc: CircuitDocument) => void;
+  /**
+   * The expression this board was SYNTHESIZED from, or null if a human wired it.
+   *
+   * This is what makes it safe to re-synthesize when the gate rule changes. Silently
+   * rewriting a circuit somebody built by hand is unforgivable — but a circuit the
+   * app generated is not their work, it is the app's answer to a question, and when
+   * the question changes ("NAND only now") the answer must change with it.
+   *
+   * So provenance is not a nicety here: it is exactly the line between "obey the new
+   * rule" and "destroy the user's board".
+   */
+  origin: string | null;
+
+  load: (doc: CircuitDocument, origin?: string | null) => void;
   clear: () => void;
   undo: () => void;
   redo: () => void;
@@ -182,9 +195,17 @@ function simulate(doc: CircuitDocument): {
 export const useCircuitStore = create<CircuitState>()(
   persist(
     (set, get) => {
-  /** Commit a topology change: push undo, re-simulate, clear redo. */
-  const commit = (doc: CircuitDocument): void => {
-    const { doc: prev, past } = get();
+  /**
+   * Commit a topology change: push undo, re-simulate, clear redo.
+   *
+   * And DROP THE PROVENANCE. The moment a human adds a gate or cuts a wire, this is
+   * no longer the circuit the synthesizer produced, and re-synthesizing it on a rule
+   * change would throw their work away. `keepOrigin` is for the edits that change no
+   * topology at all — dragging a chip, flipping a switch — where the board is still
+   * exactly what was built.
+   */
+  const commit = (doc: CircuitDocument, keepOrigin = false): void => {
+    const { doc: prev, past, origin } = get();
     const { index, diagnostics, routes } = simulate(doc);
     set({
       doc,
@@ -193,6 +214,7 @@ export const useCircuitStore = create<CircuitState>()(
       index,
       diagnostics,
       routes,
+      origin: keepOrigin ? origin : null,
     });
   };
 
@@ -205,6 +227,7 @@ export const useCircuitStore = create<CircuitState>()(
     diagnostics: [],
     routes: new Map(),
     schematic: null,
+    origin: null,
     past: [],
     future: [],
 
@@ -224,7 +247,8 @@ export const useCircuitStore = create<CircuitState>()(
       const { doc } = get();
       const node = doc.nodes[id];
       if (!node) return;
-      commit({ ...doc, nodes: { ...doc.nodes, [id]: { ...node, pos } } });
+      // A move is cosmetic. The circuit is still the one that was built.
+      commit({ ...doc, nodes: { ...doc.nodes, [id]: { ...node, pos } } }, true);
     },
 
     deleteSelected: () => {
@@ -252,13 +276,17 @@ export const useCircuitStore = create<CircuitState>()(
       const { doc } = get();
       const node = doc.nodes[id];
       if (node?.kind !== "switch") return;
-      commit({
-        ...doc,
-        nodes: {
-          ...doc.nodes,
-          [id]: { ...node, state: node.state === 1 ? 0 : 1 },
+      // Flipping a switch is USING the circuit, not editing it.
+      commit(
+        {
+          ...doc,
+          nodes: {
+            ...doc.nodes,
+            [id]: { ...node, state: node.state === 1 ? 0 : 1 },
+          },
         },
-      });
+        true,
+      );
     },
 
     clickPin: (ref) => {
@@ -365,15 +393,41 @@ export const useCircuitStore = create<CircuitState>()(
       commit({ ...doc, wires });
     },
 
-    load: (doc) => {
+    load: (doc, origin = null) => {
       const { index, diagnostics, routes } = simulate(doc);
-      set({ doc, index, diagnostics, routes, past: [], future: [], selection: [], pendingPin: null });
+      set({
+        doc,
+        origin,
+        index,
+        diagnostics,
+        routes,
+        // A freshly loaded board did not come from the old one, so the old schematic
+        // is not a place it can go "back" to.
+        schematic: null,
+        past: [],
+        future: [],
+        selection: [],
+        pendingPin: null,
+        pendingHole: null,
+      });
     },
 
     clear: () => {
       const doc = emptyDocument();
       const { index, diagnostics, routes } = simulate(doc);
-      set({ doc, index, diagnostics, routes, past: [], future: [], selection: [], pendingPin: null });
+      set({
+        doc,
+        origin: null,
+        schematic: null,
+        index,
+        diagnostics,
+        routes,
+        past: [],
+        future: [],
+        selection: [],
+        pendingPin: null,
+        pendingHole: null,
+      });
     },
 
     undo: () => {
@@ -421,7 +475,7 @@ export const useCircuitStore = create<CircuitState>()(
        * ghost-connection failure the invariants exist to prevent. Undo history is
        * dropped too: nobody expects to reopen a tab and undo yesterday.
        */
-      partialize: (s) => ({ doc: s.doc, schematic: s.schematic }),
+      partialize: (s) => ({ doc: s.doc, schematic: s.schematic, origin: s.origin }),
 
       /**
        * Rehydration must RE-DERIVE, not restore. The document is plain JSON, so it

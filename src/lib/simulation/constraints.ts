@@ -163,6 +163,15 @@ export interface Violation {
  * silently ALLOW it either — so we report, and let the user decide whether to
  * rebuild.
  */
+/**
+ * "a AND gate" reads as a typo, and this message appears every time somebody
+ * switches rules mid-build. The article follows the SOUND of the name, not the
+ * letter: AND, OR, XOR and XNOR all open on a vowel sound; NAND, NOR and NOT do
+ * not. A 7408 is "a 7408" ("seven-four-oh-eight").
+ */
+const article = (name: string): string =>
+  /^[AEIOUX]/.test(name) ? "an" : "a";
+
 export function violations(
   doc: CircuitDocument,
   constraint: Constraint,
@@ -175,7 +184,7 @@ export function violations(
         nodeId: node.id,
         label: node.label,
         component: node.op.toUpperCase(),
-        message: `${node.label} is a ${node.op.toUpperCase()} gate, which "${constraint.name}" does not permit.`,
+        message: `${node.label} is ${article(node.op.toUpperCase())} ${node.op.toUpperCase()} gate, which "${constraint.name}" does not permit.`,
       });
     }
     if (node.kind === "ic" && !allowsPart(constraint, node.part)) {

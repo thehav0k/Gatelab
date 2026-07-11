@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   BookOpen,
   CircuitBoard,
+  Cpu,
   Keyboard,
   Mail,
   MessageSquare,
@@ -14,9 +15,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FeedbackDialog } from "@/components/shared/feedback-dialog";
 import { GithubIcon } from "@/components/shared/github-icon";
+import { GateReference, LogicValues } from "@/components/manual/gate-reference";
+import { IcReference } from "@/components/manual/ic-reference";
 import { CONTACT } from "@/lib/feedback";
 import { CONSTRAINTS } from "@/lib/simulation/constraints";
-import { IC_LIBRARY } from "@/lib/simulation/ic-library";
 
 /**
  * The user manual.
@@ -124,6 +126,8 @@ const TOC = [
   { id: "theory", label: "The theory workspace" },
   { id: "rules", label: "Gate rules" },
   { id: "lab", label: "The lab" },
+  { id: "gates", label: "Logic gates" },
+  { id: "chips", label: "74xx chips" },
   { id: "breadboard", label: "The breadboard" },
   { id: "faults", label: "Faults" },
   { id: "verify", label: "Verification" },
@@ -325,25 +329,69 @@ export default function ManualPage() {
               one. But Z and X keep their own unmistakable colour and dashing. A broken
               wire must never be able to look like a working one.
             </p>
-            <div>
-              <p className="mb-2 font-medium">Chips in the library</p>
-              <div className="flex flex-wrap gap-1.5">
-                {IC_LIBRARY.map((ic) => (
-                  <span
-                    key={ic.part}
-                    className="bg-muted/60 rounded border px-2 py-1 font-mono text-xs"
-                    title={ic.name}
-                  >
-                    {ic.part}
-                  </span>
-                ))}
-              </div>
-              <p className="text-muted-foreground mt-2 text-xs">
-                Real pinouts, transcribed from the datasheets. The 7402&apos;s gate 1
-                output really is on pin 1, and the 7404 really does reverse direction
-                on its right half.
+            <p className="text-muted-foreground">
+              Every gate is documented below — definition, truth table and algebraic
+              properties — and so is every chip, with its real pinout.
+            </p>
+          </Section>
+
+          <Section id="gates" icon={CircuitBoard} title="Logic gates">
+            <p>
+              The seven gates, what each one means, and the algebraic properties that
+              decide how it behaves when you build with it.
+            </p>
+            <p className="text-muted-foreground">
+              Every truth table below is <em>computed by the simulator itself</em>, not
+              typed into this page — so it cannot drift from what the lab actually
+              does.
+            </p>
+
+            <div className="pt-2">
+              <h3 className="mb-2 text-sm font-medium">
+                Before the gates: the four values
+              </h3>
+              <LogicValues />
+            </div>
+
+            <div className="pt-3">
+              <GateReference />
+            </div>
+
+            <div className="rounded-md border p-3">
+              <p className="text-sm font-medium">Two things worth knowing</p>
+              <p className="text-muted-foreground mt-1.5 text-xs text-pretty">
+                <strong>A controlling value decides the output on its own.</strong> AND
+                is controlled by 0 and OR by 1, which is why <code>AND(0, X) = 0</code>{" "}
+                — a floating second input cannot change an answer that is already
+                settled. XOR has no controlling value at all, so{" "}
+                <code>XOR(anything, X) = X</code>. If X were unconditionally contagious,
+                one floating pin would turn the whole board red and the diagnostic would
+                be worthless.
+              </p>
+              <p className="text-muted-foreground mt-2 text-xs text-pretty">
+                <strong>NAND and NOR are not associative.</strong>{" "}
+                <code>NAND(NAND(A,B), C)</code> is <em>not</em>{" "}
+                <code>NAND(A, NAND(B,C))</code>, and neither is a 3-input NAND. You
+                cannot widen a NAND by chaining it — that is what the 7410 is for.
               </p>
             </div>
+          </Section>
+
+          <Section id="chips" icon={Cpu} title="74xx chips">
+            <p>
+              The library, with real pinouts transcribed from the datasheets. Each
+              package holds several independent gates that share one power supply —
+              which is why chip count and gate count are different numbers, and why
+              you cannot buy half a package.
+            </p>
+            <p className="text-muted-foreground">
+              <strong>Pin 14 is +5V and pin 7 is GND on every DIP-14 here.</strong> An
+              unpowered TTL chip does not output 0 — it outputs nothing at all, and
+              everything downstream of it floats. Forgetting the supply is the single
+              most common bench mistake, and the lab reports it as{" "}
+              <code>UNPOWERED_IC</code>.
+            </p>
+            <IcReference />
           </Section>
 
           <Section id="breadboard" icon={CircuitBoard} title="The breadboard">
