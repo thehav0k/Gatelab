@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { DEFAULT_CONSTRAINT, getConstraint, type Constraint } from "@/lib/simulation/constraints";
+import type { GateOp } from "@/lib/simulation/logic";
 
 /**
  * Workspace state that must survive navigation and reload.
@@ -23,6 +24,10 @@ interface WorkspaceState {
 
   constraintId: string;
   setConstraintId: (id: string) => void;
+
+  /** The gate set for the "custom" rule. */
+  customGates: GateOp[];
+  setCustomGates: (g: GateOp[]) => void;
 }
 
 export const DEFAULT_SOURCE = "F(A,B,C,D) = Σm(0,1,2,5,6,7,8,9,10,14)";
@@ -35,6 +40,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       constraintId: DEFAULT_CONSTRAINT.id,
       setConstraintId: (constraintId) => set({ constraintId }),
+
+      customGates: ["nand", "xor"],
+      setCustomGates: (customGates) => set({ customGates }),
     }),
     { name: "gatelab-workspace" },
   ),
@@ -42,5 +50,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
 /** The active component constraint. */
 export function useConstraint(): Constraint {
-  return getConstraint(useWorkspaceStore((s) => s.constraintId));
+  const id = useWorkspaceStore((s) => s.constraintId);
+  const custom = useWorkspaceStore((s) => s.customGates);
+  return getConstraint(id, custom);
 }

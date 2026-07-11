@@ -71,7 +71,7 @@ export function pinOffset(pin: number, pinCount: number): { x: number; y: number
 
 // --- the parser -------------------------------------------------------------
 
-const GATE_INPUT = /^(\d+)([A-F])$/; // 1A, 2B, 3C…
+const GATE_INPUT = /^(\d+)([A-H])$/; // 1A, 2B … up to 1H on the 8-input 7430
 const GATE_OUTPUT = /^(\d+)Y$/; // 1Y, 2Y…
 
 /**
@@ -227,14 +227,58 @@ export const IC_7410 = defineDip("7410", "Triple 3-input NAND", "nand", [
   "3Y", "3A", "3B", "3C", "1Y", "1C", "VCC",
 ]);
 
+/**
+ * Triple 3-input AND. Shares the 7410's frame exactly — gate 1's pins are
+ * scattered (1, 2, 13 -> 12), which is precisely why the gate map is DERIVED from
+ * the pin names rather than written by hand.
+ */
+export const IC_7411 = defineDip("7411", "Triple 3-input AND", "and", [
+  "1A", "1B", "2A", "2B", "2C", "2Y", "GND",
+  "3Y", "3A", "3B", "3C", "1Y", "1C", "VCC",
+]);
+
+/** Triple 3-input NOR. Same frame again. */
+export const IC_7427 = defineDip("7427", "Triple 3-input NOR", "nor", [
+  "1A", "1B", "2A", "2B", "2C", "2Y", "GND",
+  "3Y", "3A", "3B", "3C", "1Y", "1C", "VCC",
+]);
+
+/** Dual 4-input NAND. Note the two dead pins — 3 and 11 are not connected. */
+export const IC_7420 = defineDip("7420", "Dual 4-input NAND", "nand", [
+  "1A", "1B", "NC", "1C", "1D", "1Y", "GND",
+  "2Y", "2A", "2B", "NC", "2C", "2D", "VCC",
+]);
+
+/** Dual 4-input AND. The 7420's frame, un-inverted. */
+export const IC_7421 = defineDip("7421", "Dual 4-input AND", "and", [
+  "1A", "1B", "NC", "1C", "1D", "1Y", "GND",
+  "2Y", "2A", "2B", "NC", "2C", "2D", "VCC",
+]);
+
+/**
+ * 8-input NAND. One gate, eight inputs, and three dead pins. The single output
+ * sits on pin 8 — directly opposite GND — which catches people out.
+ */
+export const IC_7430 = defineDip("7430", "8-input NAND", "nand", [
+  "1A", "1B", "1C", "1D", "1E", "1F", "GND",
+  "1Y", "NC", "NC", "1G", "1H", "NC", "VCC",
+]);
+
 export const IC_LIBRARY: readonly IcDefinition[] = [
+  // 2-input workhorses
   IC_7400,
   IC_7402,
   IC_7404,
   IC_7408,
   IC_7432,
   IC_7486,
+  // wider fan-in
   IC_7410,
+  IC_7411,
+  IC_7420,
+  IC_7421,
+  IC_7427,
+  IC_7430,
 ];
 
 const BY_PART = new Map(IC_LIBRARY.map((d) => [d.part, d]));

@@ -10,6 +10,7 @@ import { QmTrace } from "@/components/theory/qm-trace";
 import { MinimalForm } from "@/components/theory/minimal-form";
 import { BuildCircuit } from "@/components/theory/build-circuit";
 import { ConstraintMenu } from "@/components/lab/constraint-menu";
+import { FunctionLibrary } from "@/components/theory/function-library";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -66,8 +67,9 @@ export default function TheoryPage() {
             implicants Quine–McCluskey found — hover either to light up the other.
           </p>
         </div>
-        {/* The rule governs BOTH workspaces, so it is reachable from both. */}
-        <div className="ml-auto">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <FunctionLibrary onPick={setSource} />
+          {/* The rule governs BOTH workspaces, so it is reachable from both. */}
           <ConstraintMenu />
         </div>
       </header>

@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   CONSTRAINTS,
+  CUSTOM_ID,
   allowsGate,
   allowsPart,
+  customConstraint,
   getConstraint,
+  isUniversal,
+  partsFor,
   satisfies,
   violations,
+  whyNotUniversal,
 } from "./constraints";
 import { realize, synthesize, technologyMap } from "./synth";
 import { verify } from "./verify";
@@ -121,3 +126,55 @@ describe("the constraint steers the synthesizer", () => {
 function minimizeFor(fn: BooleanFunction) {
   return synthesize(minimize(fn, "sop").expression, fn.variables);
 }
+
+describe("custom rules", () => {
+  it("names itself after its gates and reports its own universality", () => {
+    const c = customConstraint(["or", "not"]);
+    expect(c.name).toBe("OR + NOT");
+    expect(isUniversal(c)).toBe(true);
+    expect(c.description).toMatch(/Universal/);
+    expect(whyNotUniversal(c)).toBeNull();
+  });
+
+  /**
+   * The one that matters. A student told "use XOR only" would search forever;
+   * the rule itself has to say it is impossible, and say WHY.
+   */
+  it("refuses an impossible rule and gives the mathematical reason", () => {
+    const c = customConstraint(["xor"]);
+    expect(isUniversal(c)).toBe(false);
+    expect(c.description).toMatch(/affine/i);
+    expect(whyNotUniversal(c)).toMatch(/affine/i);
+  });
+
+  it("an empty rule allows nothing", () => {
+    const c = customConstraint([]);
+    expect(c.name).toBe("Nothing allowed");
+    expect(c.gates).toEqual([]);
+    expect(isUniversal(c)).toBe(false);
+  });
+
+  it("derives its chip list from its gates", () => {
+    expect(partsFor(["nand"])).toContain("7400");
+    expect(partsFor(["nand"])).not.toContain("7408");
+    // Several chips can implement one op — the 7400, 7410, 7420 and 7430 are all NAND.
+    expect(partsFor(["nand"]).length).toBeGreaterThan(1);
+  });
+
+  it("getConstraint routes the custom id through the gate set", () => {
+    const c = getConstraint(CUSTOM_ID, ["nor"]);
+    expect(c.gates).toEqual(["nor"]);
+    expect(isUniversal(c)).toBe(true);
+  });
+
+  it("a custom rule steers the build, and the build verifies", () => {
+    const fn = fnOf("F(A,B,C) = A'B + BC");
+    const c = customConstraint(["or", "not"]);
+
+    const nl = synthesize(minimize(fn, "sop").expression, fn.variables);
+    const doc = realize(technologyMap(nl, c.strategy, c.gates), { discrete: true });
+
+    expect(violations(doc, c)).toEqual([]);
+    expect(verify(doc, fn).ok).toBe(true);
+  });
+});

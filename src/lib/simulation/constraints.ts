@@ -2,6 +2,7 @@ import type { GateOp } from "./logic";
 import type { CircuitDocument } from "./netlist";
 import { IC_LIBRARY } from "./ic-library";
 import type { Strategy } from "./synth";
+import { checkCompleteness } from "./completeness";
 
 /**
  * The component constraint filter.
@@ -41,6 +42,10 @@ export interface Constraint {
 
 const ALL_GATES: GateOp[] = ["and", "or", "not", "nand", "nor", "xor", "xnor"];
 const ALL_PARTS = IC_LIBRARY.map((d) => d.part);
+
+/** Which chips implement a given gate op — used to derive a custom rule's parts. */
+export const partsFor = (ops: readonly GateOp[]): string[] =>
+  IC_LIBRARY.filter((d) => ops.includes(d.op)).map((d) => d.part);
 
 export const CONSTRAINTS: readonly Constraint[] = [
   {
@@ -101,8 +106,41 @@ export const CONSTRAINTS: readonly Constraint[] = [
 
 export const DEFAULT_CONSTRAINT = CONSTRAINTS[0] as Constraint;
 
-export const getConstraint = (id: string): Constraint =>
-  CONSTRAINTS.find((c) => c.id === id) ?? DEFAULT_CONSTRAINT;
+/**
+ * A rule the user built themselves — any subset of the gates.
+ *
+ * The named rules above are the common exercises. This is for the ones a teacher
+ * actually invents ("OR and NOT only", "NAND and XOR"). completeness.ts decides
+ * whether the set can express every function, and says why if it cannot — so a
+ * student is never sent hunting for a circuit that provably does not exist.
+ */
+export function customConstraint(gates: readonly GateOp[]): Constraint {
+  const check = checkCompleteness(gates);
+  return {
+    id: CUSTOM_ID,
+    name: gates.length === 0 ? "Nothing allowed" : gates.map((g) => g.toUpperCase()).join(" + "),
+    description: check.complete
+      ? "Universal — every Boolean function can be built from these."
+      : `Not universal — ${check.reason}`,
+    gates: [...gates],
+    parts: partsFor(gates),
+    strategy: "mixed",
+  };
+}
+
+export const CUSTOM_ID = "custom";
+
+export const getConstraint = (id: string, customGates?: readonly GateOp[]): Constraint =>
+  id === CUSTOM_ID
+    ? customConstraint(customGates ?? [])
+    : (CONSTRAINTS.find((c) => c.id === id) ?? DEFAULT_CONSTRAINT);
+
+/** Can this rule express every Boolean function? */
+export const isUniversal = (c: Constraint): boolean =>
+  checkCompleteness(c.gates).complete;
+
+export const whyNotUniversal = (c: Constraint): string | null =>
+  checkCompleteness(c.gates).reason;
 
 export const allowsGate = (c: Constraint, op: GateOp): boolean =>
   c.gates.includes(op);

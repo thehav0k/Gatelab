@@ -77,6 +77,18 @@ penalty makes the graph weighted — so a FIFO queue returns a shortest-*length*
 path with an arbitrary number of jogs. "Is this step a bend?" depends on how you
 arrived, which is why the direction is part of the state.
 
+**8. A wire is coloured by its NET, not by its logic level.**
+Colouring purely by level made every LOW wire the same dark slate, and on a dark
+canvas they simply vanished — fourteen wires on screen, four of them visible. And
+you could not trace a connection, because every HIGH wire was the same green. A
+wire now takes its net's colour, cycled through eight hues, which is exactly why
+real jumper wire is multicoloured and for exactly the same reason.
+
+**But the fault colours are not negotiable.** `Z` (floating) and `X` (conflict)
+keep their own unmistakable colour and dashing. Net identity is a convenience;
+`Z` and `X` are the product, and a broken wire must never be able to look like a
+working one.
+
 **7. The component constraint is part of the problem, not a lint.**
 "Implement this with NAND only" IS the exercise. So the rule is chosen before you
 build: the palette narrows to match (you cannot place what you may not use), and
@@ -84,6 +96,16 @@ the synthesizer is steered by it (`constraint.strategy`), so "build it for me"
 obeys the rule rather than apologising for breaking it. `violations()` reports
 anything already on the board that a newly-chosen rule forbids — switching rules
 mid-build must neither silently invalidate the work nor silently bless it.
+
+And a rule can be IMPOSSIBLE. "Build it with XOR only" is a reasonable thing to
+ask and a provably impossible thing to do: XOR is affine, affine functions are
+closed under composition, and AND is not affine. `completeness.ts` decides this
+exactly, by Post's criterion — a gate set is universal iff it escapes all five
+maximal clones (T0, T1, monotone, self-dual, affine) — and says *which* one traps
+it. The power rails matter here: a constant 1 is not 0-preserving, so having +5V
+demolishes T0 and turns the otherwise-impossible `{XOR, AND}` into a universal
+set. Ignoring the rails would tell a student their buildable circuit is
+impossible.
 
 ## The MSB contract
 

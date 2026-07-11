@@ -15,8 +15,13 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useConstraint, useWorkspaceStore } from "@/stores/workspace-store";
-import { CONSTRAINTS, violations } from "@/lib/simulation/constraints";
+import { CONSTRAINTS, CUSTOM_ID, violations } from "@/lib/simulation/constraints";
+import { checkCompleteness } from "@/lib/simulation/completeness";
+import { GATE_LABELS } from "@/lib/simulation/parts";
+import type { GateOp } from "@/lib/simulation/logic";
 import { cn } from "@/lib/utils";
+
+const PICKABLE: GateOp[] = ["and", "or", "not", "nand", "nor", "xor", "xnor"];
 
 /**
  * Pick the rule you are working under.
@@ -73,8 +78,83 @@ export function ConstraintMenu() {
             </div>
           );
         })}
+
+        <DropdownMenuSeparator />
+        <CustomRule />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Pick any gate set you like — and be told, immediately, whether it can actually
+ * express every Boolean function.
+ *
+ * This is the part that makes the filter honest. "Build it with XOR only" is a
+ * perfectly reasonable thing for a teacher to say and a completely impossible
+ * thing to do: XOR is affine, affine functions compose to affine functions, and
+ * AND is not one. Post's criterion settles it, and the verdict is shown live as
+ * you tick the boxes — so nobody spends an afternoon hunting for a circuit that
+ * provably does not exist.
+ */
+function CustomRule() {
+  const gates = useWorkspaceStore((s) => s.customGates);
+  const setGates = useWorkspaceStore((s) => s.setCustomGates);
+  const setConstraintId = useWorkspaceStore((s) => s.setConstraintId);
+  const activeId = useWorkspaceStore((s) => s.constraintId);
+
+  const check = checkCompleteness(gates);
+
+  const toggle = (op: GateOp) => {
+    const next = gates.includes(op) ? gates.filter((g) => g !== op) : [...gates, op];
+    setGates(next);
+    setConstraintId(CUSTOM_ID);
+  };
+
+  return (
+    <div className="px-2 py-1.5">
+      <p className="mb-1.5 text-xs font-medium">
+        Custom
+        {activeId === CUSTOM_ID && (
+          <span className="text-logic-high ml-1.5 text-[10px]">active</span>
+        )}
+      </p>
+
+      <div
+        className="mb-2 flex flex-wrap gap-1"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        role="group"
+      >
+        {PICKABLE.map((op) => (
+          <button
+            key={op}
+            type="button"
+            onClick={() => toggle(op)}
+            className={cn(
+              "rounded border px-1.5 py-0.5 font-mono text-[10px] transition-colors",
+              gates.includes(op)
+                ? "border-ring bg-accent text-foreground"
+                : "text-muted-foreground hover:bg-accent/50",
+            )}
+          >
+            {GATE_LABELS[op]}
+          </button>
+        ))}
+      </div>
+
+      {/* The verdict, live. */}
+      <p
+        className={cn(
+          "text-[10px] leading-snug",
+          check.complete ? "text-logic-high" : "text-logic-z",
+        )}
+      >
+        {check.complete
+          ? "Universal — every Boolean function can be built from these."
+          : `Not universal — ${check.reason}`}
+      </p>
+    </div>
   );
 }
 

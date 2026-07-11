@@ -12,6 +12,7 @@ import {
   type Wire,
 } from "./netlist";
 import { GATE_H, IO_H, arityOf, gateInputNames } from "./parts";
+import { rewriteToSet } from "./rewrite";
 import { IC_LIBRARY, dipWidth, getIc, type IcDefinition } from "./ic-library";
 
 /**
@@ -325,11 +326,23 @@ function packChips(nl: GateNetlist): MappedDesign["chips"] {
   return chips;
 }
 
-export function technologyMap(nl: GateNetlist, strategy: Strategy): MappedDesign {
-  const mapped =
-    strategy === "mixed"
-      ? nl
-      : rewriteFamily(nl, strategy === "nand-only" ? "nand" : "nor");
+export function technologyMap(
+  nl: GateNetlist,
+  strategy: Strategy,
+  /** An explicit allowed set overrides the named strategy entirely. */
+  allowed?: readonly GateOp[],
+): MappedDesign {
+  let mapped = nl;
+
+  if (allowed && allowed.length > 0) {
+    // An arbitrary gate set — "OR and NOT only", "no XOR", whatever the exercise
+    // says. rewrite.ts derives NOT/AND/OR from whatever is on offer, and refuses
+    // (with the reason) when the set is not universal.
+    const r = rewriteToSet(nl, allowed);
+    if (r.ok) mapped = r.netlist;
+  } else if (strategy !== "mixed") {
+    mapped = rewriteFamily(nl, strategy === "nand-only" ? "nand" : "nor");
+  }
 
   const chips = packChips(mapped);
 
@@ -392,10 +405,27 @@ export function realize(
     switchOf.set(input.signal, id);
   });
 
-  /** Where does a signal come from? A switch, or some gate's output pin. */
+  /** Where does a signal come from? A switch, a rail, or some gate's output pin. */
   const driverOf = new Map<number, PinRef>();
   for (const [signal, id] of switchOf) {
     driverOf.set(signal, { node: id, pin: "Y" });
+  }
+
+  /**
+   * The CONSTANT signals (-1 = logic 1, -2 = logic 0) that rewrite.ts emits, wired
+   * to the power rails. `NOT a = a XOR 1` needs a real, physical logic 1 — and on a
+   * real board that is a wire to +5V. Leaving it unwired would leave the input
+   * floating, which is precisely the fault the whole app exists to catch.
+   */
+  const usesConstants = netlist.gates.some((g) =>
+    g.inputs.some((s) => s < 0),
+  );
+
+  if (usesConstants) {
+    const hi = addNode({ kind: "rail", label: "VH", rail: "vcc", pos: { x: 40, y: 10 } });
+    const lo = addNode({ kind: "rail", label: "GL", rail: "gnd", pos: { x: 110, y: 10 } });
+    driverOf.set(-1, { node: hi, pin: "VCC" });
+    driverOf.set(-2, { node: lo, pin: "GND" });
   }
 
   if (options.discrete || design.chips.length === 0) {

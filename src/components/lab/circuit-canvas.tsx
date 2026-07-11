@@ -2,7 +2,13 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useCircuitStore } from "@/stores/circuit-store";
-import { logicColor, useEndpointValue, useNetValue } from "@/stores/sim-store";
+import {
+  logicColor,
+  useEndpointValue,
+  useNetOrdinal,
+  useNetValue,
+  wirePaint,
+} from "@/stores/sim-store";
 import { LOGIC_NAMES } from "@/lib/simulation/logic";
 import { GateSymbol } from "./gate-symbol";
 import { GATE_W, IO_H, IO_W, GATE_LABELS, pinsOf } from "@/lib/simulation/parts";
@@ -187,7 +193,7 @@ export function CircuitCanvas() {
       ))}
     </svg>
 
-    <div className="absolute right-2 bottom-2 flex items-center gap-1">
+    <div className="no-print absolute right-2 bottom-2 flex items-center gap-1">
       <span className="text-muted-foreground bg-card/80 rounded px-1.5 py-0.5 font-mono text-[10px]">
         {Math.round(cam.zoom * 100)}%
       </span>
@@ -250,6 +256,7 @@ function WireLine({ wire }: { wire: Wire }) {
   // Subscribes to THIS wire's net only. A switch flip re-renders just the wires
   // whose own value changed, not all of them.
   const value = useEndpointValue(wire.a);
+  const ordinal = useNetOrdinal(wire.a);
 
   const endpointPos = (end: typeof wire.a): Point | null => {
     if (end.kind === "hole") return holePoint(end.ref);
@@ -266,24 +273,27 @@ function WireLine({ wire }: { wire: Wire }) {
   // say so, rather than pretending it isn't there.
   const unrouted = !route;
   const d = route ? orthPath(route) : `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
-  const color = logicColor(value);
+
+  // Colour by NET, not by logic level — see wirePaint(). A LOW wire used to be
+  // dark slate on a dark canvas and simply disappeared.
+  const paint = wirePaint(value, ordinal);
 
   return (
     <g className="group">
       {/* The glow is a thick translucent halo UNDER a bright core — not an SVG
           filter. Sixty simultaneous feGaussianBlurs would tank the frame rate. */}
-      {value === 1 && !unrouted && (
-        <path d={d} fill="none" stroke={color} strokeWidth={7} opacity={0.25} />
+      {paint.glow && !unrouted && (
+        <path d={d} fill="none" stroke={paint.color} strokeWidth={7} opacity={0.28} />
       )}
       <path
         d={d}
         fill="none"
-        stroke={color}
-        strokeWidth={2}
+        stroke={paint.color}
+        strokeWidth={paint.glow ? 2.4 : 2}
         strokeLinejoin="round"
         strokeLinecap="round"
-        strokeDasharray={unrouted ? "5 4" : undefined}
-        opacity={unrouted ? 0.6 : 1}
+        strokeDasharray={unrouted ? "5 4" : paint.dashed ? "6 3" : undefined}
+        opacity={unrouted ? 0.55 : paint.dim ? 0.62 : 1}
       />
       {/* A 2px stroke is unclickable. This invisible fat copy is the hit target. */}
       <path

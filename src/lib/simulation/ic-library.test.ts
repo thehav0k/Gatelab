@@ -5,6 +5,11 @@ import {
   IC_7404,
   IC_7408,
   IC_7410,
+  IC_7411,
+  IC_7420,
+  IC_7421,
+  IC_7427,
+  IC_7430,
   IC_7432,
   IC_7486,
   IC_LIBRARY,
@@ -328,5 +333,78 @@ describe("simulating a real chip", () => {
 
     expect(run(doc, [0]).at("Q", "A")).toBe(L1);
     expect(run(doc, [1]).at("Q", "A")).toBe(L0);
+  });
+});
+
+describe("the wider-fan-in parts", () => {
+  it("7411 and 7427 share the 7410's scattered frame", () => {
+    for (const def of [IC_7410, IC_7411, IC_7427]) {
+      const gate1 = def.cells.find((c) => c.slot === 1);
+      expect(gate1?.inputPins, def.part).toEqual(["1A", "1B", "1C"]);
+      expect(gate1?.outputPin, def.part).toBe("1Y");
+      // Gate 1's inputs are pins 1, 2 and 13; its output is pin 12. Nothing about
+      // that is guessable — which is why the gate map is derived, not written.
+      expect(pinNamed(def, 13)?.name, def.part).toBe("1C");
+      expect(pinNamed(def, 12)?.name, def.part).toBe("1Y");
+    }
+    expect(IC_7411.op).toBe("and");
+    expect(IC_7427.op).toBe("nor");
+  });
+
+  it("7420 and 7421 are dual 4-input, with pins 3 and 11 dead", () => {
+    for (const def of [IC_7420, IC_7421]) {
+      expect(def.gateCount, def.part).toBe(2);
+      expect(def.inputsPerGate, def.part).toBe(4);
+      expect(pinNamed(def, 3)?.dir, def.part).toBe("nc");
+      expect(pinNamed(def, 11)?.dir, def.part).toBe("nc");
+      expect(def.cells[0]?.inputPins).toEqual(["1A", "1B", "1C", "1D"]);
+    }
+  });
+
+  it("7430 is one 8-input NAND with its output on pin 8", () => {
+    expect(IC_7430.gateCount).toBe(1);
+    expect(IC_7430.inputsPerGate).toBe(8);
+    expect(pinNamed(IC_7430, 8)?.name).toBe("1Y");
+    expect(pinNamed(IC_7430, 8)?.dir).toBe("out");
+    expect(IC_7430.cells[0]?.inputPins).toEqual([
+      "1A", "1B", "1C", "1D", "1E", "1F", "1G", "1H",
+    ]);
+  });
+
+  it("every part still validates, and still has Vcc on 14 / GND on 7", () => {
+    for (const def of IC_LIBRARY) {
+      expect(validateDefinition(def), def.part).toEqual([]);
+      expect(pinNamed(def, 14)?.name, def.part).toBe("VCC");
+      expect(pinNamed(def, 7)?.name, def.part).toBe("GND");
+    }
+  });
+
+  it("an 8-input NAND actually computes an 8-input NAND", () => {
+    const doc = circuit()
+      .ic("U1", "7430")
+      .rail("V1", "vcc")
+      .rail("G0", "gnd")
+      .wire("V1", "VCC", "U1", "VCC")
+      .wire("G0", "GND", "U1", "GND")
+      .led("Q")
+      .wire("U1", "1Y", "Q", "A")
+      .build();
+
+    // All eight inputs floating -> unknown, not 0.
+    expect(run(doc).at("Q", "A")).toBe(LX);
+
+    // Tie every input high -> NAND(1,…,1) = 0.
+    const b = circuit()
+      .ic("U1", "7430")
+      .rail("V1", "vcc")
+      .rail("G0", "gnd")
+      .wire("V1", "VCC", "U1", "VCC")
+      .wire("G0", "GND", "U1", "GND")
+      .led("Q")
+      .wire("U1", "1Y", "Q", "A");
+    for (const p of ["1A", "1B", "1C", "1D", "1E", "1F", "1G", "1H"]) {
+      b.wire("V1", "VCC", "U1", p);
+    }
+    expect(run(b.build()).at("Q", "A")).toBe(L0);
   });
 });

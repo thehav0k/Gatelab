@@ -77,7 +77,7 @@ function Report({ report }: { report: LabReport }) {
   const loops = analysis.loops.sop;
 
   return (
-    <article className="space-y-8 text-sm">
+    <article className="report space-y-8 text-sm [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_thead_th]:bg-muted/60 [&_thead_th]:font-semibold">
       {/* --- header ---------------------------------------------------------- */}
       <header className="print-section border-b pb-4">
         <h1 className="text-2xl font-semibold tracking-tight">{report.title}</h1>
@@ -277,9 +277,16 @@ function Report({ report }: { report: LabReport }) {
                 <span className="font-mono font-semibold">{report.chosenDesign}</span>
               </p>
             )}
-            <div className="h-[420px] overflow-hidden rounded-md border print:h-[380px]">
-              {report.onBoard ? <BreadboardView /> : <CircuitCanvas />}
-            </div>
+            <figure className="print-section">
+              <div className="h-[440px] overflow-hidden rounded-md border print:h-[400px]">
+                {report.onBoard ? <BreadboardView /> : <CircuitCanvas />}
+              </div>
+              <figcaption className="text-muted-foreground mt-2 text-xs">
+                {report.onBoard
+                  ? "Seated on a breadboard. Each jumper takes its own colour so a connection can be traced; every hole on a strip is one net."
+                  : "Schematic. Each net takes its own colour; a lit wire is carrying a 1."}
+              </figcaption>
+            </figure>
             {report.billOfMaterials.length > 0 && (
               <table className="mt-4 text-xs">
                 <thead>

@@ -53,6 +53,17 @@
     --color-logic-z: var(--logic-z);
     --color-logic-x: var(--logic-x);
 
+    /* Per-NET wire colours. Real jumper wire is multicoloured for exactly one
+       reason: so you can trace a connection across a crowded board. */
+    --color-wire-1: var(--wire-1);
+    --color-wire-2: var(--wire-2);
+    --color-wire-3: var(--wire-3);
+    --color-wire-4: var(--wire-4);
+    --color-wire-5: var(--wire-5);
+    --color-wire-6: var(--wire-6);
+    --color-wire-7: var(--wire-7);
+    --color-wire-8: var(--wire-8);
+
     /* K-map loop overlays / prime-implicant cross-highlighting. */
     --color-loop-1: var(--loop-1);
     --color-loop-2: var(--loop-2);
@@ -107,6 +118,15 @@
     --loop-4: oklch(0.68 0.17 65);
     --loop-5: oklch(0.6 0.19 300);
     --loop-6: oklch(0.62 0.14 200);
+
+    --wire-1: oklch(0.62 0.20 25);
+    --wire-2: oklch(0.65 0.17 60);
+    --wire-3: oklch(0.70 0.15 95);
+    --wire-4: oklch(0.60 0.17 150);
+    --wire-5: oklch(0.60 0.14 200);
+    --wire-6: oklch(0.55 0.19 260);
+    --wire-7: oklch(0.58 0.20 305);
+    --wire-8: oklch(0.60 0.18 350);
 }
 
 .dark {
@@ -153,6 +173,15 @@
     --loop-4: oklch(0.78 0.16 65);
     --loop-5: oklch(0.7 0.18 300);
     --loop-6: oklch(0.72 0.13 200);
+
+    --wire-1: oklch(0.72 0.19 25);
+    --wire-2: oklch(0.76 0.16 60);
+    --wire-3: oklch(0.82 0.15 95);
+    --wire-4: oklch(0.74 0.16 150);
+    --wire-5: oklch(0.74 0.13 200);
+    --wire-6: oklch(0.70 0.17 260);
+    --wire-7: oklch(0.72 0.18 305);
+    --wire-8: oklch(0.74 0.17 350);
 }
 
 @layer base {
@@ -206,6 +235,15 @@
     --loop-4: oklch(0.58 0.17 65);
     --loop-5: oklch(0.52 0.19 300);
     --loop-6: oklch(0.52 0.14 200);
+
+    --wire-1: oklch(0.52 0.20 25);
+    --wire-2: oklch(0.55 0.17 60);
+    --wire-3: oklch(0.58 0.15 95);
+    --wire-4: oklch(0.48 0.17 150);
+    --wire-5: oklch(0.50 0.14 200);
+    --wire-6: oklch(0.45 0.19 260);
+    --wire-7: oklch(0.48 0.20 305);
+    --wire-8: oklch(0.50 0.18 350);
   }
 
   /* Browsers strip backgrounds by default; the circuit and the K-map need theirs. */
@@ -220,8 +258,35 @@
   }
 
   @page {
-    margin: 14mm;
+    margin: 15mm;
     size: A4;
+  }
+
+  /* Tables in a report are DOCUMENTS, not UI. Give them rules and a header band,
+     because a borderless table on paper is a list of floating numbers. */
+  article table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  article th,
+  article td {
+    border: 1px solid oklch(0.85 0 0);
+    padding: 3px 8px;
+  }
+  article thead th {
+    background: oklch(0.95 0 0);
+    text-align: left;
+    font-weight: 600;
+  }
+  article tbody tr:nth-child(even) {
+    background: oklch(0.985 0 0);
+  }
+
+  /* Keep a heading with the thing it introduces. */
+  article h2,
+  article h3 {
+    break-after: avoid;
+    page-break-after: avoid;
   }
 
   body {

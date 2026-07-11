@@ -71,7 +71,10 @@ export function BuildCircuit({ min, variables, fn, source }: Props) {
   const build = () => {
     if (!chosen) return;
     const nl = synthesize(min.expression, variables);
-    const doc = realize(technologyMap(nl, chosen.strategy), { outputLabel: "F" });
+    const doc = realize(
+      technologyMap(nl, chosen.strategy, locked ? constraint.gates : undefined),
+      { outputLabel: "F" },
+    );
     // Hand the lab the FUNCTION, not the circuit, so Verify checks the built
     // board against the algebra rather than against itself.
     setSpec(source);

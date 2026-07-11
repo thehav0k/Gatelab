@@ -2,7 +2,12 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useCircuitStore } from "@/stores/circuit-store";
-import { logicColor, useEndpointValue } from "@/stores/sim-store";
+import {
+  logicColor,
+  useEndpointValue,
+  useNetOrdinal,
+  wirePaint,
+} from "@/stores/sim-store";
 import { LOGIC_NAMES, type Logic } from "@/lib/simulation/logic";
 import {
   ALL_ROWS,
@@ -131,19 +136,21 @@ export function BreadboardView() {
           x={BOARD_PAD}
           y={BOARD_PAD}
         >
+          {/* A hole is a DARK square on a LIGHT board — the opposite of what it
+              was. A faintly-outlined hole on a near-black board was invisible. */}
           <rect
-            x={PITCH / 2 - 3}
-            y={PITCH / 2 - 3}
-            width={6}
-            height={6}
+            x={PITCH / 2 - 3.5}
+            y={PITCH / 2 - 3.5}
+            width={7}
+            height={7}
             rx={1.5}
-            className="fill-background stroke-border"
+            className="fill-background/90 stroke-foreground/25"
             strokeWidth={0.75}
           />
         </pattern>
       </defs>
 
-      <rect width={w} height={h} rx={6} className="fill-muted/40 stroke-border" />
+      <rect width={w} height={h} rx={6} className="fill-muted stroke-border" />
       <rect width={w} height={h} fill="transparent" />
 
       <BoardBody spec={spec} />
@@ -187,7 +194,7 @@ export function BreadboardView() {
       )}
     </svg>
 
-    <div className="absolute right-2 bottom-2 flex items-center gap-1">
+    <div className="no-print absolute right-2 bottom-2 flex items-center gap-1">
       <span className="text-muted-foreground bg-card/80 rounded px-1.5 py-0.5 font-mono text-[10px]">
         {Math.round(cam.zoom * 100)}%
       </span>
@@ -201,7 +208,7 @@ export function BreadboardView() {
         <Maximize2 className="size-3.5" />
       </Button>
     </div>
-    <p className="text-muted-foreground pointer-events-none absolute bottom-2 left-3 text-[10px]">
+    <p className="no-print text-muted-foreground pointer-events-none absolute bottom-2 left-3 text-[10px]">
       scroll to zoom · shift-drag or right-drag to pan
     </p>
     </div>
@@ -240,7 +247,8 @@ function BoardBody({ spec }: { spec: BreadboardSpec }) {
         y={channelY}
         width={w}
         height={channelH}
-        className="fill-background/60"
+        className="fill-background/80 stroke-border"
+        strokeWidth={0.5}
       />
 
       {/* Power rails: a hole field, plus the coloured stripe printed beside it. */}
@@ -262,15 +270,15 @@ function BoardBody({ spec }: { spec: BreadboardSpec }) {
               x2={w - 4}
               y2={y}
               style={{
-                stroke: positive ? "var(--logic-x)" : "var(--logic-low)",
+                stroke: positive ? "var(--wire-1)" : "var(--wire-6)",
               }}
-              strokeWidth={1}
-              opacity={0.35}
+              strokeWidth={2}
+              opacity={0.75}
             />
             <text
               x={6}
               y={y + 3}
-              className="fill-muted-foreground pointer-events-none font-mono text-[9px]"
+              className="fill-foreground/80 pointer-events-none font-mono text-[10px] font-semibold"
             >
               {positive ? "+" : "−"}
             </text>
@@ -310,7 +318,7 @@ function BoardBody({ spec }: { spec: BreadboardSpec }) {
           key={row}
           x={8}
           y={holePoint({ col: 1, row }).y + 3}
-          className="fill-muted-foreground pointer-events-none font-mono text-[8px]"
+          className="fill-foreground/70 pointer-events-none font-mono text-[9px] font-medium"
         >
           {row}
         </text>
@@ -323,7 +331,7 @@ function BoardBody({ spec }: { spec: BreadboardSpec }) {
             x={holePoint({ col, row: "J" }).x}
             y={holePoint({ col, row: "J" }).y - PITCH / 2 - 3}
             textAnchor="middle"
-            className="fill-muted-foreground pointer-events-none font-mono text-[8px]"
+            className="fill-foreground/70 pointer-events-none font-mono text-[9px] font-medium"
           >
             {col}
           </text>
@@ -440,7 +448,7 @@ function SeatedIc({ node }: { node: Extract<CircuitNode, { kind: "ic" }> }) {
         width={b.x - a.x + PITCH - 4}
         height={bottom - top + 6}
         rx={3}
-        className="fill-foreground/85 stroke-background"
+        className="fill-foreground stroke-background"
         strokeWidth={0.5}
       />
       {/* The pin-1 notch. */}
@@ -583,12 +591,17 @@ function SeatedRail({
 function Jumper({ wire }: { wire: Wire }) {
   const deleteWire = useCircuitStore((s) => s.deleteWire);
   const value = useEndpointValue(wire.a);
+  const ordinal = useNetOrdinal(wire.a);
 
   if (wire.a.kind !== "hole" || wire.b.kind !== "hole") return null;
 
   const a = holePoint(wire.a.ref);
   const b = holePoint(wire.b.ref);
-  const color = logicColor(value);
+
+  // Real jumper wire is multicoloured so you can trace one connection across a
+  // crowded board. So is this. Z and X keep their fault colours regardless.
+  const paint = wirePaint(value, ordinal);
+  const color = paint.color;
 
   // A real jumper arcs. The sag also separates parallel runs, which a straight
   // line would stack on top of each other illegibly.
@@ -601,10 +614,18 @@ function Jumper({ wire }: { wire: Wire }) {
 
   return (
     <g className="group">
-      {value === 1 && (
-        <path d={d} fill="none" stroke={color} strokeWidth={7} opacity={0.22} />
+      {paint.glow && (
+        <path d={d} fill="none" stroke={color} strokeWidth={8} opacity={0.25} />
       )}
-      <path d={d} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" />
+      <path
+        d={d}
+        fill="none"
+        stroke={color}
+        strokeWidth={3}
+        strokeLinecap="round"
+        strokeDasharray={paint.dashed ? "6 4" : undefined}
+        opacity={paint.dim ? 0.75 : 1}
+      />
       <path
         d={d}
         fill="none"
