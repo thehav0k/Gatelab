@@ -53,6 +53,19 @@ The resolution table always yields a value, so the simulation stays
 deterministic and useful. `diagnostics.ts` separately tells the truth about the
 hardware. Do not conflate them.
 
+**6. A wire's route is cosmetic. Connectivity never depends on it.**
+Routes are *derived* state, like nets — computed from the topology, stored in
+the store, and deliberately kept out of the document and out of undo history
+(nobody wants to undo a bend). If the router cannot find a path, the wire is
+still a wire, its net is still merged, and the simulation is untouched; the
+canvas draws a dashed air-wire and says so.
+
+The router is A\* over `(x, y, incoming-direction)`, **not** Lee's algorithm or
+any other BFS. BFS is optimal only when every edge costs the same, and a bend
+penalty makes the graph weighted — so a FIFO queue returns a shortest-*length*
+path with an arbitrary number of jogs. "Is this step a bend?" depends on how you
+arrived, which is why the direction is part of the state.
+
 ## The MSB contract
 
 For variable `variables[i]` of an n-variable function, its bit inside minterm

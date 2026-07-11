@@ -20,6 +20,7 @@ import {
 } from "@/lib/simulation/netlist";
 import type { GateOp } from "@/lib/simulation/logic";
 import { arityOf } from "@/lib/simulation/parts";
+import { routeAll, type Route } from "@/lib/simulation/router";
 import { simStore } from "./sim-store";
 
 /**
@@ -47,6 +48,15 @@ interface CircuitState {
   pendingPin: PinRef | null;
   index: NetIndex | null;
   diagnostics: readonly Diagnostic[];
+  /**
+   * Wire id -> its routed path, or null when no route exists.
+   *
+   * DERIVED, exactly like the nets — and deliberately NOT stored in the document.
+   * A route is cosmetic: it must never enter undo history (nobody wants to undo a
+   * bend), and connectivity must never depend on it. A wire that fails to route is
+   * still a wire; the canvas just draws it straight.
+   */
+  routes: ReadonlyMap<string, Route | null>;
 
   past: CircuitDocument[];
   future: CircuitDocument[];
@@ -104,6 +114,7 @@ function defaultLabel(doc: CircuitDocument, node: NewNode): string {
 function simulate(doc: CircuitDocument): {
   index: NetIndex;
   diagnostics: Diagnostic[];
+  routes: ReadonlyMap<string, Route | null>;
 } {
   const { index, netlist } = elaborate(doc);
 
@@ -127,20 +138,29 @@ function simulate(doc: CircuitDocument): {
     tick: simStore.getState().tick + 1,
   });
 
-  return { index, diagnostics };
+  // Routing is derived from the same topology, and runs on the same pass. Wires
+  // of one net share an id so the router can merge them into a common trunk
+  // instead of running them alongside each other.
+  const { paths } = routeAll(doc, (wire) => {
+    const netId = index.netOfPin.get(pinKey(wire.a));
+    return netId ? (index.ordinalOf.get(netId) ?? 0) + 1 : 0;
+  });
+
+  return { index, diagnostics, routes: paths };
 }
 
 export const useCircuitStore = create<CircuitState>()((set, get) => {
   /** Commit a topology change: push undo, re-simulate, clear redo. */
   const commit = (doc: CircuitDocument): void => {
     const { doc: prev, past } = get();
-    const { index, diagnostics } = simulate(doc);
+    const { index, diagnostics, routes } = simulate(doc);
     set({
       doc,
       past: [...past, prev].slice(-100),
       future: [],
       index,
       diagnostics,
+      routes,
     });
   };
 
@@ -150,6 +170,7 @@ export const useCircuitStore = create<CircuitState>()((set, get) => {
     pendingPin: null,
     index: null,
     diagnostics: [],
+    routes: new Map(),
     past: [],
     future: [],
 
@@ -238,27 +259,28 @@ export const useCircuitStore = create<CircuitState>()((set, get) => {
     },
 
     load: (doc) => {
-      const { index, diagnostics } = simulate(doc);
-      set({ doc, index, diagnostics, past: [], future: [], selection: [], pendingPin: null });
+      const { index, diagnostics, routes } = simulate(doc);
+      set({ doc, index, diagnostics, routes, past: [], future: [], selection: [], pendingPin: null });
     },
 
     clear: () => {
       const doc = emptyDocument();
-      const { index, diagnostics } = simulate(doc);
-      set({ doc, index, diagnostics, past: [], future: [], selection: [], pendingPin: null });
+      const { index, diagnostics, routes } = simulate(doc);
+      set({ doc, index, diagnostics, routes, past: [], future: [], selection: [], pendingPin: null });
     },
 
     undo: () => {
       const { past, doc, future } = get();
       const prev = past[past.length - 1];
       if (!prev) return;
-      const { index, diagnostics } = simulate(prev);
+      const { index, diagnostics, routes } = simulate(prev);
       set({
         doc: prev,
         past: past.slice(0, -1),
         future: [doc, ...future],
         index,
         diagnostics,
+        routes,
         selection: [],
         pendingPin: null,
       });
@@ -268,13 +290,14 @@ export const useCircuitStore = create<CircuitState>()((set, get) => {
       const { future, doc, past } = get();
       const next = future[0];
       if (!next) return;
-      const { index, diagnostics } = simulate(next);
+      const { index, diagnostics, routes } = simulate(next);
       set({
         doc: next,
         past: [...past, doc],
         future: future.slice(1),
         index,
         diagnostics,
+        routes,
         selection: [],
         pendingPin: null,
       });

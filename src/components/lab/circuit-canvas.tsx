@@ -161,9 +161,44 @@ export function CircuitCanvas() {
 // Wires
 // ---------------------------------------------------------------------------
 
+/** Corner radius on wire bends. Purely cosmetic; real jumpers do not fold sharp. */
+const BEND_R = 5;
+
+/** Round the corners of an orthogonal polyline. */
+function orthPath(points: readonly Point[]): string {
+  if (points.length < 2) return "";
+  const first = points[0] as Point;
+  let d = `M ${first.x} ${first.y}`;
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1] as Point;
+    const cur = points[i] as Point;
+    const next = points[i + 1] as Point;
+
+    const inLen = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+    const outLen = Math.hypot(next.x - cur.x, next.y - cur.y);
+    const r = Math.min(BEND_R, inLen / 2, outLen / 2);
+    if (r < 1) {
+      d += ` L ${cur.x} ${cur.y}`;
+      continue;
+    }
+
+    const ax = cur.x - Math.sign(cur.x - prev.x) * r;
+    const ay = cur.y - Math.sign(cur.y - prev.y) * r;
+    const bx = cur.x + Math.sign(next.x - cur.x) * r;
+    const by = cur.y + Math.sign(next.y - cur.y) * r;
+
+    d += ` L ${ax} ${ay} Q ${cur.x} ${cur.y} ${bx} ${by}`;
+  }
+
+  const last = points[points.length - 1] as Point;
+  return `${d} L ${last.x} ${last.y}`;
+}
+
 function WireLine({ wire }: { wire: Wire }) {
   const doc = useCircuitStore((s) => s.doc);
   const deleteWire = useCircuitStore((s) => s.deleteWire);
+  const route = useCircuitStore((s) => s.routes.get(wire.id));
   // Subscribes to THIS wire's net only. A switch flip re-renders just the wires
   // whose own value changed, not all of them.
   const value = useNetValue(wire.a);
@@ -175,19 +210,30 @@ function WireLine({ wire }: { wire: Wire }) {
   const a = pinPos(na, wire.a.pin);
   const b = pinPos(nb, wire.b.pin);
 
-  // Orthogonal-ish routing: out, across, in. Good enough until the M6 router.
-  const mid = (a.x + b.x) / 2;
-  const d = `M ${a.x} ${a.y} L ${mid} ${a.y} L ${mid} ${b.y} L ${b.x} ${b.y}`;
+  // A route is cosmetic (see router.ts). When there is none, the wire still
+  // exists and still conducts — we just draw it as a dashed straight air-wire and
+  // say so, rather than pretending it isn't there.
+  const unrouted = !route;
+  const d = route ? orthPath(route) : `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
   const color = logicColor(value);
 
   return (
     <g className="group">
       {/* The glow is a thick translucent halo UNDER a bright core — not an SVG
           filter. Sixty simultaneous feGaussianBlurs would tank the frame rate. */}
-      {value === 1 && (
+      {value === 1 && !unrouted && (
         <path d={d} fill="none" stroke={color} strokeWidth={7} opacity={0.25} />
       )}
-      <path d={d} fill="none" stroke={color} strokeWidth={2} />
+      <path
+        d={d}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        strokeDasharray={unrouted ? "5 4" : undefined}
+        opacity={unrouted ? 0.6 : 1}
+      />
       {/* A 2px stroke is unclickable. This invisible fat copy is the hit target. */}
       <path
         d={d}
@@ -200,7 +246,11 @@ function WireLine({ wire }: { wire: Wire }) {
           deleteWire(wire.id);
         }}
       >
-        <title>Click to delete this wire</title>
+        <title>
+          {unrouted
+            ? "No clean route — connected, but drawn straight. Click to delete."
+            : "Click to delete this wire"}
+        </title>
       </path>
     </g>
   );
