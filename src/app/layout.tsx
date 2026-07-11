@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Geist, Geist_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,12 @@ export const metadata: Metadata = {
     url: "https://gatelab-online.vercel.app",
     siteName: "Gatelab",
     type: "website",
+  },
+  // Emits <meta name="google-site-verification" ...> into <head>. Going through
+  // Next's metadata rather than hand-writing the tag keeps it deduplicated and
+  // out of the way of the streaming head.
+  verification: {
+    google: "58NCdf8BCcG_wKTDjHdItVN5e43uO2y__vdAgtrmX6I",
   },
 };
 
@@ -60,6 +67,7 @@ export default function RootLayout({
             <Toaster />
           </TooltipProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
