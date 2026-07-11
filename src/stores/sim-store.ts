@@ -1,0 +1,72 @@
+"use client";
+
+import { createStore, useStore } from "zustand";
+import { LZ, type Logic } from "@/lib/simulation/logic";
+import { pinKey, type NetId, type PinRef } from "@/lib/simulation/netlist";
+
+/**
+ * The high-frequency store: net values.
+ *
+ * Deliberately a VANILLA zustand store, not a hook-first one. The point is that
+ * it can be read from outside React entirely, so the canvas can repaint wire
+ * colours without a single React render.
+ *
+ * Why this is separate from the circuit store at all: if topology and values
+ * lived together and components subscribed broadly, flipping one switch would
+ * re-render every SVG node on the board. Here, a component subscribes to ONE
+ * net (`useNetValue`), so a switch flip re-renders only the handful of elements
+ * whose own value actually changed.
+ */
+
+interface SimStoreState {
+  values: Uint8Array;
+  settled: boolean;
+  netOfPin: ReadonlyMap<string, NetId>;
+  ordinalOf: ReadonlyMap<NetId, number>;
+  /** Bumped on every simulation pass, for anything that wants a coarse signal. */
+  tick: number;
+}
+
+export const simStore = createStore<SimStoreState>(() => ({
+  values: new Uint8Array(0),
+  settled: true,
+  netOfPin: new Map(),
+  ordinalOf: new Map(),
+  tick: 0,
+}));
+
+/** The value on a pin. Subscribes to that pin's net ONLY. */
+export function useNetValue(ref: PinRef | null): Logic {
+  return useStore(simStore, (s) => {
+    if (!ref) return LZ;
+    const net = s.netOfPin.get(pinKey(ref));
+    if (net === undefined) return LZ;
+    const ordinal = s.ordinalOf.get(net);
+    if (ordinal === undefined) return LZ;
+    return (s.values[ordinal] ?? LZ) as Logic;
+  });
+}
+
+/** Read a pin's value without subscribing — for event handlers and rAF loops. */
+export function peekNetValue(ref: PinRef): Logic {
+  const s = simStore.getState();
+  const net = s.netOfPin.get(pinKey(ref));
+  if (net === undefined) return LZ;
+  const ordinal = s.ordinalOf.get(net);
+  if (ordinal === undefined) return LZ;
+  return (s.values[ordinal] ?? LZ) as Logic;
+}
+
+/** The CSS custom property for a logic level. Raw --logic-* token, not --color-*. */
+export function logicColor(v: Logic): string {
+  switch (v) {
+    case 1:
+      return "var(--logic-high)";
+    case 0:
+      return "var(--logic-low)";
+    case 2:
+      return "var(--logic-z)";
+    default:
+      return "var(--logic-x)";
+  }
+}
