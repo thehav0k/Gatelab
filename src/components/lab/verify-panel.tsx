@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo } from "react";
-import Link from "next/link";
 import { CircleCheck, Lightbulb, OctagonX } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useExpected, useSpecStore } from "@/stores/spec-store";
+import { TargetInput } from "./target-input";
 import { verify } from "@/lib/simulation/verify";
 import { LOGIC_NAMES, type Logic } from "@/lib/simulation/logic";
 import { DONT_CARE } from "@/lib/core-engine/types";
@@ -29,26 +29,26 @@ export function VerifyPanel() {
     [doc, expected],
   );
 
-  if (!expected || !source) {
+  // The target is set HERE, in the lab. It no longer requires a trip through the
+  // theory workspace — see target-input.tsx.
+  if (!expected || !source || !result) {
     return (
-      <p className="text-muted-foreground p-3 text-sm">
-        Minimize a function in the{" "}
-        <Link href="/theory" className="text-foreground underline underline-offset-4">
-          theory workspace
-        </Link>{" "}
-        and send it here, and this panel will check your circuit against it row
-        by row.
-      </p>
+      <div>
+        <TargetInput />
+        {source && !expected && (
+          <p className="text-destructive px-3 pb-3 text-xs">
+            That target will not parse. Fix it above.
+          </p>
+        )}
+      </div>
     );
   }
 
-  if (!result) return null;
-
   return (
     <div className="space-y-3 p-3">
-      <p className="text-muted-foreground font-mono text-xs break-words">
-        {source}
-      </p>
+      <div className="-mx-3 -mt-3 border-b">
+        <TargetInput />
+      </div>
 
       {result.error ? (
         <Alert>

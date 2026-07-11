@@ -26,7 +26,12 @@ import type { GateOp } from "@/lib/simulation/logic";
 import { arityOf } from "@/lib/simulation/parts";
 import { routeAll, type Route } from "@/lib/simulation/router";
 import { placeOnBreadboard } from "@/lib/simulation/place";
-import { holeKey, stripOf, type HoleRef } from "@/lib/simulation/breadboard";
+import {
+  holeKey,
+  stripOf,
+  type BreadboardSpec,
+  type HoleRef,
+} from "@/lib/simulation/breadboard";
 import { simStore } from "./sim-store";
 
 /**
@@ -79,8 +84,19 @@ interface CircuitState {
   pendingHole: HoleRef | null;
   cancelWire: () => void;
   deleteWire: (id: WireId) => void;
+  /**
+   * The SCHEMATIC this board was seated from, kept so the view can switch back.
+   *
+   * Going to the breadboard is a *realization*, and it throws information away —
+   * the schematic's layout has no counterpart on a board. So rather than try to
+   * reverse it (which would have to invent a layout the circuit never had), we
+   * simply keep the original and hand it back.
+   */
+  schematic: CircuitDocument | null;
   /** Re-seat the current schematic onto a real breadboard. */
-  toBreadboard: () => readonly string[];
+  toBreadboard: (spec?: BreadboardSpec) => readonly string[];
+  /** Return to the schematic this board came from. */
+  toSchematic: () => boolean;
 
   load: (doc: CircuitDocument) => void;
   clear: () => void;
@@ -188,6 +204,7 @@ export const useCircuitStore = create<CircuitState>()(
     index: null,
     diagnostics: [],
     routes: new Map(),
+    schematic: null,
     past: [],
     future: [],
 
@@ -293,13 +310,20 @@ export const useCircuitStore = create<CircuitState>()(
       });
     },
 
-    toBreadboard: () => {
+    toBreadboard: (spec) => {
       const { doc } = get();
       if (doc.board) return [];
-      const { doc: placed, unplaced } = placeOnBreadboard(doc);
+
+      const { doc: placed, unplaced } = spec
+        ? placeOnBreadboard(doc, spec)
+        : placeOnBreadboard(doc);
       const { index, diagnostics, routes } = simulate(placed);
       set({
         doc: placed,
+        // Keep the schematic. Seating is a realization, not a translation — the
+        // board has no memory of the layout it came from, so the only honest way
+        // back is to have kept it.
+        schematic: doc,
         index,
         diagnostics,
         routes,
@@ -310,6 +334,26 @@ export const useCircuitStore = create<CircuitState>()(
         pendingHole: null,
       });
       return unplaced;
+    },
+
+    toSchematic: () => {
+      const { schematic, doc } = get();
+      if (!doc.board) return true; // already there
+      if (!schematic) return false; // built on the board; there is nothing to go back to
+
+      const { index, diagnostics, routes } = simulate(schematic);
+      set({
+        doc: schematic,
+        index,
+        diagnostics,
+        routes,
+        past: [],
+        future: [],
+        selection: [],
+        pendingPin: null,
+        pendingHole: null,
+      });
+      return true;
     },
 
     cancelWire: () => set({ pendingPin: null, pendingHole: null }),
@@ -377,7 +421,7 @@ export const useCircuitStore = create<CircuitState>()(
        * ghost-connection failure the invariants exist to prevent. Undo history is
        * dropped too: nobody expects to reopen a tab and undo yesterday.
        */
-      partialize: (s) => ({ doc: s.doc }),
+      partialize: (s) => ({ doc: s.doc, schematic: s.schematic }),
 
       /**
        * Rehydration must RE-DERIVE, not restore. The document is plain JSON, so it

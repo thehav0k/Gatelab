@@ -20,7 +20,7 @@ export function SiteHeader() {
       <div className="flex h-14 items-center gap-6 px-4">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <CircuitBoard className="text-logic-high size-5" />
-          <span>DigiLab Studio</span>
+          <span>Gatelab</span>
         </Link>
 
         <nav className="flex items-center gap-1">

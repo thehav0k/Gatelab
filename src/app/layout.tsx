@@ -11,7 +11,7 @@ const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "DigiLab Studio",
+  title: "Gatelab",
   description:
     "Digital logic design lab assistant — Boolean minimization, K-maps, and a 74xx TTL circuit sandbox.",
 };

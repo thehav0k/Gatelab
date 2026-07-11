@@ -8,6 +8,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { IC_LIBRARY } from "@/lib/simulation/ic-library";
+import { allowsGate, allowsPart } from "@/lib/simulation/constraints";
+import { useConstraint } from "@/stores/workspace-store";
 import { gateNode, useCircuitStore } from "@/stores/circuit-store";
 import { GATE_LABELS } from "@/lib/simulation/parts";
 import type { GateOp } from "@/lib/simulation/logic";
@@ -41,12 +43,28 @@ const nextIcDrop = () => {
 
 export function Palette() {
   const addNode = useCircuitStore((s) => s.addNode);
+  const constraint = useConstraint();
+
+  // You cannot place what you are not allowed to use. Filtering the palette makes
+  // the rule DISCOVERABLE — a constraint you find out you broke afterwards is a
+  // grade, not a lesson.
+  const gates = GATES.filter((op) => allowsGate(constraint, op));
+  const parts = IC_LIBRARY.filter((def) => allowsPart(constraint, def.part));
 
   return (
     <div className="space-y-4 p-3">
+      {constraint.id !== "none" && (
+        <div className="bg-muted/60 rounded-md border p-2">
+          <p className="text-xs font-medium">{constraint.name}</p>
+          <p className="text-muted-foreground mt-0.5 text-[10px] leading-snug">
+            {constraint.description}
+          </p>
+        </div>
+      )}
+
       <Section title="Gates">
         <div className="grid grid-cols-2 gap-1.5">
-          {GATES.map((op) => (
+          {gates.map((op) => (
             <Button
               key={op}
               variant="outline"
@@ -87,7 +105,7 @@ export function Palette() {
 
       <Section title="74xx TTL">
         <div className="grid grid-cols-2 gap-1.5">
-          {IC_LIBRARY.map((def) => (
+          {parts.map((def) => (
             <Tooltip key={def.part}>
               <TooltipTrigger asChild>
                 <Button

@@ -21,7 +21,7 @@ export function FaultPanel() {
 
   if (nodeCount === 0) {
     return (
-      <p className="text-muted-foreground p-3 text-sm">
+      <p className="text-muted-foreground text-sm">
         Add a gate from the palette to get started.
       </p>
     );
@@ -29,7 +29,7 @@ export function FaultPanel() {
 
   if (diagnostics.length === 0) {
     return (
-      <Alert className="m-3 w-auto">
+      <Alert>
         <CircleCheck className="text-logic-high" />
         <AlertTitle>No faults</AlertTitle>
         <AlertDescription>
@@ -40,7 +40,7 @@ export function FaultPanel() {
   }
 
   return (
-    <div className="space-y-2 p-3">
+    <div className="space-y-2">
       {diagnostics.map((d, i) => (
         <FaultAlert key={`${d.code}-${i}`} diagnostic={d} />
       ))}

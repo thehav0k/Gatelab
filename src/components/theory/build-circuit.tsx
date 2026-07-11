@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useSpecStore } from "@/stores/spec-store";
+import { useConstraint } from "@/stores/workspace-store";
 import {
   compareStrategies,
   describeDesign,
@@ -39,7 +40,14 @@ export function BuildCircuit({ min, variables, fn, source }: Props) {
   const router = useRouter();
   const load = useCircuitStore((s) => s.load);
   const setSpec = useSpecStore((s) => s.setSpec);
-  const [strategy, setStrategy] = useState<Strategy>("mixed");
+  const constraint = useConstraint();
+
+  // The constraint is the exercise. If the rule says NAND-only, "build it for me"
+  // must produce a NAND-only circuit — a generator that quietly ignores the rule
+  // makes the rule worthless.
+  const [override, setOverride] = useState<Strategy | null>(null);
+  const strategy: Strategy = override ?? constraint.strategy;
+  const locked = constraint.id !== "none";
 
   const { designs, constant } = useMemo(() => {
     const nl = synthesize(min.expression, variables);
@@ -58,6 +66,7 @@ export function BuildCircuit({ min, variables, fn, source }: Props) {
 
   const best = designs[0];
   const chosen = designs.find((d) => d.strategy === strategy) ?? best;
+  const setStrategy = (s: Strategy) => setOverride(s);
 
   const build = () => {
     if (!chosen) return;
@@ -121,6 +130,15 @@ export function BuildCircuit({ min, variables, fn, source }: Props) {
         <ClipboardCheck />
         Check a circuit I build myself
       </Button>
+
+      {locked && (
+        <p className="text-muted-foreground text-xs">
+          <span className="text-foreground font-medium">{constraint.name}</span> is
+          active, so the circuit will be built with{" "}
+          <span className="font-mono">{constraint.parts.join(", ")}</span> only. Pick
+          another row above to override it for this build.
+        </p>
+      )}
 
       <p className="text-muted-foreground text-xs">
         Every generated chip gets pin 14 wired to +5V and pin 7 to GND — the step

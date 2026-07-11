@@ -1,4 +1,4 @@
-# DigiLab Studio
+# Gatelab
 
 A client-side digital logic design lab assistant. Two modules — a Boolean
 minimization workspace (`/theory`) and a 74xx TTL circuit sandbox (`/lab`) —
@@ -77,6 +77,14 @@ penalty makes the graph weighted — so a FIFO queue returns a shortest-*length*
 path with an arbitrary number of jogs. "Is this step a bend?" depends on how you
 arrived, which is why the direction is part of the state.
 
+**7. The component constraint is part of the problem, not a lint.**
+"Implement this with NAND only" IS the exercise. So the rule is chosen before you
+build: the palette narrows to match (you cannot place what you may not use), and
+the synthesizer is steered by it (`constraint.strategy`), so "build it for me"
+obeys the rule rather than apologising for breaking it. `violations()` reports
+anything already on the board that a newly-chosen rule forbids — switching rules
+mid-build must neither silently invalidate the work nor silently bless it.
+
 ## The MSB contract
 
 For variable `variables[i]` of an n-variable function, its bit inside minterm
@@ -84,6 +92,14 @@ index `m` is `(m >>> (n - 1 - i)) & 1`. **`variables[0]` is the most significant
 bit.** This is the contract between the parser, the truth table, the QM cube
 bitmasks, and the K-map Gray code. Use the `bitOf` / `varMask` helpers in
 `src/lib/core-engine/types.ts` — never hand-roll the shift anywhere else.
+
+**And a variable's bit is decided by its position IN THE FUNCTION, never by its
+position in the alphabet.** The netlist sorts input switches by label; a function
+lists its variables in declaration order, and `F(S, A, B)` is the natural way to
+write a multiplexer. Lining those two up positionally checked every row against
+the wrong input combination and reported a *correct* mux as wrong — the single
+most damaging thing the verification bridge can do. `verify()` builds an explicit
+switch → variable-index map; do not shortcut it.
 
 ## Testing
 

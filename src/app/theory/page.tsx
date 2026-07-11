@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { ExpressionInput } from "@/components/theory/expression-input";
 import { TruthTable } from "@/components/theory/truth-table";
 import { FunctionSummary } from "@/components/theory/function-summary";
@@ -8,6 +9,7 @@ import { KMapGrid } from "@/components/theory/kmap-grid";
 import { QmTrace } from "@/components/theory/qm-trace";
 import { MinimalForm } from "@/components/theory/minimal-form";
 import { BuildCircuit } from "@/components/theory/build-circuit";
+import { ConstraintMenu } from "@/components/lab/constraint-menu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,10 +21,13 @@ import { canonicalPos, canonicalSop } from "@/lib/core-engine/canonical";
 import type { Form } from "@/lib/core-engine/minimizer";
 import { DONT_CARE, type TruthValue } from "@/lib/core-engine/types";
 
-const INITIAL = "F(A,B,C,D) = Σm(0,1,2,5,6,7,8,9,10,14)";
-
 export default function TheoryPage() {
-  const [source, setSource] = useState(INITIAL);
+  // The expression lives in a PERSISTED store, not in local state. A page's
+  // useState dies the moment you navigate away, so walking to the lab and back
+  // used to silently throw away whatever you had typed. It is a document, not a
+  // widget.
+  const source = useWorkspaceStore((s) => s.theorySource);
+  const setSource = useWorkspaceStore((s) => s.setTheorySource);
   const [form, setForm] = useState<Form>("sop");
   // One highlight, shared by the K-map, the PI chart, and the minimal form —
   // hovering any one of them lights the other two.
@@ -43,7 +48,7 @@ export default function TheoryPage() {
         formatSigma(fn.name, fn.variables, minterms(edited), dontCares(edited)),
       );
     },
-    [analysis],
+    [analysis, setSource],
   );
 
   const min = analysis?.[form] ?? null;
@@ -51,14 +56,20 @@ export default function TheoryPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Theoretical Workspace
-        </h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          Type an expression or a sum of minterms. The K-map loops are the prime
-          implicants Quine–McCluskey found — hover either to light up the other.
-        </p>
+      <header className="mb-6 flex items-start gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Theoretical Workspace
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Type an expression or a sum of minterms. The K-map loops are the prime
+            implicants Quine–McCluskey found — hover either to light up the other.
+          </p>
+        </div>
+        {/* The rule governs BOTH workspaces, so it is reachable from both. */}
+        <div className="ml-auto">
+          <ConstraintMenu />
+        </div>
       </header>
 
       <ExpressionInput

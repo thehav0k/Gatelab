@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { logicColor, useEndpointValue } from "@/stores/sim-store";
 import { LOGIC_NAMES, type Logic } from "@/lib/simulation/logic";
@@ -20,8 +20,15 @@ import {
   type BreadboardSpec,
   type HoleRef,
 } from "@/lib/simulation/breadboard";
-import { holeEnd, type CircuitNode, type Point, type Wire } from "@/lib/simulation/netlist";
+import { holeEnd, type CircuitNode, type Wire } from "@/lib/simulation/netlist";
 import { getIc } from "@/lib/simulation/ic-library";
+import { useViewBox } from "@/hooks/use-viewbox";
+import { Button } from "@/components/ui/button";
+import { Maximize2 } from "lucide-react";
+
+/** How many pins a seated node has — an IC's package, or 1 for anything else. */
+const pinCount = (node: CircuitNode): number =>
+  node.kind === "ic" ? (getIc(node.part)?.pins.length ?? 14) : 1;
 
 const RAIL_ROWS: BoardRow[] = ["+top", "-top", "+bottom", "-bottom"];
 
@@ -46,21 +53,39 @@ export function BreadboardView() {
   const cancelWire = useCircuitStore((s) => s.cancelWire);
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
 
-  const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<HoleRef | null>(null);
-
-  const toBoard = useCallback((e: { clientX: number; clientY: number }): Point => {
-    const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
-    const rect = svg.getBoundingClientRect();
-    const vb = svg.viewBox.baseVal;
-    return {
-      x: vb.x + ((e.clientX - rect.left) / rect.width) * vb.width,
-      y: vb.y + ((e.clientY - rect.top) / rect.height) * vb.height,
-    };
-  }, []);
-
   const nodes = useMemo(() => Object.values(doc.nodes), [doc.nodes]);
+
+  /**
+   * FIT THE CAMERA TO THE CIRCUIT, not to the board.
+   *
+   * A full-size breadboard is 63 columns. A three-chip circuit uses about 25 of
+   * them, and framing all 63 squeezed the whole thing into an unreadable
+   * letterbox with half the picture empty. So the viewBox is cropped to the
+   * columns actually in use — while the BOARD stays a real 63-column board. We
+   * are moving the camera, not shrinking the hardware.
+   */
+  const natural = useMemo(() => {
+    const h = boardHeight();
+    if (!spec) return { x: 0, y: 0, w: 800, h };
+
+    let maxCol = 10;
+    for (const node of nodes) {
+      const col = Math.round(node.pos.x);
+      const span = node.kind === "ic" ? pinCount(node) / 2 : 1;
+      maxCol = Math.max(maxCol, col + span);
+    }
+    for (const wire of Object.values(doc.wires)) {
+      for (const end of [wire.a, wire.b]) {
+        if (end.kind === "hole") maxCol = Math.max(maxCol, end.ref.col);
+      }
+    }
+    const cols = Math.min(spec.columns, maxCol + 3);
+    return { x: 0, y: 0, w: BOARD_PAD * 2 + cols * PITCH, h };
+  }, [spec, nodes, doc.wires]);
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const cam = useViewBox(natural, svgRef);
 
   if (!spec) return null;
 
@@ -68,17 +93,29 @@ export function BreadboardView() {
   const h = boardHeight();
 
   return (
+    <div className="relative h-full w-full">
     <svg
       ref={svgRef}
-      viewBox={`0 0 ${w} ${h}`}
+      viewBox={cam.viewBox}
       className="bg-card h-full w-full touch-none rounded-md border"
+      onWheel={cam.onWheel}
+      onPointerDown={(e) => {
+        // Right/middle button, or a modifier, pans. A plain click plugs a jumper.
+        if (e.button !== 0 || e.shiftKey) cam.startPan(e.clientX, e.clientY);
+      }}
       onPointerMove={(e) => {
-        const p = toBoard(e);
+        if (cam.movePan(e.clientX, e.clientY)) return;
+        const p = cam.toView(e.clientX, e.clientY);
         setHover(holeAt(spec, p.x, p.y));
       }}
-      onPointerLeave={() => setHover(null)}
+      onPointerUp={() => cam.endPan()}
+      onPointerLeave={() => {
+        cam.endPan();
+        setHover(null);
+      }}
+      onContextMenu={(e) => e.preventDefault()}
       onClick={(e) => {
-        const p = toBoard(e);
+        const p = cam.toView(e.clientX, e.clientY);
         const hole = holeAt(spec, p.x, p.y);
         if (hole) clickHole(hole);
         else cancelWire();
@@ -107,6 +144,7 @@ export function BreadboardView() {
       </defs>
 
       <rect width={w} height={h} rx={6} className="fill-muted/40 stroke-border" />
+      <rect width={w} height={h} fill="transparent" />
 
       <BoardBody spec={spec} />
 
@@ -148,6 +186,25 @@ export function BreadboardView() {
         />
       )}
     </svg>
+
+    <div className="absolute right-2 bottom-2 flex items-center gap-1">
+      <span className="text-muted-foreground bg-card/80 rounded px-1.5 py-0.5 font-mono text-[10px]">
+        {Math.round(cam.zoom * 100)}%
+      </span>
+      <Button
+        variant="outline"
+        size="icon"
+        className="size-7"
+        onClick={cam.reset}
+        title="Fit to circuit"
+      >
+        <Maximize2 className="size-3.5" />
+      </Button>
+    </div>
+    <p className="text-muted-foreground pointer-events-none absolute bottom-2 left-3 text-[10px]">
+      scroll to zoom · shift-drag or right-drag to pan
+    </p>
+    </div>
   );
 }
 

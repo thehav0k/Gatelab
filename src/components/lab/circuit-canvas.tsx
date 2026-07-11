@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { logicColor, useEndpointValue, useNetValue } from "@/stores/sim-store";
 import { LOGIC_NAMES } from "@/lib/simulation/logic";
@@ -16,7 +16,11 @@ import type {
 } from "@/lib/simulation/netlist";
 import { pinKey } from "@/lib/simulation/netlist";
 import { holePoint } from "@/lib/simulation/breadboard";
+import { footprint } from "@/lib/simulation/router";
 import { cn } from "@/lib/utils";
+import { useViewBox } from "@/hooks/use-viewbox";
+import { Button } from "@/components/ui/button";
+import { Maximize2 } from "lucide-react";
 
 const GRID = 8;
 const snap = (v: number): number => Math.round(v / GRID) * GRID;
@@ -38,8 +42,29 @@ export function CircuitCanvas() {
   const moveNode = useCircuitStore((s) => s.moveNode);
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
 
-  const svgRef = useRef<SVGSVGElement>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
+
+  /** Fit the camera to whatever is actually on the canvas. */
+  const bounds = useMemo(() => {
+    const nodes = Object.values(doc.nodes);
+    if (nodes.length === 0) return { x: 0, y: 0, w: 900, h: 560 };
+
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const n of nodes) {
+      const f = footprint(n);
+      x0 = Math.min(x0, f.x);
+      y0 = Math.min(y0, f.y);
+      x1 = Math.max(x1, f.x + f.w);
+      y1 = Math.max(y1, f.y + f.h);
+    }
+    const pad = 70;
+    const w = Math.max(520, x1 - x0 + pad * 2);
+    const h = Math.max(340, y1 - y0 + pad * 2);
+    return { x: x0 - pad, y: y0 - pad, w, h };
+  }, [doc.nodes]);
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const cam = useViewBox(bounds, svgRef);
 
   /**
    * Drag state lives in a REF, and the node's transform is written straight to
@@ -55,19 +80,15 @@ export function CircuitCanvas() {
     moved: boolean;
   } | null>(null);
 
-  const toCanvas = useCallback((e: { clientX: number; clientY: number }): Point => {
-    const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
-    const rect = svg.getBoundingClientRect();
-    const vb = svg.viewBox.baseVal;
-    return {
-      x: vb.x + ((e.clientX - rect.left) / rect.width) * vb.width,
-      y: vb.y + ((e.clientY - rect.top) / rect.height) * vb.height,
-    };
-  }, []);
+  const toCanvas = useCallback(
+    (e: { clientX: number; clientY: number }): Point => cam.toView(e.clientX, e.clientY),
+    [cam],
+  );
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {
+      if (cam.movePan(e.clientX, e.clientY)) return;
+
       const p = toCanvas(e);
       if (pendingPin) setCursor(p);
 
@@ -80,11 +101,13 @@ export function CircuitCanvas() {
       d.moved = true;
       d.el.setAttribute("transform", `translate(${next.x} ${next.y})`);
     },
-    [pendingPin, toCanvas],
+    [pendingPin, toCanvas, cam],
   );
 
   const onPointerUp = useCallback(
     (e: React.PointerEvent) => {
+      if (cam.endPan()) return;
+
       const d = drag.current;
       drag.current = null;
       if (!d || !d.moved) return;
@@ -95,19 +118,27 @@ export function CircuitCanvas() {
         y: snap(d.origin.y + (p.y - d.start.y)),
       });
     },
-    [moveNode, toCanvas],
+    [moveNode, toCanvas, cam],
   );
 
   return (
+    <div className="relative h-full w-full">
     <svg
       ref={svgRef}
-      viewBox="0 0 900 560"
+      viewBox={cam.viewBox}
       className="bg-card h-full w-full touch-none rounded-md border"
+      onWheel={cam.onWheel}
+      onPointerDown={(e) => {
+        // Dragging empty background pans the camera. Anything else is an edit.
+        if (e.target === svgRef.current || (e.target as Element).id === "grid-bg") {
+          cam.startPan(e.clientX, e.clientY);
+        }
+      }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerLeave={onPointerUp}
       onClick={(e) => {
-        if (e.target === svgRef.current) {
+        if (e.target === svgRef.current || (e.target as Element).id === "grid-bg") {
           select([]);
           cancelWire();
         }
@@ -118,7 +149,7 @@ export function CircuitCanvas() {
           <circle cx={0.5} cy={0.5} r={0.5} className="fill-muted-foreground/25" />
         </pattern>
       </defs>
-      <rect width="100%" height="100%" fill="url(#grid)" />
+      <rect id="grid-bg" x={-4000} y={-4000} width={9000} height={9000} fill="url(#grid)" />
 
       {/* Wires first, so nodes sit on top of them. */}
       {Object.values(doc.wires).map((wire) => (
@@ -155,6 +186,22 @@ export function CircuitCanvas() {
         />
       ))}
     </svg>
+
+    <div className="absolute right-2 bottom-2 flex items-center gap-1">
+      <span className="text-muted-foreground bg-card/80 rounded px-1.5 py-0.5 font-mono text-[10px]">
+        {Math.round(cam.zoom * 100)}%
+      </span>
+      <Button
+        variant="outline"
+        size="icon"
+        className="size-7"
+        onClick={cam.reset}
+        title="Fit to circuit"
+      >
+        <Maximize2 className="size-3.5" />
+      </Button>
+    </div>
+    </div>
   );
 }
 
