@@ -12,6 +12,7 @@ import {
   type CircuitDocument,
   type CircuitNode,
   type NetIndex,
+  type NodeDraft as SharedDraft,
   type NodeId,
   type PinRef,
   type Point,
@@ -32,16 +33,10 @@ import { simStore } from "./sim-store";
  * zundo would be machinery we do not need.
  */
 
-/**
- * A node before it has an id and a label.
- *
- * The Omit must DISTRIBUTE over the union — a plain `Omit<CircuitNode, ...>`
- * collapses the union to its common keys, so `state` and `rail` vanish and a
- * SwitchNode becomes indistinguishable from a RailNode.
- */
-type NodeDraft = CircuitNode extends infer T
-  ? T extends CircuitNode
-    ? Omit<T, "id" | "label"> & { label?: string }
+/** A node draft with the label optional too — the store invents one if omitted. */
+type NewNode = SharedDraft extends infer T
+  ? T extends SharedDraft
+    ? Omit<T, "label"> & { label?: string }
     : never
   : never;
 
@@ -56,7 +51,7 @@ interface CircuitState {
   past: CircuitDocument[];
   future: CircuitDocument[];
 
-  addNode: (node: NodeDraft) => NodeId;
+  addNode: (node: NewNode) => NodeId;
   moveNode: (id: NodeId, pos: Point) => void;
   deleteSelected: () => void;
   select: (ids: readonly NodeId[]) => void;
@@ -76,7 +71,7 @@ let counter = 0;
 const nextId = (prefix: string): string => `${prefix}${(counter += 1)}`;
 
 /** Default labels: switches get A, B, C…; everything else gets a typed serial. */
-function defaultLabel(doc: CircuitDocument, node: NodeDraft): string {
+function defaultLabel(doc: CircuitDocument, node: NewNode): string {
   const existing = Object.values(doc.nodes);
 
   if (node.kind === "switch") {

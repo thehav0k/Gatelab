@@ -112,6 +112,20 @@ export interface RailNode extends NodeBase {
 
 export type CircuitNode = GateNode | IcNode | SwitchNode | LedNode | RailNode;
 
+/**
+ * A node before it has an id.
+ *
+ * The Omit must DISTRIBUTE over the union. A plain `Omit<CircuitNode, "id">`
+ * collapses the union to its COMMON keys, so `state`, `rail`, `op` and `part`
+ * all silently vanish and a SwitchNode becomes indistinguishable from a
+ * RailNode. This has bitten twice; it lives here now.
+ */
+export type NodeDraft = CircuitNode extends infer T
+  ? T extends CircuitNode
+    ? Omit<T, "id">
+    : never
+  : never;
+
 // --- wires ------------------------------------------------------------------
 
 export interface Wire {

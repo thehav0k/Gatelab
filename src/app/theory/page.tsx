@@ -7,6 +7,7 @@ import { FunctionSummary } from "@/components/theory/function-summary";
 import { KMapGrid } from "@/components/theory/kmap-grid";
 import { QmTrace } from "@/components/theory/qm-trace";
 import { MinimalForm } from "@/components/theory/minimal-form";
+import { BuildCircuit } from "@/components/theory/build-circuit";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -79,26 +80,37 @@ export default function TheoryPage() {
             </Tabs>
           </div>
 
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle className="text-base">
-                Minimal {form === "sop" ? "SOP" : "POS"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <MinimalForm
-                min={min}
-                variables={analysis.fn.variables}
-                canonicalLiterals={literalCount(
-                  form === "sop"
-                    ? canonicalSop(analysis.fn)
-                    : canonicalPos(analysis.fn),
-                )}
-                highlighted={highlighted}
-                onHighlight={setHighlighted}
-              />
-            </CardContent>
-          </Card>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  Minimal {form === "sop" ? "SOP" : "POS"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MinimalForm
+                  min={min}
+                  variables={analysis.fn.variables}
+                  canonicalLiterals={literalCount(
+                    form === "sop"
+                      ? canonicalSop(analysis.fn)
+                      : canonicalPos(analysis.fn),
+                  )}
+                  highlighted={highlighted}
+                  onHighlight={setHighlighted}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Build it</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <BuildCircuit min={min} variables={analysis.fn.variables} />
+              </CardContent>
+            </Card>
+          </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <Card>
