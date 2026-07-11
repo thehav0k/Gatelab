@@ -3,6 +3,12 @@ import { L0, L1 } from "./logic";
 import { buildNetIndex, netOf, type CircuitDocument, type NetIndex, type NodeId } from "./netlist";
 import { cellsOf, pinsOf, powerOf } from "./parts";
 
+// Registers the 74xx parts into the registry that parts.ts reads through.
+// parts.ts cannot import the library itself (that would be a cycle), so the
+// registration is a load-time side effect and this is where it gets pulled in —
+// every path into the simulator goes through elaborate().
+import "./ic-library";
+
 /**
  * Flatten the document into something the solver can chew on: a geometry-free,
  * reference-free bag of typed arrays and plain objects.

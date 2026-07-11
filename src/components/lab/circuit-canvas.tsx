@@ -6,6 +6,7 @@ import { logicColor, useNetValue } from "@/stores/sim-store";
 import { LOGIC_NAMES } from "@/lib/simulation/logic";
 import { GateSymbol } from "./gate-symbol";
 import { GATE_W, IO_H, IO_W, GATE_LABELS, pinsOf } from "@/lib/simulation/parts";
+import { dipHeight, dipWidth, getIc } from "@/lib/simulation/ic-library";
 import type {
   CircuitNode,
   NodeId,
@@ -480,6 +481,11 @@ function RailBody({
   );
 }
 
+/**
+ * A real DIP package: notch on the left, pin 1 bottom-left, numbering running
+ * counter-clockwise. The numbers are not decoration — the whole point of the
+ * lab is that "connect pin 14 to +5V" means something you can act on.
+ */
 function IcBody({
   node,
   selected,
@@ -487,27 +493,78 @@ function IcBody({
   node: Extract<CircuitNode, { kind: "ic" }>;
   selected: boolean;
 }) {
-  // Filled in properly in M4, when the 74xx library lands.
+  const def = getIc(node.part);
+  if (!def) return null;
+
   const pins = pinsOf(node);
-  const width = 7 * 24;
-  const height = 3 * 24;
+  const width = dipWidth(pins.length);
+  const height = dipHeight();
+
   return (
     <g>
       <rect
         width={width}
         height={height}
         rx={3}
-        className={cn("fill-card stroke-foreground/70", selected && "stroke-ring stroke-2")}
+        className={cn(
+          "fill-muted stroke-foreground/70",
+          selected && "stroke-ring stroke-2",
+        )}
       />
+
+      {/* The orientation notch. Without it, "pin 1" is meaningless. */}
+      <path
+        d={`M 0 ${height / 2 - 8} A 8 8 0 0 0 0 ${height / 2 + 8} Z`}
+        className="fill-card stroke-foreground/70"
+      />
+
       <text
         x={width / 2}
-        y={height / 2 + 4}
+        y={height / 2 - 2}
         textAnchor="middle"
-        className="fill-foreground pointer-events-none font-mono text-xs"
+        className="fill-foreground pointer-events-none font-mono text-[13px] font-semibold"
       >
-        {node.label} · {node.part}
+        {def.part}
       </text>
-      <title>{pins.length} pins</title>
+      <text
+        x={width / 2}
+        y={height / 2 + 12}
+        textAnchor="middle"
+        className="fill-muted-foreground pointer-events-none font-mono text-[9px]"
+      >
+        {node.label}
+      </text>
+
+      {/* Pin numbers and names, printed on the package like the real thing. */}
+      {pins.map((spec) => {
+        const bottom = spec.offset.y > 0;
+        return (
+          <g key={spec.name} className="pointer-events-none">
+            <text
+              x={spec.offset.x}
+              y={bottom ? height - 6 : 11}
+              textAnchor="middle"
+              className="fill-muted-foreground font-mono text-[8px]"
+            >
+              {spec.number}
+            </text>
+            <text
+              x={spec.offset.x}
+              y={bottom ? height + 14 : -6}
+              textAnchor="middle"
+              className={cn(
+                "font-mono text-[8px]",
+                spec.dir === "pwr" && "fill-logic-high",
+                spec.dir === "gnd" && "fill-logic-low",
+                spec.dir === "out" && "fill-foreground/80",
+                spec.dir === "in" && "fill-muted-foreground",
+              )}
+            >
+              {spec.name}
+            </text>
+          </g>
+        );
+      })}
     </g>
   );
 }

@@ -1,7 +1,7 @@
 import type { SimNetlist } from "./elaborate";
 import { LX, isDefinite, type Logic } from "./logic";
 import { pinKey, type CircuitDocument, type NetIndex, type NodeId, type PinRef } from "./netlist";
-import { pinsOf, powerOf } from "./parts";
+import { cellsOf, pinsOf, powerOf } from "./parts";
 import type { SimState } from "./solver";
 
 /**
@@ -29,6 +29,7 @@ export type Diagnostic =
   | { code: "RAIL_SHORT"; severity: "error"; message: string; net: number }
   | { code: "UNPOWERED_IC"; severity: "error"; message: string; node: NodeId; missing: ("vcc" | "gnd")[] }
   | { code: "DANGLING_OUTPUT"; severity: "info"; message: string; pins: PinRef[]; net: number }
+  | { code: "UNUSED_GATE"; severity: "info"; message: string; node: NodeId; slots: number[] }
   | { code: "OSCILLATION"; severity: "error"; message: string; nets: number[]; period: number };
 
 export function diagnose(
@@ -40,6 +41,39 @@ export function diagnose(
   const out: Diagnostic[] = [];
   const labelOf = (ref: PinRef): string =>
     `${doc.nodes[ref.node]?.label ?? ref.node}.${ref.pin}`;
+
+  /**
+   * Spare gates in a package.
+   *
+   * A 7408 has four AND gates. Use one and the other three sit there with
+   * floating inputs and unconnected outputs — which is TRUE, but reporting it as
+   * five separate FLOATING_INPUT warnings and three DANGLING_OUTPUTs buries the
+   * one fault the student actually needs to see.
+   *
+   * A gate whose output drives nothing is not faulty, it is UNUSED. We say that
+   * once, as information, and suppress the per-pin noise for exactly those pins.
+   * (Tying spare TTL inputs off is still good practice, and the message says so —
+   * but it is advice, not an error.)
+   */
+  const unusedPins = new Set<string>();
+  const unusedSlots = new Map<NodeId, number[]>();
+
+  for (const node of Object.values(doc.nodes)) {
+    const templates = cellsOf(node);
+    if (templates.length < 2) continue; // a lone gate primitive is never "spare"
+
+    for (const t of templates) {
+      const outNet = index.netOfPin.get(pinKey({ node: node.id, pin: t.outputPin }));
+      const net = outNet && index.nets.find((n) => n.id === outNet);
+      if (!net || net.loads.length > 0) continue; // it feeds something: in use
+
+      unusedPins.add(pinKey({ node: node.id, pin: t.outputPin }));
+      for (const p of t.inputPins) {
+        unusedPins.add(pinKey({ node: node.id, pin: p }));
+      }
+      unusedSlots.set(node.id, [...(unusedSlots.get(node.id) ?? []), t.slot]);
+    }
+  }
 
   for (const net of index.nets) {
     const ordinal = index.ordinalOf.get(net.id) as number;
@@ -109,29 +143,49 @@ export function diagnose(
 
     // --- floating inputs ----------------------------------------------------
     // The most common lab mistake there is, and the one a boolean simulator
-    // physically cannot see.
-    if (net.drivers.length === 0 && net.loads.length > 0) {
+    // physically cannot see. Spare gates in a package are excluded — they are
+    // reported once, below, as UNUSED_GATE.
+    const floating = net.loads.filter((p) => !unusedPins.has(pinKey(p)));
+    if (net.drivers.length === 0 && floating.length > 0) {
       out.push({
         code: "FLOATING_INPUT",
         severity: "warning",
-        message: `${net.loads
+        message: `${floating
           .map(labelOf)
-          .join(", ")} ${net.loads.length === 1 ? "is" : "are"} floating — nothing drives this net. A floating TTL input is not a 0; it is undefined.`,
+          .join(", ")} ${floating.length === 1 ? "is" : "are"} floating — nothing drives this net. A floating TTL input is not a 0; it is undefined.`,
         net: ordinal,
-        pins: [...net.loads],
+        pins: floating,
       });
     }
 
     // --- an output going nowhere -------------------------------------------
-    if (strongDrivers.length > 0 && net.loads.length === 0 && net.pins.length === 1) {
+    const dangling = strongDrivers.filter((p) => !unusedPins.has(pinKey(p)));
+    if (dangling.length > 0 && net.loads.length === 0 && net.pins.length === 1) {
       out.push({
         code: "DANGLING_OUTPUT",
         severity: "info",
-        message: `${strongDrivers.map(labelOf).join(", ")} is not connected to anything.`,
+        message: `${dangling.map(labelOf).join(", ")} is not connected to anything.`,
         net: ordinal,
-        pins: [...strongDrivers],
+        pins: dangling,
       });
     }
+  }
+
+  // --- spare gates ----------------------------------------------------------
+  for (const [nodeId, slots] of unusedSlots) {
+    const node = doc.nodes[nodeId];
+    if (!node) continue;
+    out.push({
+      code: "UNUSED_GATE",
+      severity: "info",
+      message: `${node.label}${
+        node.kind === "ic" ? ` (${node.part})` : ""
+      }: gate${slots.length === 1 ? "" : "s"} ${slots.join(", ")} ${
+        slots.length === 1 ? "is" : "are"
+      } unused. On a real board you would tie their inputs to Vcc or GND rather than leave them floating.`,
+      node: nodeId,
+      slots,
+    });
   }
 
   // --- unpowered ICs --------------------------------------------------------

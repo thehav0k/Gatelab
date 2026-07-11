@@ -2,6 +2,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { IC_LIBRARY } from "@/lib/simulation/ic-library";
 import { gateNode, useCircuitStore } from "@/stores/circuit-store";
 import { GATE_LABELS } from "@/lib/simulation/parts";
 import type { GateOp } from "@/lib/simulation/logic";
@@ -24,6 +30,13 @@ const nextDrop = () => {
     x: 90 + (i % DROP_COLS) * DROP_DX,
     y: 60 + Math.floor(i / DROP_COLS) * DROP_DY,
   };
+};
+
+/** A DIP14 is 168x72 with pin labels above and below — it needs its own lane. */
+let icDropIndex = 0;
+const nextIcDrop = () => {
+  const i = icDropIndex++ % 4;
+  return { x: 120 + (i % 2) * 260, y: 200 + Math.floor(i / 2) * 140 };
 };
 
 export function Palette() {
@@ -67,6 +80,33 @@ export function Palette() {
           >
             LED
           </Button>
+        </div>
+      </Section>
+
+      <Separator />
+
+      <Section title="74xx TTL">
+        <div className="grid grid-cols-2 gap-1.5">
+          {IC_LIBRARY.map((def) => (
+            <Tooltip key={def.part}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="font-mono text-xs"
+                  onClick={() => addNode({ kind: "ic", part: def.part, pos: nextIcDrop() })}
+                >
+                  {def.part}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <p className="font-medium">{def.name}</p>
+                <p className="text-muted-foreground text-xs">
+                  Vcc on pin 14, GND on pin 7 — wire both, or it does nothing.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          ))}
         </div>
       </Section>
 
