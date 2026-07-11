@@ -50,7 +50,7 @@ const FACTS = [
 
 export default function Home() {
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-12">
+    <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-12">
       {/* --- hero -------------------------------------------------------------- */}
       <section className="grid items-center gap-10 md:grid-cols-[1.1fr_1fr]">
         <motion.div
@@ -96,7 +96,7 @@ export default function Home() {
       </section>
 
       {/* --- modules ------------------------------------------------------------ */}
-      <section className="mt-16 grid gap-4 sm:grid-cols-3">
+      <section className="mt-12 grid gap-4 sm:mt-16 sm:grid-cols-3">
         {MODULES.map(({ href, icon: Icon, title, blurb }, i) => (
           <motion.div
             key={href}
@@ -123,7 +123,7 @@ export default function Home() {
       </section>
 
       {/* --- what makes it different -------------------------------------------- */}
-      <section className="mt-16 grid gap-8 sm:grid-cols-3">
+      <section className="mt-12 grid gap-8 sm:mt-16 sm:grid-cols-3">
         {FACTS.map(({ icon: Icon, title, body }, i) => (
           <motion.div
             key={title}

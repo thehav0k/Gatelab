@@ -46,7 +46,7 @@ export default function TheoryPage() {
   const loops = analysis?.loops[form] ?? [];
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-6 py-6">
+    <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
       <header className="mb-4 flex flex-wrap items-start gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Theory</h1>
@@ -70,12 +70,12 @@ export default function TheoryPage() {
           {/* The answer, always visible. Whichever tab you are on, this is what you
               came for. */}
           <Card className="mt-5">
-            <CardHeader className="flex-row items-center justify-between gap-4 space-y-0">
+            <CardHeader className="flex-col items-start justify-between gap-3 space-y-0 sm:flex-row sm:items-center sm:gap-4">
               <CardTitle className="text-base">
                 Minimal {form === "sop" ? "SOP" : "POS"}
               </CardTitle>
               <Tabs value={form} onValueChange={(v) => setForm(v as Form)}>
-                <TabsList className="h-8">
+                <TabsList className="h-8 w-full sm:w-auto">
                   <TabsTrigger value="sop" className="text-xs">
                     Sum of products
                   </TabsTrigger>
@@ -99,7 +99,9 @@ export default function TheoryPage() {
           </Card>
 
           <Tabs defaultValue="derivation" className="mt-5">
-            <TabsList>
+            {/* Five tabs do not fit on a 390px screen. Scroll them rather than
+                clipping the last two off the edge, where nobody will find them. */}
+            <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
               <TabsTrigger value="derivation">How it was derived</TabsTrigger>
               <TabsTrigger value="table">Truth table</TabsTrigger>
               <TabsTrigger value="kmap">K-map</TabsTrigger>

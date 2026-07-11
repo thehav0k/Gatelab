@@ -121,7 +121,9 @@ export function EquationBuilder() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" size="sm">
-          <FunctionSquare /> From equation
+          <FunctionSquare />
+          <span className="hidden sm:inline">From equation</span>
+          <span className="sr-only sm:hidden">Build from an equation</span>
         </Button>
       </DialogTrigger>
 

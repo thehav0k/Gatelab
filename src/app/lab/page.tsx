@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { FileText, Redo2, Trash2, Undo2 } from "lucide-react";
+import { Boxes, FileText, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
 
 import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { BreadboardView } from "@/components/lab/breadboard-view";
@@ -22,9 +22,17 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useExpected } from "@/stores/spec-store";
+import { useIsCompact } from "@/hooks/use-media-query";
 
 export default function LabPage() {
   const undo = useCircuitStore((s) => s.undo);
@@ -46,7 +54,15 @@ export default function LabPage() {
   const hasSchematic = useCircuitStore((s) => s.schematic !== null);
   const hasNodes = useCircuitStore((s) => Object.keys(s.doc.nodes).length > 0);
 
-  const [showTiming, setShowTiming] = useState(true);
+  const compact = useIsCompact();
+  /**
+   * `null` means "nobody has chosen yet", which is NOT the same as "closed" —
+   * the default differs by screen. On a phone the waveform would eat a third of
+   * the canvas, and the canvas is the only thing that actually needs the room.
+   * Once the user touches it, their choice wins on both.
+   */
+  const [timingChoice, setTimingChoice] = useState<boolean | null>(null);
+  const showTiming = timingChoice ?? !compact;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -118,16 +134,105 @@ export default function LabPage() {
     }
   };
 
+  /**
+   * The workspace, on a phone.
+   *
+   * A 180px palette, a canvas and a 340px inspector do not fit side by side on a
+   * 390px screen, and the old fixed `grid-cols-[180px_1fr_340px]` did not even try
+   * — it just squeezed the canvas down to a sliver between two columns that were
+   * themselves too narrow to read.
+   *
+   * So below `lg` the two side columns become sheets. The canvas gets the whole
+   * screen, which is the only element that genuinely needs it, and the palette and
+   * the inspector are one tap away. The desktop layout is untouched.
+   */
+  const inspector = (
+    <Tabs
+      defaultValue={expected ? "verify" : "faults"}
+      className="flex h-full min-h-0 flex-col gap-0"
+    >
+      <CardHeader className="shrink-0 px-3 pt-3 pb-2">
+        <TabsList className="w-full">
+          <TabsTrigger value="faults" className="flex-1">
+            Faults
+            {errorCount > 0 && (
+              <Badge variant="destructive" className="ml-1.5 px-1.5">
+                {errorCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="verify" className="flex-1">
+            Verify
+          </TabsTrigger>
+        </TabsList>
+      </CardHeader>
+      <Separator />
+      <CardContent className="min-h-0 flex-1 px-0">
+        <ScrollArea className="h-full">
+          <TabsContent value="faults" className="p-3 pt-3">
+            <ConstraintViolations />
+            <FaultPanel />
+          </TabsContent>
+          <TabsContent value="verify">
+            <VerifyPanel />
+          </TabsContent>
+        </ScrollArea>
+      </CardContent>
+    </Tabs>
+  );
+
   return (
-    <div className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-[1800px] flex-col px-4 py-4">
+    <div className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-[1800px] flex-col px-3 py-3 sm:px-4 sm:py-4">
       {/* --- toolbar --------------------------------------------------------- */}
-      <header className="mb-3 flex flex-wrap items-center gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl font-semibold tracking-tight">Practical Lab</h1>
-          <p className="text-muted-foreground mt-0.5 truncate text-xs">{hint}</p>
+      <header className="mb-3 flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="min-w-0 flex-1 lg:flex-initial">
+          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
+            Practical Lab
+          </h1>
+          {/* The hint is a whole sentence. On a phone it would eat the toolbar. */}
+          <p className="text-muted-foreground mt-0.5 hidden truncate text-xs sm:block">
+            {hint}
+          </p>
         </div>
 
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:ml-auto">
+          {/* --- the two side panels, as sheets, below lg --- */}
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="lg:hidden">
+                <Boxes /> <span className="hidden sm:inline">Parts</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[280px] p-0">
+              <SheetHeader className="pb-0">
+                <SheetTitle>Parts</SheetTitle>
+              </SheetHeader>
+              <ScrollArea className="h-full">
+                <Palette />
+              </ScrollArea>
+            </SheetContent>
+          </Sheet>
+
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" size="sm" className="lg:hidden">
+                <Stethoscope />
+                <span className="hidden sm:inline">Check</span>
+                {errorCount > 0 && (
+                  <Badge variant="destructive" className="ml-1 px-1.5">
+                    {errorCount}
+                  </Badge>
+                )}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="right" className="flex w-[340px] flex-col p-0 sm:w-[380px]">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Faults and verification</SheetTitle>
+              </SheetHeader>
+              <div className="min-h-0 flex-1">{inspector}</div>
+            </SheetContent>
+          </Sheet>
+
           <ToggleGroup
             type="single"
             size="sm"
@@ -145,28 +250,31 @@ export default function LabPage() {
           <PresetMenu />
           <EquationBuilder />
 
-          <Separator orientation="vertical" className="h-6" />
+          <Separator orientation="vertical" className="hidden h-6 sm:block" />
 
           <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo}>
             <Undo2 />
+            <span className="sr-only">Undo</span>
           </Button>
           <Button variant="outline" size="sm" onClick={redo} disabled={!canRedo}>
             <Redo2 />
+            <span className="sr-only">Redo</span>
           </Button>
           <Button variant="outline" size="sm" onClick={clear}>
             <Trash2 />
+            <span className="sr-only">Clear</span>
           </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href="/report">
-              <FileText /> Report
+              <FileText /> <span className="hidden sm:inline">Report</span>
             </Link>
           </Button>
         </div>
       </header>
 
-      {/* --- workspace: fills the viewport, three columns, no page scroll ----- */}
-      <div className="grid min-h-0 flex-1 grid-cols-[180px_1fr_340px] gap-3">
-        <Card className="min-h-0 overflow-hidden py-0">
+      {/* --- workspace: fills the viewport, no page scroll -------------------- */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[180px_1fr_340px]">
+        <Card className="hidden min-h-0 overflow-hidden py-0 lg:block">
           <ScrollArea className="h-full">
             <Palette />
           </ScrollArea>
@@ -183,11 +291,11 @@ export default function LabPage() {
           <Card className="shrink-0 overflow-hidden py-0">
             <button
               type="button"
-              onClick={() => setShowTiming((v) => !v)}
+              onClick={() => setTimingChoice(!showTiming)}
               className="hover:bg-accent/50 flex w-full items-center gap-2 px-4 py-2 text-left"
             >
               <span className="text-sm font-medium">Timing</span>
-              <span className="text-muted-foreground text-xs">
+              <span className="text-muted-foreground hidden text-xs sm:inline">
                 unit-delay, Gray-code sweep
               </span>
               <span className="text-muted-foreground ml-auto text-xs">
@@ -197,7 +305,7 @@ export default function LabPage() {
             {showTiming && (
               <>
                 <Separator />
-                <CardContent className="max-h-[260px] overflow-auto px-0">
+                <CardContent className="max-h-[180px] overflow-auto px-0 sm:max-h-[260px]">
                   <WaveformPanel />
                 </CardContent>
               </>
@@ -205,40 +313,7 @@ export default function LabPage() {
           </Card>
         </div>
 
-        <Card className="min-h-0 overflow-hidden py-0">
-          <Tabs
-            defaultValue={expected ? "verify" : "faults"}
-            className="flex h-full flex-col gap-0"
-          >
-            <CardHeader className="shrink-0 pt-3 pb-2">
-              <TabsList className="w-full">
-                <TabsTrigger value="faults" className="flex-1">
-                  Faults
-                  {errorCount > 0 && (
-                    <Badge variant="destructive" className="ml-1.5 px-1.5">
-                      {errorCount}
-                    </Badge>
-                  )}
-                </TabsTrigger>
-                <TabsTrigger value="verify" className="flex-1">
-                  Verify
-                </TabsTrigger>
-              </TabsList>
-            </CardHeader>
-            <Separator />
-            <CardContent className="min-h-0 flex-1 px-0">
-              <ScrollArea className="h-full">
-                <TabsContent value="faults" className="p-3 pt-3">
-                  <ConstraintViolations />
-                  <FaultPanel />
-                </TabsContent>
-                <TabsContent value="verify">
-                  <VerifyPanel />
-                </TabsContent>
-              </ScrollArea>
-            </CardContent>
-          </Tabs>
-        </Card>
+        <Card className="hidden min-h-0 overflow-hidden py-0 lg:block">{inspector}</Card>
       </div>
     </div>
   );

@@ -39,7 +39,7 @@ export default function ReportPage() {
 
   if (!report) {
     return (
-      <div className="mx-auto max-w-2xl px-6 py-20 text-center">
+      <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 sm:py-20">
         <h1 className="text-2xl font-semibold tracking-tight">Nothing to report yet</h1>
         <p className="text-muted-foreground mt-3 text-sm">
           Minimize a function in the{" "}
@@ -55,7 +55,7 @@ export default function ReportPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8 print:max-w-none print:px-0 print:py-0">
+    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8 print:max-w-none print:px-0 print:py-0">
       <div className="no-print mb-6 flex items-center justify-between">
         <p className="text-muted-foreground text-sm">
           Everything below is recomputed from the engine — it is a derivation, not
