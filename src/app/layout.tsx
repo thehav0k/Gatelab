@@ -8,23 +8,44 @@ import { SiteHeader } from "@/components/shared/site-header";
 import { SiteFooter } from "@/components/shared/site-footer";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { KEYWORDS, SITE, jsonLd } from "@/lib/site";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
-const DESCRIPTION =
-  "Digital logic design lab assistant — Boolean minimization, K-maps, and a 74xx TTL circuit sandbox that checks the circuit you built against the algebra you derived.";
-
 export const metadata: Metadata = {
-  metadataBase: new URL("https://gatelab-online.vercel.app"),
-  title: { default: "Gatelab", template: "%s · Gatelab" },
-  description: DESCRIPTION,
+  metadataBase: new URL(SITE.url),
+  /**
+   * The DEFAULT title is the home page's, and it is the single most load-bearing
+   * string for being found: it is the blue link in the result. So it names what
+   * someone would search for — "boolean minimizer", "k-map solver", "logic circuit
+   * simulator" — rather than just the product name, which nobody is looking for yet.
+   */
+  title: { default: SITE.title, template: "%s · Gatelab" },
+  description: SITE.description,
+  keywords: [...KEYWORDS],
+  applicationName: SITE.name,
+  authors: [{ name: "thehav0k", url: "https://github.com/thehav0k" }],
+  creator: "thehav0k",
+  category: "education",
+  alternates: { canonical: "/" },
   openGraph: {
-    title: "Gatelab",
-    description: DESCRIPTION,
-    url: "https://gatelab-online.vercel.app",
-    siteName: "Gatelab",
     type: "website",
+    url: SITE.url,
+    siteName: SITE.name,
+    title: SITE.title,
+    description: SITE.description,
+    locale: SITE.locale,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE.title,
+    description: SITE.description,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
   },
   // Emits <meta name="google-site-verification" ...> into <head>. Going through
   // Next's metadata rather than hand-writing the tag keeps it deduplicated and
@@ -57,6 +78,12 @@ export default function RootLayout({
       className={cn("font-sans", geist.variable, geistMono.variable)}
     >
       <body className="min-h-dvh antialiased">
+        {/* Structured data, rendered on the SERVER — a crawler that runs no
+            JavaScript still gets a full description of what this app is. */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd()) }}
+        />
         <ThemeProvider>
           <TooltipProvider>
             <div className="flex min-h-dvh flex-col">

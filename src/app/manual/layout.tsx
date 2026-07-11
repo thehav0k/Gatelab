@@ -8,7 +8,8 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "User manual",
   description:
-    "How to drive Gatelab: writing a function, the five theory views, gate rules, wiring 74xx chips, reading faults, and verifying a circuit against its algebra.",
+    "How to drive Gatelab: Boolean notation, simplifying a function, gate rules, wiring 74xx TTL chips on a breadboard, what every fault code means, and verifying a circuit against its algebra.",
+  alternates: { canonical: "/manual" },
 };
 
 export default function ManualLayout({ children }: { children: React.ReactNode }) {
