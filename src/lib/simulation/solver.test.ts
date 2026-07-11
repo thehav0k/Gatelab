@@ -299,6 +299,52 @@ describe("evaluate — feedback", () => {
     expect(osc?.message).toContain("R3");
   });
 
+  /**
+   * The genuine period-2 oscillation path, and the only way to reach it.
+   *
+   * Seeded from Z (the default) a ring oscillator does NOT toggle: NOT(X) = X is
+   * a fixed point, so it collapses to a stable X in one delta cycle. To make it
+   * actually oscillate between DEFINITE values you have to start it from one —
+   * which is what `seed` is for.
+   *
+   * This is what `collapseOscillation` exists for: replay the loop, and only the
+   * nets that genuinely took more than one value inside it become X. Everything
+   * stable keeps its value, so a ring in one corner of the board does not turn
+   * the whole thing red.
+   */
+  it("collapses a real period-2 oscillation to X, sparing the stable nets", () => {
+    const doc = circuit()
+      .gate("R1", "not", 1)
+      .wire("R1", "Y", "R1", "A")
+      // A completely separate, healthy AND gate.
+      .switch("A")
+      .switch("B")
+      .gate("G1", "and")
+      .led("Q")
+      .wire("A", "Y", "G1", "A")
+      .wire("B", "Y", "G1", "B")
+      .wire("G1", "Y", "Q", "A")
+      .build();
+
+    const { index, netlist } = elaborate(doc);
+    // Seeded LOW, the inverter really does flip 0-1-0-1 forever.
+    const state = evaluate(netlist, [1, 1], { seed: L0 });
+
+    expect(state.settled).toBe(false);
+    expect(state.period).toBe(2);
+    expect(state.oscillating.length).toBeGreaterThan(0);
+
+    const at = (node: string, pin: string): Logic => {
+      const netId = index.netOfPin.get(pinKey(ref(node, pin)));
+      return state.values[index.ordinalOf.get(netId!) as number] as Logic;
+    };
+
+    // The ring is X…
+    expect(at("R1", "Y")).toBe(LX);
+    // …and the bystander still computes 1 AND 1 = 1.
+    expect(at("Q", "A")).toBe(L1);
+  });
+
   it("terminates rather than spinning on a pathological loop", () => {
     const doc = circuit()
       .gate("G1", "not", 1)

@@ -1,4 +1,4 @@
-import { isNary, type Expr, type NaryOp } from "./ast";
+import { ASSOCIATIVE_OPS, isNary, type Expr, type NaryOp } from "./ast";
 
 export type Notation = "unicode" | "ascii";
 
@@ -9,6 +9,17 @@ export type Notation = "unicode" | "ascii";
 export function format(e: Expr, notation: Notation = "unicode"): string {
   return emit(e, notation, 0);
 }
+
+/**
+ * The associative gate each non-associative one inverts, for arity > 2.
+ * See the note in `emit` — this is what keeps format() from changing the
+ * function it is printing.
+ */
+const INVERTED_BASE: Partial<Record<NaryOp, NaryOp>> = {
+  nand: "and",
+  nor: "or",
+  xnor: "xor",
+};
 
 /** Tightest binds first. Mirrors the parser's levels. */
 const PRECEDENCE: Readonly<Record<NaryOp, number>> = {
@@ -39,7 +50,12 @@ const SYMBOL: Readonly<Record<Notation, Readonly<Record<NaryOp, string>>>> = {
   },
 };
 
-function emit(e: Expr, n: Notation, parentPrec: number): string {
+function emit(
+  e: Expr,
+  n: Notation,
+  parentPrec: number,
+  parentKind?: NaryOp,
+): string {
   switch (e.kind) {
     case "var":
       return e.name;
@@ -58,11 +74,45 @@ function emit(e: Expr, n: Notation, parentPrec: number): string {
     }
 
     default: {
+      /**
+       * NAND / NOR / XNOR ARE NOT ASSOCIATIVE, so an n-ary one may NOT be emitted
+       * as an infix chain.
+       *
+       * `NAND(a, b, c)` means a three-input NAND gate — `NOT(a·b·c)`. But the
+       * text "a NAND b NAND c" re-parses as the left-nested `(a NAND b) NAND c`,
+       * which is a DIFFERENT FUNCTION (they disagree on 4 of 8 rows). Emitting
+       * the chain would make format() silently change the meaning of the tree,
+       * and the round-trip property test in format.test.ts is what caught it.
+       *
+       * At arity 2 the two readings coincide, so the infix form is safe there and
+       * reads better. Beyond that, spell it out as an inverted base gate.
+       */
+      if (INVERTED_BASE[e.kind] && e.operands.length > 2) {
+        const base = INVERTED_BASE[e.kind] as NaryOp;
+        const body = e.operands
+          .map((o) => emit(o, n, PRECEDENCE[base], base))
+          .join(SYMBOL[n][base]);
+        return `(${body})'`;
+      }
+
       const prec = PRECEDENCE[e.kind];
       const body = e.operands
-        .map((o) => emit(o, n, prec))
+        .map((o) => emit(o, n, prec, e.kind))
         .join(SYMBOL[n][e.kind]);
-      return prec < parentPrec ? `(${body})` : body;
+
+      // A child that binds LOOSER than its parent always needs parens.
+      //
+      // A child at the SAME precedence needs them too — UNLESS it is the very
+      // same associative operator, where flattening is exactly what the parser
+      // will reconstruct. That exception is narrow on purpose: NAND and OR share
+      // a level with NOR, and `OR(A, NOR(B,C))` printed as "A + B NOR C" would
+      // re-parse as `NOR(OR(A,B), C)` — a different function. Same trap as the
+      // n-ary case above, one level down.
+      const sameAssociative = parentKind === e.kind && ASSOCIATIVE_OPS.has(e.kind);
+      const needs =
+        prec < parentPrec || (prec === parentPrec && !sameAssociative);
+
+      return needs ? `(${body})` : body;
     }
   }
 }
