@@ -77,9 +77,16 @@ almost every Quine–McCluskey bug on its own.
 ## Stack notes
 
 - Tailwind **v4** — there is no `tailwind.config.js`. Design tokens live in
-  `@theme` in `src/app/globals.css`. The SVG renderer reads the same
-  `var(--color-logic-*)` vars the utilities are generated from, so wires and
-  classes cannot drift apart.
+  `src/app/globals.css`.
+
+  **Gotcha, and it is silent:** the block is `@theme inline`, which folds token
+  values directly into utility classes and **does not emit the `--color-*`
+  custom properties**. So `text-logic-high` and `fill-logic-high` work, but
+  `style={{ stroke: "var(--color-logic-high)" }}` resolves to nothing and the
+  element renders uncolored with no error. When you need a token in an inline
+  style or an SVG attribute — which the circuit renderer does constantly —
+  read the raw token (`var(--logic-high)`, `var(--loop-3)`), which *is* emitted
+  in `:root` and `.dark`.
 - TypeScript is pinned to **5.9.3**. `typescript@latest` is the 7.x Go rewrite
   and `typescript-eslint` does not support it. Do not upgrade.
 - `noUncheckedIndexedAccess` is on. This codebase indexes `values[m]`,
