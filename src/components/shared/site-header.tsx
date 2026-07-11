@@ -9,13 +9,14 @@ import { ThemeToggle } from "@/components/shared/theme-toggle";
 const NAV = [
   { href: "/theory", label: "Theory" },
   { href: "/lab", label: "Lab" },
+  { href: "/report", label: "Report" },
 ] as const;
 
 export function SiteHeader() {
   const pathname = usePathname();
 
   return (
-    <header className="bg-background/80 sticky top-0 z-50 border-b backdrop-blur">
+    <header className="bg-background/80 no-print sticky top-0 z-50 border-b backdrop-blur">
       <div className="flex h-14 items-center gap-6 px-4">
         <Link href="/" className="flex items-center gap-2 font-semibold">
           <CircuitBoard className="text-logic-high size-5" />

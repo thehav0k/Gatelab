@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { elaborate } from "@/lib/simulation/elaborate";
 import { evaluate } from "@/lib/simulation/solver";
 import { diagnose, type Diagnostic } from "@/lib/simulation/diagnostics";
@@ -162,7 +163,9 @@ function simulate(doc: CircuitDocument): {
   return { index, diagnostics, routes };
 }
 
-export const useCircuitStore = create<CircuitState>()((set, get) => {
+export const useCircuitStore = create<CircuitState>()(
+  persist(
+    (set, get) => {
   /** Commit a topology change: push undo, re-simulate, clear redo. */
   const commit = (doc: CircuitDocument): void => {
     const { doc: prev, past } = get();
@@ -362,8 +365,33 @@ export const useCircuitStore = create<CircuitState>()((set, get) => {
         pendingPin: null,
       });
     },
-  };
-});
+      };
+    },
+    {
+      name: "digilab-circuit",
+
+      /**
+       * ONLY THE DOCUMENT IS PERSISTED. Nets, routes, diagnostics and simulation
+       * values are all DERIVED (Invariants 1 and 6) — storing them would let a
+       * stale snapshot outlive the topology it came from, which is precisely the
+       * ghost-connection failure the invariants exist to prevent. Undo history is
+       * dropped too: nobody expects to reopen a tab and undo yesterday.
+       */
+      partialize: (s) => ({ doc: s.doc }),
+
+      /**
+       * Rehydration must RE-DERIVE, not restore. The document is plain JSON, so it
+       * survives the round trip intact; everything else is rebuilt from it exactly
+       * as it would be after any other topology change.
+       */
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const { index, diagnostics, routes } = simulate(state.doc);
+        useCircuitStore.setState({ index, diagnostics, routes });
+      },
+    },
+  ),
+);
 
 /** Convenience for the palette. */
 export const gateNode = (op: GateOp, pos: Point, arity = 2) => ({

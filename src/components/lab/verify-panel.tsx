@@ -7,7 +7,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useCircuitStore } from "@/stores/circuit-store";
-import { useSpecStore } from "@/stores/spec-store";
+import { useExpected, useSpecStore } from "@/stores/spec-store";
 import { verify } from "@/lib/simulation/verify";
 import { LOGIC_NAMES, type Logic } from "@/lib/simulation/logic";
 import { DONT_CARE } from "@/lib/core-engine/types";
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
  */
 export function VerifyPanel() {
   const doc = useCircuitStore((s) => s.doc);
-  const expected = useSpecStore((s) => s.expected);
+  const expected = useExpected();
   const source = useSpecStore((s) => s.source);
 
   const result = useMemo(

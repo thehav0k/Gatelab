@@ -166,3 +166,76 @@
     @apply font-sans;
     }
 }
+/* ---------------------------------------------------------------------------
+   PRINT — the lab report.
+   
+   The app is dark by default. Printing that would waste a cartridge and render
+   the circuit as a black rectangle, so print forces the LIGHT token values back
+   on. They are restated rather than referenced because CSS has no way to say
+   "use the :root block's values here" — a custom property cascades, it does not
+   compose.
+   
+   The logic colours matter as much as the background: --logic-high in dark mode
+   (#50df5f) is nearly invisible on white paper, so print takes the light-mode
+   values, which were chosen for exactly that contrast.
+   --------------------------------------------------------------------------- */
+@media print {
+  html,
+  html.dark {
+    color-scheme: light;
+
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.45 0 0);
+    --border: oklch(0.85 0 0);
+    --accent: oklch(0.97 0 0);
+    --destructive: oklch(0.55 0.24 27);
+    --ring: oklch(0.6 0 0);
+
+    --logic-high: oklch(0.55 0.19 145);
+    --logic-low: oklch(0.55 0.02 260);
+    --logic-z: oklch(0.62 0.16 85);
+    --logic-x: oklch(0.55 0.23 27);
+
+    --loop-1: oklch(0.55 0.21 262);
+    --loop-2: oklch(0.55 0.2 350);
+    --loop-3: oklch(0.5 0.18 155);
+    --loop-4: oklch(0.58 0.17 65);
+    --loop-5: oklch(0.52 0.19 300);
+    --loop-6: oklch(0.52 0.14 200);
+  }
+
+  /* Browsers strip backgrounds by default; the circuit and the K-map need theirs. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* App chrome is not part of the report. */
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    margin: 14mm;
+    size: A4;
+  }
+
+  body {
+    background: white;
+  }
+
+  /* Never split a section across a page break mid-diagram. */
+  .print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .print-break-before {
+    break-before: page;
+    page-break-before: always;
+  }
+}

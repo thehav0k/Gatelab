@@ -65,7 +65,7 @@ export function BuildCircuit({ min, variables, fn, source }: Props) {
     const doc = realize(technologyMap(nl, chosen.strategy), { outputLabel: "F" });
     // Hand the lab the FUNCTION, not the circuit, so Verify checks the built
     // board against the algebra rather than against itself.
-    setSpec(fn, source);
+    setSpec(source);
     load(doc);
     toast.success(`Built with ${chosen.chipCount} IC${chosen.chipCount === 1 ? "" : "s"}`, {
       description: describeDesign(chosen),
@@ -113,7 +113,7 @@ export function BuildCircuit({ min, variables, fn, source }: Props) {
         variant="outline"
         className="w-full"
         onClick={() => {
-          setSpec(fn, source);
+          setSpec(source);
           toast.info(`The lab will now check your circuit against ${fn.name}`);
           router.push("/lab");
         }}

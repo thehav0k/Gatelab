@@ -12,12 +12,13 @@ import { WaveformPanel } from "@/components/lab/waveform-panel";
 import { PresetMenu } from "@/components/lab/preset-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { useSpecStore } from "@/stores/spec-store";
+import { useExpected } from "@/stores/spec-store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useCircuitStore } from "@/stores/circuit-store";
-import { Redo2, Trash2, Undo2 } from "lucide-react";
+import { FileText, Redo2, Trash2, Undo2 } from "lucide-react";
+import Link from "next/link";
 
 export default function LabPage() {
   const undo = useCircuitStore((s) => s.undo);
@@ -30,7 +31,7 @@ export default function LabPage() {
   const errorCount = useCircuitStore(
     (s) => s.diagnostics.filter((d) => d.severity === "error").length,
   );
-  const expected = useSpecStore((s) => s.expected);
+  const expected = useExpected();
   const onBoard = useCircuitStore((s) => s.doc.board !== null && s.doc.board !== undefined);
   const toBreadboard = useCircuitStore((s) => s.toBreadboard);
   const hasNodes = useCircuitStore((s) => Object.keys(s.doc.nodes).length > 0);
@@ -105,6 +106,11 @@ export default function LabPage() {
           </Button>
           <Button variant="outline" size="sm" onClick={clear}>
             <Trash2 /> Clear
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/report">
+              <FileText /> Report
+            </Link>
           </Button>
         </div>
       </header>
