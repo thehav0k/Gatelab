@@ -12,6 +12,7 @@ import { FaultPanel } from "@/components/lab/fault-panel";
 import { VerifyPanel } from "@/components/lab/verify-panel";
 import { WaveformPanel } from "@/components/lab/waveform-panel";
 import { PresetMenu } from "@/components/lab/preset-menu";
+import { EquationBuilder } from "@/components/lab/equation-builder";
 import { ConstraintMenu, ConstraintViolations } from "@/components/lab/constraint-menu";
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -142,6 +143,7 @@ export default function LabPage() {
 
           <ConstraintMenu />
           <PresetMenu />
+          <EquationBuilder />
 
           <Separator orientation="vertical" className="h-6" />
 
