@@ -137,6 +137,22 @@ export function verify(
   if (error) return empty(error);
 
   const n = labels.length;
+
+  /**
+   * Exhaustive verification means running the circuit 2^n times, and above a
+   * dozen-ish inputs that stops being a check and becomes a hang: a 16-bit adder
+   * has 33 inputs, i.e. 2^33 ≈ 8 billion sweeps, which would freeze the tab for
+   * hours. A truth table that large is also not something a human reads. So we
+   * refuse, honestly, rather than lock up — the big hierarchical presets are
+   * proven correct by construction, not by sweeping them here.
+   */
+  const MAX_SWEEP_INPUTS = 16;
+  if (n > MAX_SWEEP_INPUTS) {
+    return empty(
+      `This circuit has ${n} inputs — 2^${n} combinations. That is far too many to sweep exhaustively (the limit is ${MAX_SWEEP_INPUTS}). Check a smaller circuit, or trust a block-built one by construction.`,
+    );
+  }
+
   const rows: VerifyRow[] = [];
 
   /**

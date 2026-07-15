@@ -64,6 +64,9 @@ export default function LabPage() {
   const [timingChoice, setTimingChoice] = useState<boolean | null>(null);
   const showTiming = timingChoice ?? !compact;
 
+  // The mobile Parts sheet is controlled so it can close itself after a placement.
+  const [partsOpen, setPartsOpen] = useState(false);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement;
@@ -197,7 +200,7 @@ export default function LabPage() {
 
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:ml-auto">
           {/* --- the two side panels, as sheets, below lg --- */}
-          <Sheet>
+          <Sheet open={partsOpen} onOpenChange={setPartsOpen}>
             <SheetTrigger asChild>
               <Button variant="outline" size="sm" className="lg:hidden">
                 <Boxes /> <span className="hidden sm:inline">Parts</span>
@@ -208,7 +211,10 @@ export default function LabPage() {
                 <SheetTitle>Parts</SheetTitle>
               </SheetHeader>
               <ScrollArea className="h-full">
-                <Palette />
+                {/* On a phone the sheet covers the canvas, so drop it the instant a
+                    part is placed — otherwise you tap a gate and cannot see where it
+                    landed. On desktop the palette is a column and never closes. */}
+                <Palette onPlace={() => setPartsOpen(false)} />
               </ScrollArea>
             </SheetContent>
           </Sheet>

@@ -23,7 +23,7 @@ import {
   type WireId,
 } from "@/lib/simulation/netlist";
 import type { GateOp } from "@/lib/simulation/logic";
-import { arityOf } from "@/lib/simulation/parts";
+import { arityOf, gateInputNames } from "@/lib/simulation/parts";
 import { routeAll, type Route } from "@/lib/simulation/router";
 import { placeOnBreadboard } from "@/lib/simulation/place";
 import {
@@ -72,8 +72,14 @@ interface CircuitState {
   past: CircuitDocument[];
   future: CircuitDocument[];
 
+  /** How many inputs the next gate dropped from the palette gets (2, 3 or 4). */
+  gateInputs: number;
+  setGateInputs: (n: number) => void;
+
   addNode: (node: NewNode) => NodeId;
   moveNode: (id: NodeId, pos: Point) => void;
+  /** Change how many inputs a gate has. Ignored for NOT/BUF (always 1). */
+  setGateArity: (id: NodeId, arity: number) => void;
   deleteSelected: () => void;
   select: (ids: readonly NodeId[]) => void;
   toggleSwitch: (id: NodeId) => void;
@@ -228,8 +234,11 @@ export const useCircuitStore = create<CircuitState>()(
     routes: new Map(),
     schematic: null,
     origin: null,
+    gateInputs: 2,
     past: [],
     future: [],
+
+    setGateInputs: (n) => set({ gateInputs: Math.min(4, Math.max(2, n)) }),
 
     addNode: (partial) => {
       const { doc } = get();
@@ -249,6 +258,29 @@ export const useCircuitStore = create<CircuitState>()(
       if (!node) return;
       // A move is cosmetic. The circuit is still the one that was built.
       commit({ ...doc, nodes: { ...doc.nodes, [id]: { ...node, pos } } }, true);
+    },
+
+    setGateArity: (id, arity) => {
+      const { doc } = get();
+      const node = doc.nodes[id];
+      if (node?.kind !== "gate") return;
+      const next = arityOf(node.op, arity);
+      if (next === node.arity) return;
+      // Widening a gate is a real topology change — the new input pins start
+      // unconnected, so this is NOT a keep-origin edit. Any wire to a pin that no
+      // longer exists is dropped when the net index rebuilds.
+      const gone = new Set<string>();
+      if (next < node.arity) {
+        for (let i = next; i < node.arity; i++) gone.add(gateInputNames(node.arity)[i]!);
+      }
+      const wires = Object.fromEntries(
+        Object.entries(doc.wires).filter(([, wire]) => {
+          const touches = (e: (typeof wire)["a"]) =>
+            e.kind === "pin" && e.ref.node === id && gone.has(e.ref.pin);
+          return !touches(wire.a) && !touches(wire.b);
+        }),
+      );
+      commit({ ...doc, wires, nodes: { ...doc.nodes, [id]: { ...node, arity: next } } });
     },
 
     deleteSelected: () => {

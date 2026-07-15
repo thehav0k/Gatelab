@@ -13,8 +13,13 @@ import { useConstraint } from "@/stores/workspace-store";
 import { gateNode, useCircuitStore } from "@/stores/circuit-store";
 import { GATE_LABELS } from "@/lib/simulation/parts";
 import type { GateOp } from "@/lib/simulation/logic";
+import { cn } from "@/lib/utils";
 
 const GATES: readonly GateOp[] = ["and", "or", "not", "nand", "nor", "xor", "xnor"];
+
+/** These gates fold over any number of inputs; NOT and BUF are always 1-input. */
+const isVariadic = (op: GateOp) => op !== "not" && op !== "buf";
+const INPUT_CHOICES = [2, 3, 4] as const;
 
 /**
  * Drop new parts on a grid with real clearance. The spacing is not cosmetic: a
@@ -41,9 +46,23 @@ const nextIcDrop = () => {
   return { x: 120 + (i % 2) * 260, y: 200 + Math.floor(i / 2) * 140 };
 };
 
-export function Palette() {
-  const addNode = useCircuitStore((s) => s.addNode);
+export function Palette({ onPlace }: { onPlace?: () => void }) {
+  const rawAdd = useCircuitStore((s) => s.addNode);
   const constraint = useConstraint();
+
+  // Every placement runs through here so callers (the mobile sheet) can react —
+  // e.g. close themselves so the freshly placed part is actually visible.
+  const addNode: typeof rawAdd = (node) => {
+    const id = rawAdd(node);
+    onPlace?.();
+    return id;
+  };
+
+  // How many inputs a freshly placed AND/OR/NAND/NOR/XOR/XNOR gets. A real 74xx
+  // family has 2-, 3- and 4-input parts, and "implement this as a 3-input NAND"
+  // is a normal exercise — so the count is the user's to choose, not fixed at 2.
+  const gateInputs = useCircuitStore((s) => s.gateInputs);
+  const setGateInputs = useCircuitStore((s) => s.setGateInputs);
 
   // You cannot place what you are not allowed to use. Filtering the palette makes
   // the rule DISCOVERABLE — a constraint you find out you broke afterwards is a
@@ -63,6 +82,29 @@ export function Palette() {
       )}
 
       <Section title="Gates">
+        {/* Input count for the next gate placed. */}
+        <div className="mb-2 flex items-center gap-1.5">
+          <span className="text-muted-foreground text-[10px]">inputs</span>
+          <div className="flex gap-1">
+            {INPUT_CHOICES.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setGateInputs(k)}
+                aria-pressed={gateInputs === k}
+                className={cn(
+                  "size-6 rounded border font-mono text-xs transition-colors",
+                  gateInputs === k
+                    ? "border-ring bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-accent/50",
+                )}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 gap-1.5">
           {gates.map((op) => (
             <Button
@@ -70,15 +112,28 @@ export function Palette() {
               variant="outline"
               size="sm"
               className="font-mono text-xs"
-              onClick={() => addNode(gateNode(op, nextDrop()))}
+              onClick={() => addNode(gateNode(op, nextDrop(), gateInputs))}
+              title={
+                isVariadic(op)
+                  ? `${gateInputs}-input ${GATE_LABELS[op]}`
+                  : `${GATE_LABELS[op]} (1 input)`
+              }
             >
               {GATE_LABELS[op]}
+              {isVariadic(op) && gateInputs !== 2 && (
+                <span className="text-muted-foreground ml-0.5 text-[9px]">×{gateInputs}</span>
+              )}
             </Button>
           ))}
         </div>
+        <p className="text-muted-foreground mt-1.5 text-[10px] leading-snug">
+          NOT is always 1-input. Select a gate on the canvas to change its inputs.
+        </p>
       </Section>
 
       <Separator />
+
+      <SelectedGateInputs />
 
       <Section title="I/O">
         <div className="grid grid-cols-2 gap-1.5">
@@ -151,6 +206,53 @@ export function Palette() {
         </div>
       </Section>
     </div>
+  );
+}
+
+/**
+ * Change the input count of the gate that is currently selected — because the
+ * count is a property of the specific gate, not only a placement default. Widening
+ * adds unconnected pins; narrowing drops the wires to the pins that vanish.
+ */
+function SelectedGateInputs() {
+  const selection = useCircuitStore((s) => s.selection);
+  const doc = useCircuitStore((s) => s.doc);
+  const setGateArity = useCircuitStore((s) => s.setGateArity);
+
+  if (selection.length !== 1) return null;
+  const node = doc.nodes[selection[0]!];
+  if (node?.kind !== "gate" || !isVariadic(node.op)) return null;
+
+  return (
+    <>
+      <Section title="Selected gate">
+        <p className="text-muted-foreground mb-1.5 font-mono text-xs">
+          {node.label} · {GATE_LABELS[node.op]}
+        </p>
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground text-[10px]">inputs</span>
+          <div className="flex gap-1">
+            {INPUT_CHOICES.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setGateArity(node.id, k)}
+                aria-pressed={node.arity === k}
+                className={cn(
+                  "size-6 rounded border font-mono text-xs transition-colors",
+                  node.arity === k
+                    ? "border-ring bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-accent/50",
+                )}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+        </div>
+      </Section>
+      <Separator />
+    </>
   );
 }
 

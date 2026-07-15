@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  Blocks,
   BookOpen,
   CircuitBoard,
   Cpu,
@@ -126,6 +127,7 @@ const TOC = [
   { id: "theory", label: "The theory workspace" },
   { id: "rules", label: "Gate rules" },
   { id: "lab", label: "The lab" },
+  { id: "blocks", label: "Presets & building blocks" },
   { id: "gates", label: "Logic gates" },
   { id: "chips", label: "74xx chips" },
   { id: "breadboard", label: "The breadboard" },
@@ -240,7 +242,7 @@ export default function ManualPage() {
 
           <Section id="theory" icon={Sigma} title="The theory workspace">
             <p>
-              One document, five views. The expression box and the minimal form stay
+              One document, six views. The expression box and the minimal form stay
               on screen; the tabs below are different ways of looking at the same
               function.
             </p>
@@ -269,7 +271,16 @@ export default function ManualPage() {
                 chart is cyclic.
               </li>
               <li>
-                <strong>Build it</strong> — turns the minimal form into 74xx chips.
+                <strong>Circuit</strong> — the minimal expression drawn as a gate
+                diagram, then the same logic mapped onto real 74xx chips, and finally
+                a <em>wiring list</em>: every connection in datasheet language, like
+                <code> U1 pin 2 (1Y) → U2 pin 1 (1A)</code>. That last table is the
+                thing you actually transcribe onto a breadboard — which pin number
+                goes to which pin number — and it is derived from the same net index
+                the simulator uses, so it cannot disagree with it.
+              </li>
+              <li>
+                <strong>Build it</strong> — drops the whole circuit onto the lab bench.
               </li>
             </ul>
             <p className="text-muted-foreground">
@@ -329,9 +340,53 @@ export default function ManualPage() {
               one. But Z and X keep their own unmistakable colour and dashing. A broken
               wire must never be able to look like a working one.
             </p>
+            <p>
+              <strong>Gates can have 2, 3 or 4 inputs.</strong> Pick the count in the
+              palette before you place one — a real 74xx family has 2-, 3- and 4-input
+              parts, and &ldquo;implement this as a 3-input NAND&rdquo; is a normal
+              exercise. NOT is always 1-input. Already placed a gate? Select it and the
+              palette lets you change its inputs; widening adds unconnected pins,
+              narrowing drops the wires to the pins that vanish.
+            </p>
             <p className="text-muted-foreground">
               Every gate is documented below — definition, truth table and algebraic
               properties — and so is every chip, with its real pinout.
+            </p>
+          </Section>
+
+          <Section id="blocks" icon={Blocks} title="Presets & building blocks">
+            <p>
+              The <strong>Presets</strong> menu is not just a grab-bag of examples —
+              it is organized around one idea: complex circuits are built from simple
+              ones.
+            </p>
+            <ul className="ml-4 list-disc space-y-1.5">
+              <li>
+                <strong>Building blocks</strong> — the classics on their own: half and
+                full adders, a comparator, multiplexers, a decoder, a priority encoder.
+              </li>
+              <li>
+                <strong>Built from smaller blocks</strong> — the same circuits shown as
+                a <em>hierarchy</em>. A full adder wired from two half adders and an OR;
+                a 4:1 mux as a tree of three 2:1 muxes; an 8:1 mux from two 4:1s and a
+                2:1. The blocks are placed as distinct clusters and wired port-to-port,
+                so you can trace the decomposition — because the structure IS the lesson,
+                and a flattened truth table erases it.
+              </li>
+              <li>
+                <strong>Large circuits</strong> — 2-, 4-, 8- and 16-bit ripple-carry
+                adders, each one <em>n</em> full adders with the carry rippling from the
+                bottom bit to the top. An 8-bit adder&apos;s truth table has 2¹⁷ rows,
+                which is exactly why nobody minimizes an adder — you build it from
+                blocks. Watch the top sum bit wait for the carry to walk all the way up.
+              </li>
+            </ul>
+            <p className="text-muted-foreground">
+              These are real, simulatable, verifiable boards — composed block by block
+              from the same gate tables everything else uses, so they compute what they
+              claim to. (Verification sweeps 2ⁿ inputs, so above 16 inputs the lab
+              declines to sweep and trusts the construction instead — a 16-bit adder has
+              2³³ combinations.)
             </p>
           </Section>
 

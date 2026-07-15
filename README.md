@@ -38,13 +38,17 @@ the others.
 - A step-by-step derivation in words, in the order you'd work it on paper.
 - A K-map whose loops **are** the prime implicants, rendered — not a second algorithm's
   second opinion.
-- Synthesis into real chips, under a gate rule you choose.
+- Synthesis into real chips, under a gate rule you choose — shown as a gate diagram,
+  as packed 74xx chips, and as a **pin-by-pin wiring list** (`U1 pin 2 (1Y) → U2 pin 1
+  (1A)`) you can transcribe straight onto a breadboard.
 
 **Lab** — a 74xx TTL sandbox on a schematic or a real breadboard.
 
 - **Four-state logic: `0`, `1`, `Z`, `X`.** A boolean simulator reads an unconnected
   input as `false` and cheerfully tells you the circuit works. This one tells you the
   input is floating.
+- **Gates with 2, 3 or 4 inputs**, chosen in the palette or changed on a placed gate;
+  NOT is always 1-input.
 - Real pinouts from the datasheets — the 7402's gate-1 output really is on pin 1.
 - Fault detection for the mistakes that actually happen at a bench: forgotten Vcc,
   floating input, output short, rail short, oscillating feedback loop.
@@ -59,6 +63,16 @@ palette narrows to match and the synthesizer obeys. Some rules are *impossible*
 ("XOR only" cannot make an AND), and Gatelab proves it via Post's criterion and tells
 you which of the five maximal clones traps you, rather than building something that
 quietly breaks the rule.
+
+**Building blocks & hierarchy.** The presets are organized around one idea — complex
+circuits are built from simple ones. A full adder wired from **two half adders and an
+OR**; a 4:1 mux as a tree of **three 2:1 muxes**; an 8:1 mux from **two 4:1s and a
+2:1**; and ripple-carry adders up to **16 bits**, each one *n* full adders with the
+carry rippling through. The blocks are placed as distinct clusters and wired
+port-to-port, so the decomposition is visible — and every one is a real, simulatable,
+verifiable board, composed from the same gate tables everything else uses. (An 8-bit
+adder's truth table has 2¹⁷ rows, which is exactly why you build it from blocks rather
+than minimize it.)
 
 ## Running it
 

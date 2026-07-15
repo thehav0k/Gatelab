@@ -9,6 +9,7 @@ import { QmTrace } from "@/components/theory/qm-trace";
 import { MinimalForm } from "@/components/theory/minimal-form";
 import { DerivationPanel } from "@/components/theory/derivation-panel";
 import { BuildCircuit } from "@/components/theory/build-circuit";
+import { CircuitView } from "@/components/theory/circuit-view";
 import { FunctionLibrary } from "@/components/theory/function-library";
 import { ConstraintMenu } from "@/components/lab/constraint-menu";
 
@@ -51,8 +52,8 @@ export default function TheoryPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Theory</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            One function, five views. Write it as an expression, as minterms, or fill
-            in a truth table — they are the same document.
+            One function, many views. Write it as an expression, as minterms, or fill
+            in a truth table — then see it derived, mapped, and drawn as a circuit.
           </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -106,6 +107,7 @@ export default function TheoryPage() {
               <TabsTrigger value="table">Truth table</TabsTrigger>
               <TabsTrigger value="kmap">K-map</TabsTrigger>
               <TabsTrigger value="tabular">Tabular method</TabsTrigger>
+              <TabsTrigger value="circuit">Circuit</TabsTrigger>
               <TabsTrigger value="build">Build it</TabsTrigger>
             </TabsList>
 
@@ -229,6 +231,22 @@ export default function TheoryPage() {
                     highlighted={highlighted}
                     onHighlight={setHighlighted}
                   />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="circuit" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Circuit
+                    <span className="text-muted-foreground ml-2 text-xs font-normal">
+                      gates, chips, and the wiring between them
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CircuitView min={min} variables={analysis.fn.variables} />
                 </CardContent>
               </Card>
             </TabsContent>
