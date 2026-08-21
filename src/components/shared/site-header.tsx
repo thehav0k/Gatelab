@@ -18,15 +18,16 @@ import {
 
 const NAV = [
   { href: "/theory", label: "Theory" },
+  { href: "/diagrams", label: "Diagrams" },
   { href: "/lab", label: "Lab" },
   { href: "/report", label: "Report" },
   { href: "/manual", label: "Manual" },
 ] as const;
 
 /**
- * On a phone the four links, the wordmark, the theme toggle and the feedback
+ * On a phone the nav links, the wordmark, the theme toggle and the feedback
  * button do not fit on one 360px row — and the old header simply let them
- * collide. Below `sm` the nav collapses into a sheet; the wordmark and the
+ * collide. Below `md` the nav collapses into a sheet; the wordmark and the
  * toggle stay, because those are the two things you always want reachable.
  */
 export function SiteHeader() {
@@ -42,7 +43,7 @@ export function SiteHeader() {
           <span>Gatelab</span>
         </Link>
 
-        <nav className="hidden items-center gap-1 sm:flex">
+        <nav className="hidden items-center gap-1 md:flex">
           {NAV.map(({ href, label }) => (
             <Link
               key={href}
@@ -61,7 +62,7 @@ export function SiteHeader() {
 
         <div className="ml-auto flex items-center gap-1">
           <FeedbackDialog>
-            <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
+            <Button variant="ghost" size="sm" className="hidden lg:inline-flex">
               <MessageSquare /> Feedback
             </Button>
           </FeedbackDialog>
@@ -71,7 +72,7 @@ export function SiteHeader() {
           {/* --- mobile --- */}
           <Sheet open={menu} onOpenChange={setMenu}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="sm:hidden">
+              <Button variant="ghost" size="icon" className="md:hidden">
                 <Menu />
                 <span className="sr-only">Menu</span>
               </Button>

@@ -9,6 +9,7 @@ import {
   Keyboard,
   Mail,
   MessageSquare,
+  Network,
   Sigma,
   TriangleAlert,
 } from "lucide-react";
@@ -126,6 +127,7 @@ const TOC = [
   { id: "writing", label: "Writing a function" },
   { id: "theory", label: "The theory workspace" },
   { id: "rules", label: "Gate rules" },
+  { id: "diagrams", label: "Block diagrams" },
   { id: "lab", label: "The lab" },
   { id: "blocks", label: "Presets & building blocks" },
   { id: "gates", label: "Logic gates" },
@@ -318,6 +320,55 @@ export default function ManualPage() {
               The power rails matter here. A constant 1 is not 0-preserving, so having
               +5V on the board makes <code>&#123;XOR, AND&#125;</code> universal when it
               would otherwise be useless.
+            </p>
+          </Section>
+
+          <Section id="diagrams" icon={Network} title="Block diagrams">
+            <p>
+              The <strong>Diagrams</strong> page answers the standard digital-logic
+              questions as pictures: decoder and multiplexer implementations, adders
+              and 2&apos;s complementers, comparators, encoders, counters with timing
+              diagrams, sequential designs, and memory expansion.
+            </p>
+            <p>
+              Every one is <em>generated from the question</em>, not stored as an
+              image. So the panel above each answer lets you change the question —
+              &ldquo;1-to-16 demultiplexer from 2-to-4 decoders&rdquo; is really{" "}
+              <em>a demultiplexer tree</em>, and moving the two numbers gives a correct
+              answer to a question that was not on your sheet. Change the width of the
+              comparator, the divisors on the divisibility detector, the size of the
+              memory chips, or the excitation equations of the sequential circuit, and
+              the drawing, the truth table and the explanation all follow.
+            </p>
+            <p>
+              The drawing is never the whole answer, so it never appears alone: each
+              one comes with the truth table it was derived from, the minimal
+              expression, and the reasoning written out in the order you would put it
+              on paper.
+            </p>
+            <h3 className="pt-1 text-sm font-medium">Exporting</h3>
+            <p>
+              <strong>SVG</strong> first, and deliberately. It is a vector, it stays
+              sharp at any size, Word and Google Docs both accept it, and you can open
+              it afterwards to add an annotation the tool did not think of. PNG is
+              there at 1×, 2× and 4× for submission portals that refuse anything else.
+            </p>
+            <p>
+              The <strong>style</strong> panel changes the background (including fully
+              transparent, for dark slides), the grid, the wire colours and widths, the
+              corner radii, the type sizes, and the colour of each category of block.
+              It applies to what you see and to what you export — there is one
+              renderer, and the page shows you the same bytes the file will contain.
+            </p>
+            <p className="text-muted-foreground">
+              Per-signal wire colouring gives every net its own hue and every branch of
+              one fan-out the same one. Real jumper wire is multicoloured for exactly
+              this reason: so that a connection can be traced across a crowded drawing.
+            </p>
+            <p>
+              The same four constructions are available for whatever you are working on
+              in Theory, under its <em>Block diagram</em> tab: as gates, from a
+              decoder, on one multiplexer, or as a tree of 2-to-1 multiplexers.
             </p>
           </Section>
 

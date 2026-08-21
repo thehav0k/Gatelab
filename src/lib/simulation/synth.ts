@@ -245,10 +245,92 @@ function rewriteFamily(nl: GateNetlist, family: "nand" | "nor"): GateNetlist {
     remap.set(g.output, build(g.op, ins));
   }
 
+  return prunePairedInverters(
+    {
+      gates,
+      inputs: nl.inputs,
+      outputSignal: remap.get(nl.outputSignal) ?? nl.outputSignal,
+      constant: nl.constant,
+    },
+    F,
+  );
+}
+
+/**
+ * Peephole: an inverter feeding an inverter is a WIRE.
+ *
+ * `rewriteFamily` is deliberately mechanical — it applies one De Morgan identity
+ * per operator and never looks at its neighbours — which is what makes it easy to
+ * verify and impossible to get subtly wrong. The price is that the identities
+ * compose badly at the seams: `OR(a, b)` becomes `NAND(a', b')`, and if `a` was
+ * already `NOT p` the result contains `NOT NOT p`.
+ *
+ * On "output high when P is 0 or when Q = R = 1" — a stock exam question — that
+ * cost six NAND gates for a function that needs two. The circuit was correct and
+ * the answer was wrong, in the way that loses marks: nobody writes down a design
+ * with two redundant inverters in it.
+ *
+ * So this runs afterwards and does exactly one thing: wherever a family gate has
+ * both inputs tied (which in this netlist means, and can only mean, an inverter)
+ * and its input is another such gate, it forwards past both. Then anything no
+ * longer reachable from the output is dropped.
+ *
+ * The pass cannot change the function — `NOT NOT x = x` — and the round-trip
+ * property test over random expressions is what holds that claim down.
+ */
+function prunePairedInverters(nl: GateNetlist, family: GateOp): GateNetlist {
+  const producedBy = new Map<number, LogicGate>();
+  for (const g of nl.gates) producedBy.set(g.output, g);
+
+  const isInverter = (g: LogicGate | undefined): g is LogicGate =>
+    g !== undefined && g.op === family && g.inputs.length === 2 && g.inputs[0] === g.inputs[1];
+
+  /** Follow inverter pairs down to the signal they are equal to. */
+  const collapsed = new Map<number, number>();
+  const collapse = (signal: number): number => {
+    const cached = collapsed.get(signal);
+    if (cached !== undefined) return cached;
+
+    let current = signal;
+    // A netlist emitted by `emit` is acyclic, but bound the walk anyway: an
+    // infinite loop here would hang the tab, and a wrong answer would not.
+    for (let step = 0; step < nl.gates.length + 1; step++) {
+      const outer = producedBy.get(current);
+      if (!isInverter(outer)) break;
+      const inner = producedBy.get(outer.inputs[0] as number);
+      if (!isInverter(inner)) break;
+      current = inner.inputs[0] as number;
+    }
+    collapsed.set(signal, current);
+    return current;
+  };
+
+  const rewritten = nl.gates.map((g) => ({
+    ...g,
+    inputs: g.inputs.map(collapse),
+  }));
+  const outputSignal = collapse(nl.outputSignal);
+
+  // Dead-code elimination, backwards from the output. Anything the output no
+  // longer depends on was only there to feed a pair we just removed.
+  const byOutput = new Map(rewritten.map((g) => [g.output, g]));
+  const live = new Set<number>();
+  const visit = (signal: number): void => {
+    if (live.has(signal)) return;
+    const g = byOutput.get(signal);
+    if (!g) return;
+    live.add(signal);
+    for (const input of g.inputs) visit(input);
+  };
+  visit(outputSignal);
+
+  // Keep the original order — it is topological, and both the packer and the
+  // realizer rely on a gate appearing after everything it consumes.
+  const kept = rewritten.filter((g) => live.has(g.output));
   return {
-    gates,
+    gates: kept.map((g, i) => ({ ...g, id: i })),
     inputs: nl.inputs,
-    outputSignal: remap.get(nl.outputSignal) ?? nl.outputSignal,
+    outputSignal,
     constant: nl.constant,
   };
 }

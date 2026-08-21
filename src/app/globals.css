@@ -196,6 +196,33 @@
     }
 }
 /* ---------------------------------------------------------------------------
+   BLOCK DIAGRAMS
+
+   The diagram viewer injects a complete <svg> string produced by
+   src/lib/diagram/svg.ts. That SVG is deliberately SELF-CONTAINED — every colour
+   is an inline hex attribute, because the exported file has no stylesheet behind
+   it — so the only thing left for CSS to decide is how big the element is inside
+   its container. Nothing here may set a colour: a rule that made the on-screen
+   figure look different from the exported one would defeat the whole point of
+   having a single renderer.
+   --------------------------------------------------------------------------- */
+.diagram-figure > svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* The figure is dragged to pan, so the browser must not start a text selection
+     or a native image drag when the pointer goes down on it. */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.diagram-viewport {
+  /* Ctrl+wheel zooms; a plain wheel must still scroll the page, and touch must
+     still pan the page rather than being swallowed by the drag handler. */
+  touch-action: pan-y;
+}
+
+/* ---------------------------------------------------------------------------
    PRINT — the lab report.
    
    The app is dark by default. Printing that would waste a cartridge and render

@@ -26,7 +26,7 @@ that matches under a column swap means two input wires are crossed.
 
 It runs entirely in your browser. Nothing is uploaded, and there is no backend.
 
-## The two modules
+## The three modules
 
 **Theory** — one function, five views. Write it as an expression, as `Σm(1,3,7)`, or
 just fill in a blank truth table; they are the same document, and editing one rewrites
@@ -41,6 +41,29 @@ the others.
 - Synthesis into real chips, under a gate rule you choose — shown as a gate diagram,
   as packed 74xx chips, and as a **pin-by-pin wiring list** (`U1 pin 2 (1Y) → U2 pin 1
   (1A)`) you can transcribe straight onto a breadboard.
+
+**Diagrams** — the block-and-circuit-diagram answers, generated rather than stored.
+
+Forty-six of the standard digital-logic questions, each one parameterised down to
+the thing it is actually about. "Implement a 1-to-16 demultiplexer using 2-to-4
+decoders" is really *a demultiplexer tree*, so the 16 and the 4 are inputs — move
+them and you get a correct answer to a question that was not on the sheet.
+
+- Decoder and multiplexer implementations of any function, ripple and parallel
+  adders, 2's complement two ways, comparators, priority encoders, counters with
+  a **timing diagram whose traces are actually skewed** (an asynchronous counter
+  drawn edge-aligned is a synchronous counter mislabelled), sequential design from
+  excitation equations with the state table computed from the same text, and
+  memory/ROM expansion at any size.
+- Every drawing comes with the truth table, the minimal expression and the worked
+  reasoning — all recomputed from the same engine, so the prose cannot claim
+  three gates beside a picture of six.
+- **Export is the deliverable.** SVG or PNG, with the background, the wire
+  colours and widths, the corner radii, the fonts and the per-category block
+  colours all yours. There is one renderer, and the viewer injects exactly the
+  string the exporter writes — what you export is byte-for-byte what you were
+  looking at. The exported file is self-contained: inline hex, no stylesheet, no
+  web font, so it survives being dropped into somebody else's document.
 
 **Lab** — a 74xx TTL sandbox on a schematic or a real breadboard.
 
@@ -117,6 +140,10 @@ version is:
   guessing `0` is the worst available answer. Propagate `X` and raise a diagnostic.
 - **The K-map does not re-derive groupings.** Two grouping algorithms are two chances
   to be wrong and two answers to reconcile.
+- **A block diagram is a second model, not a view of the circuit document.** An exam
+  answer is boxes and buses; flattening a demultiplexer tree to 96 gates destroys the
+  decomposition that *is* the answer. Where they overlap they share code — the
+  gate-level drawing runs the lab's own synthesizer — rather than agreeing by hand.
 - **`variables[0]` is the MSB**, and a variable's bit is decided by its position *in the
   function*, never in the alphabet — `F(S,A,B)` is the natural way to write a
   multiplexer, and lining it up alphabetically reports a correct mux as wrong.

@@ -10,6 +10,7 @@ import { MinimalForm } from "@/components/theory/minimal-form";
 import { DerivationPanel } from "@/components/theory/derivation-panel";
 import { BuildCircuit } from "@/components/theory/build-circuit";
 import { CircuitView } from "@/components/theory/circuit-view";
+import { BlockDiagramView } from "@/components/theory/block-diagram-view";
 import { FunctionLibrary } from "@/components/theory/function-library";
 import { ConstraintMenu } from "@/components/lab/constraint-menu";
 
@@ -108,6 +109,7 @@ export default function TheoryPage() {
               <TabsTrigger value="kmap">K-map</TabsTrigger>
               <TabsTrigger value="tabular">Tabular method</TabsTrigger>
               <TabsTrigger value="circuit">Circuit</TabsTrigger>
+              <TabsTrigger value="diagram">Block diagram</TabsTrigger>
               <TabsTrigger value="build">Build it</TabsTrigger>
             </TabsList>
 
@@ -247,6 +249,22 @@ export default function TheoryPage() {
                 </CardHeader>
                 <CardContent>
                   <CircuitView min={min} variables={analysis.fn.variables} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="diagram" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Block diagram
+                    <span className="text-muted-foreground ml-2 text-xs font-normal">
+                      four ways to implement the same function — and export any of them
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <BlockDiagramView fn={analysis.fn} />
                 </CardContent>
               </Card>
             </TabsContent>

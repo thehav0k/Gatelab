@@ -46,6 +46,14 @@ export const KEYWORDS = [
   "static hazard",
   "half adder full adder",
   "multiplexer decoder encoder",
+  "logic circuit diagram generator",
+  "block diagram digital logic",
+  "implement function using multiplexer",
+  "full adder using decoder",
+  "1 to 16 demultiplexer using decoders",
+  "memory expansion decoder chip select",
+  "ripple counter timing diagram",
+  "export circuit diagram svg png",
 ] as const;
 
 /**
@@ -72,5 +80,7 @@ export const jsonLd = () => ({
     "Four-state logic (0, 1, Z, X) with fault detection",
     "NAND-only and NOR-only technology mapping",
     "Timing waveforms and static hazard detection",
+    "Block and circuit diagram generator for decoders, multiplexers, adders, counters and memory",
+    "Customisable diagram styling with SVG and PNG export",
   ],
 });

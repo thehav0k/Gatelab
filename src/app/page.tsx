@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, CircuitBoard, Cpu, Sigma, Waves } from "lucide-react";
+import { ArrowRight, CircuitBoard, Cpu, Network, Sigma, Waves } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LogicAnimation } from "@/components/shared/logic-animation";
 
@@ -13,6 +13,13 @@ const MODULES = [
     title: "Theory",
     blurb:
       "Parse an expression, sweep its truth table, and watch Quine–McCluskey reduce it one column at a time. Every prime implicant is drawn back onto the K-map.",
+  },
+  {
+    href: "/diagrams",
+    icon: Network,
+    title: "Diagrams",
+    blurb:
+      "Block and circuit diagrams for the standard problems — decoder and multiplexer implementations, adders, counters, memory expansion — generated from the question, and exportable as SVG or PNG in your own colours.",
   },
   {
     href: "/lab",
@@ -96,7 +103,7 @@ export default function Home() {
       </section>
 
       {/* --- modules ------------------------------------------------------------ */}
-      <section className="mt-12 grid gap-4 sm:mt-16 sm:grid-cols-3">
+      <section className="mt-12 grid gap-4 sm:mt-16 sm:grid-cols-2 lg:grid-cols-4">
         {MODULES.map(({ href, icon: Icon, title, blurb }, i) => (
           <motion.div
             key={href}

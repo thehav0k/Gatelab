@@ -107,6 +107,55 @@ demolishes T0 and turns the otherwise-impossible `{XOR, AND}` into a universal
 set. Ignoring the rails would tell a student their buildable circuit is
 impossible.
 
+**9. A block diagram is a SECOND model, not a view of the circuit document.**
+`src/lib/diagram/` has its own `Diagram` type — boxes with named ports, and
+links between ports. It cannot simulate, it has no nets, no 4-state values and
+no faults, and it is not trying to: the lab already does all of that.
+
+The reason it exists is that `CircuitDocument` is the wrong shape for an exam
+answer. "Implement a 1-to-16 demultiplexer using 2-to-4 decoders" wants five
+labelled boxes, not 96 gates; "show the external connections for a 64×8 memory"
+wants an address bus drawn as one line with a slash and a `6` on it, not six
+wires. The whole content of those answers is the DECOMPOSITION — which boxes,
+what is inside them, what connects to what — and flattening to gates destroys
+exactly the information being examined.
+
+Where the two models overlap they share code rather than agreeing by hand: the
+gate-level builder runs the LAB's `synthesize` + `technologyMap`, so a NAND-only
+drawing is the same circuit the lab would build, and every truth table comes out
+of the core engine's canonical vector.
+
+**Three passes, kept separate.** `layout.ts` places, `svg.ts` draws, `theme.ts`
+colours. That is what lets a diagram be re-themed and re-exported without being
+rebuilt, and it is why no builder in `builders/` contains a colour.
+
+**The exported SVG must be self-contained.** Every colour is an inline hex
+attribute; there are no classes, no `var(--…)`, and no external font. Two
+reasons, both silent when broken: `@theme inline` does not emit `--color-*` at
+all (see the stack notes below), and an SVG opened as a file — or rasterised
+into a PNG through an `<img>` — has no stylesheet behind it, so a `var()` there
+resolves to nothing and the shape renders invisible with no error. The first
+person to see that failure is whoever opens the file.
+
+**One renderer, and the screen uses it too.** The viewer injects the same string
+the exporter writes, so what you export is byte-for-byte what you were looking
+at. A React tree for the screen plus a serializer for the file is two renderers,
+and two renderers drift.
+
+**Layered layout, and the dummy nodes are not optional.** Signals flow left to
+right — a force-directed blob is not a different aesthetic here, it is wrong. A
+link spanning three columns gets a placeholder in each column it crosses, so
+where it passes is a decision rather than an accident; without them the wire runs
+at its source's height and saws through the middle of an unrelated block, which
+to a reader looks exactly like a connection. `layout.test.ts` asserts over every
+diagram in the catalogue that no two blocks overlap and no wire crosses a block
+it is not attached to.
+
+**A problem is a function of its parameters, never a stored picture.** Question
+12 is not "1-to-16 from 2-to-4"; it is a demultiplexer tree, and the 16 and the 4
+are arguments. A stored answer is correct for exactly one phrasing of one
+question, and next year's paper changes the 16 to a 32.
+
 ## The MSB contract
 
 For variable `variables[i]` of an n-variable function, its bit inside minterm

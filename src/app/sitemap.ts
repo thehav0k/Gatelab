@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { SITE } from "@/lib/site";
 
 /**
- * Five routes, and a crawler will find them all from the nav anyway — but a
+ * Six routes, and a crawler will find them all from the nav anyway — but a
  * sitemap is what gets them into Search Console's index report, which is the only
  * place you can see WHY a page was not indexed.
  *
@@ -20,6 +20,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     page("", 1),
     page("/theory", 0.9),
+    page("/diagrams", 0.9),
     page("/lab", 0.9),
     page("/manual", 0.7),
     page("/report", 0.5),
