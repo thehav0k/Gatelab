@@ -216,6 +216,23 @@
   -webkit-user-drag: none;
 }
 
+/* The builder's drawing layer. Its <svg> already carries a viewBox equal to its
+   pixel size, so 1 user unit is 1 px and the interaction overlay on top of it
+   lines up exactly — which is the whole reason hit-testing can be done against
+   the same numbers that were drawn. */
+.builder-sheet > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.builder-canvas {
+  /* The canvas owns its gestures: a two-finger scroll pans the drawing rather
+     than the page, and a drag must not start a text selection. */
+  touch-action: none;
+  user-select: none;
+}
+
 .diagram-viewport {
   /* Ctrl+wheel zooms; a plain wheel must still scroll the page, and touch must
      still pan the page rather than being swallowed by the drag handler. */

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ListTree, Paintbrush } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ import { useIsCompact } from "@/hooks/use-media-query";
 const FIRST_DRAWN =
   PROBLEMS.find((p) => p.category === "circuit") ?? PROBLEMS[0];
 
-export default function DiagramsPage() {
+export default function SolutionsPage() {
   const theme = useDiagramTheme();
   // Which question is open lives in the persisted store, not in local state, for
   // the same reason the theory expression does: it is a place in a document, and
@@ -60,12 +61,17 @@ export default function DiagramsPage() {
     <div className="mx-auto w-full max-w-[100rem] px-4 py-5 sm:px-6 sm:py-6">
       <header className="mb-4 flex flex-wrap items-start gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Diagrams</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Worked solutions</h1>
           <p className="text-muted-foreground mt-1 max-w-2xl text-sm text-pretty">
             Block and circuit diagrams for the standard digital-logic problems —
             decoders, multiplexers, adders, counters and memory expansion. Every
             one is generated from the problem, not stored as a picture, so you can
-            change the width and get a correct answer to a different question.
+            change the width and get a correct answer to a different question. To
+            build something of your own, use the{" "}
+            <Link href="/diagram" className="text-foreground underline underline-offset-4">
+              circuit builder
+            </Link>
+            .
           </p>
         </div>
 

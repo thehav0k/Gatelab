@@ -78,6 +78,21 @@ export const constant = (id: string, value: 0 | 1): Block => ({
   ports: [p("Y", "", "right", "out")],
 });
 
+/**
+ * A junction: a dot where wires meet, with one pin at its centre.
+ *
+ * The pin is `bidirectional` because a junction has no opinion about signal
+ * flow — it is downstream of whatever drives it and upstream of everything it
+ * feeds, and `connect()` therefore takes the direction from the OTHER end.
+ */
+export const junction = (id: string): Block => ({
+  id,
+  kind: "node",
+  title: "",
+  tone: "bus",
+  ports: [{ id: "P", label: "", side: "right", dir: "out", bidirectional: true }],
+});
+
 export const note = (id: string, text: string): Block => ({
   id,
   kind: "label",

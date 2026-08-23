@@ -127,7 +127,7 @@ const TOC = [
   { id: "writing", label: "Writing a function" },
   { id: "theory", label: "The theory workspace" },
   { id: "rules", label: "Gate rules" },
-  { id: "diagrams", label: "Block diagrams" },
+  { id: "diagrams", label: "The builder" },
   { id: "lab", label: "The lab" },
   { id: "blocks", label: "Presets & building blocks" },
   { id: "gates", label: "Logic gates" },
@@ -323,52 +323,161 @@ export default function ManualPage() {
             </p>
           </Section>
 
-          <Section id="diagrams" icon={Network} title="Block diagrams">
+          <Section id="diagrams" icon={Network} title="The circuit builder">
             <p>
-              The <strong>Diagrams</strong> page answers the standard digital-logic
-              questions as pictures: decoder and multiplexer implementations, adders
-              and 2&apos;s complementers, comparators, encoders, counters with timing
-              diagrams, sequential designs, and memory expansion.
+              <strong>Builder</strong> is a canvas. Drag a block out of the palette,
+              drag from one of its pins to another block&apos;s pin to wire them, and
+              drag the blocks around until it reads the way you want.
+            </p>
+            <ul className="ml-4 list-disc space-y-1 text-sm">
+              <li>Drag a pin to a pin to wire them. Click a wire to select it.</li>
+              <li>Drag empty space to marquee-select. Hold ⌥ or drag with the middle button to pan; ⌘-scroll to zoom.</li>
+              <li><kbd className="rounded border px-1">R</kbd> rotates the selection a quarter turn, ⇧<kbd className="rounded border px-1">R</kbd> the other way.</li>
+              <li>Arrow keys nudge one grid step, ⇧ and an arrow one pixel. Hold ⌘ while dragging to ignore the grid entirely.</li>
+              <li>⌘Z / ⇧⌘Z undo and redo. ⌘D duplicates. ⌫ deletes.</li>
+              <li><strong>Arrange</strong> tidies everything into left-to-right dataflow, and the result is still yours to move.</li>
+            </ul>
+
+            <h3 className="pt-1 text-sm font-medium">Getting the wires straight</h3>
+            <p>
+              A pin sits at a fraction of its block&apos;s height, and two different
+              parts almost never line up — so a rough drag used to leave a small
+              two-bend jog in the middle of a wire that plainly wanted to be
+              straight. While you are dragging, a block within a few pixels of
+              straightening one of its wires is now pulled the rest of the way, and a
+              whole bus of them agrees on one shift.
+            </p>
+            <p className="text-muted-foreground">
+              If you would rather be exact, the properties panel has the block&apos;s{" "}
+              <strong>X</strong> and <strong>Y</strong> as numbers you can type into —
+              which is also the quickest way to put four blocks on the same line or
+              space a row evenly.
+            </p>
+
+            <h3 className="pt-1 text-sm font-medium">Junctions</h3>
+            <p>
+              Drag a wire out of a pin and let go over empty space: you get a{" "}
+              <strong>junction</strong> there, wired up. It is a dot with a single pin,
+              so a wire can carry on from it — which is how you join two points that
+              are not pins, fan a signal out at a corner, or route a long wire the way
+              you want it rather than the way the router chose.
+            </p>
+            <p className="text-muted-foreground">
+              A junction you have not selected is a place to start a wire; one you have
+              already selected is a thing to drag. Click it once, then move it.
+            </p>
+
+            <h3 className="pt-1 text-sm font-medium">Blocks are parametric</h3>
+            <p>
+              A decoder is not one block — a decoder with three address lines and an
+              active-low enable is. Select a placed block and the panel on the right
+              changes what it <em>is</em>: width, number of address or select lines,
+              enables, clears, active-low pins, RAM or ROM. Narrowing a block really
+              does delete pins, and the tool tells you how many wires went with them.
             </p>
             <p>
-              Every one is <em>generated from the question</em>, not stored as an
-              image. So the panel above each answer lets you change the question —
-              &ldquo;1-to-16 demultiplexer from 2-to-4 decoders&rdquo; is really{" "}
-              <em>a demultiplexer tree</em>, and moving the two numbers gives a correct
-              answer to a question that was not on your sheet. Change the width of the
-              comparator, the divisors on the divisibility detector, the size of the
-              memory chips, or the excitation equations of the sequential circuit, and
-              the drawing, the truth table and the explanation all follow.
+              When the palette has not got what you need, <strong>Custom block</strong>{" "}
+              is a box whose title and pin lists you type in — a comma-separated list
+              per side, with a trailing apostrophe for an active-low pin.
+            </p>
+
+            <h3 className="pt-1 text-sm font-medium">Starting from an equation</h3>
+            <p>
+              The <strong>Equation</strong> tab takes the function however your
+              question gave it to you — an expression, a minterm list, or the column
+              of output bits — and builds a circuit for it:
+            </p>
+            <pre className="bg-muted/40 overflow-x-auto rounded-md border p-3 font-mono text-xs">
+{`F(A,B,C) = A'B + BC'
+F(A,B,C) = Σm(1,3,5) + d(7)
+F(A,B,C) = 01101001`}
+            </pre>
+            <p>
+              One function per line, and the first line&apos;s variables carry to the
+              rest — so <code>f1</code>, <code>f2</code> and <code>f3</code> over the
+              same inputs is three lines, and they share one decoder.
             </p>
             <p>
-              The drawing is never the whole answer, so it never appears alone: each
-              one comes with the truth table it was derived from, the minimal
-              expression, and the reasoning written out in the order you would put it
-              on paper.
+              Six implementations, and they are not styles — they are different
+              answers, and which one is right depends on what you are allowed to use:
+              gates, NAND-only, NOR-only, a decoder with collecting OR gates, one
+              multiplexer by Shannon expansion, or a reduced tree of 2-to-1
+              multiplexers. What lands on the canvas is ordinary blocks and ordinary
+              wires; drag them, re-parameterise them, group them.
             </p>
+
+            <h3 className="pt-1 text-sm font-medium">Auto-wiring a block you placed</h3>
+            <p>
+              When the question dictates the component — &ldquo;implement f using a
+              3-to-8 decoder&rdquo; — you do not want the tool choosing for you.
+              Place the decoder yourself, select it, type the function, and press{" "}
+              <strong>Auto-wire</strong>: it grows the input tags, the collecting
+              gates and the outputs around <em>that</em> block.
+            </p>
+            <p className="text-muted-foreground">
+              Pins you have already wired are left alone, so you can do part of it by
+              hand and let the rest be filled in. And a decoder whose address lines do
+              not match the function is refused rather than quietly widened — with the
+              number you need to change, because reshaping a part you chose on purpose
+              would be the tool overruling you.
+            </p>
+
+            <h3 className="pt-1 text-sm font-medium">Building bigger things</h3>
+            <p>
+              Select several blocks and press <kbd className="rounded border px-1">G</kbd>.
+              They fold into <em>one</em> block, which joins the palette and can be
+              placed as many times as you like. Build a 4-bit adder once, group it,
+              place it four times — that is a 16-bit adder, and it is how every real
+              digital system is put together.
+            </p>
+            <p className="text-muted-foreground">
+              The new block&apos;s pins come from the Input and Output tags inside the
+              selection, plus any wire that crossed its boundary. So the deliberate
+              way to design one is to drop the tags in first and wire them up: the
+              block gets exactly the interface you drew. ⇧
+              <kbd className="rounded border px-1">G</kbd> takes it apart again and
+              reconnects whatever was wired to it.
+            </p>
+
             <h3 className="pt-1 text-sm font-medium">Exporting</h3>
             <p>
               <strong>SVG</strong> first, and deliberately. It is a vector, it stays
               sharp at any size, Word and Google Docs both accept it, and you can open
               it afterwards to add an annotation the tool did not think of. PNG is
-              there at 1×, 2× and 4× for submission portals that refuse anything else.
+              there at 1×, 2× and 4× for submission portals that refuse anything else,
+              and <strong>File → Save as JSON</strong> keeps the editable document.
             </p>
             <p>
-              The <strong>style</strong> panel changes the background (including fully
+              <strong>LaTeX</strong> is there for reports written in LaTeX, where a
+              PNG of a circuit has the wrong fonts, the wrong line weights and goes
+              soft in print. It writes a TikZ picture of the same drawing — download a
+              standalone <code>.tex</code> you can compile on its own, or copy the
+              figure straight into your document. It needs{" "}
+              <code>\usepackage&#123;tikz&#125;</code> and nothing else: no
+              circuitikz, no libraries, no fonts. Timing charts are the one thing it
+              does not carry over, and it says so in a comment at the top of the file
+              rather than leaving you to notice.
+            </p>
+            <p>
+              The <strong>Style</strong> tab changes the background (including fully
               transparent, for dark slides), the grid, the wire colours and widths, the
               corner radii, the type sizes, and the colour of each category of block.
-              It applies to what you see and to what you export — there is one
-              renderer, and the page shows you the same bytes the file will contain.
+              It applies to the canvas and to the export together — there is one
+              renderer, and the canvas is showing you the same bytes the file will
+              contain.
             </p>
             <p className="text-muted-foreground">
               Per-signal wire colouring gives every net its own hue and every branch of
               one fan-out the same one. Real jumper wire is multicoloured for exactly
               this reason: so that a connection can be traced across a crowded drawing.
             </p>
+
+            <h3 className="pt-1 text-sm font-medium">Straight from an equation</h3>
             <p>
-              The same four constructions are available for whatever you are working on
-              in Theory, under its <em>Block diagram</em> tab: as gates, from a
-              decoder, on one multiplexer, or as a tree of 2-to-1 multiplexers.
+              Theory&apos;s <em>Block diagram</em> tab draws whatever function you are
+              working on four ways — as gates, from a decoder, on one multiplexer, or
+              as a tree of 2-to-1 multiplexers — with the same exporter and the same
+              styling.
             </p>
           </Section>
 

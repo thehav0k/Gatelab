@@ -6,6 +6,10 @@ import { SITE } from "@/lib/site";
  * sitemap is what gets them into Search Console's index report, which is the only
  * place you can see WHY a page was not indexed.
  *
+ * `/solutions` and `/unlock` are deliberately absent. One is password-gated and
+ * the other is the gate; listing either would advertise exactly what the
+ * password exists to keep unlisted.
+ *
  * `lastModified` is deliberately absent rather than `new Date()`: a timestamp that
  * changes on every build is a lie about the content changing, and Google learns to
  * ignore a feed that cries wolf.
@@ -20,7 +24,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return [
     page("", 1),
     page("/theory", 0.9),
-    page("/diagrams", 0.9),
+    page("/diagram", 0.9),
     page("/lab", 0.9),
     page("/manual", 0.7),
     page("/report", 0.5),

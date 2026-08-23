@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Download, FileImage, FileCode2, Printer } from "lucide-react";
+import { Check, Copy, Download, FileImage, FileCode2, Printer, Sigma } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -100,10 +100,19 @@ export function ExportMenu({
   svg,
   name,
   theme,
+  latex,
 }: {
   svg: string;
   name: string;
   theme: DiagramTheme;
+  /**
+   * The figure as a TikZ picture, built on demand.
+   *
+   * A callback rather than a string because generating it walks the whole
+   * placement, and almost nobody opens this menu to click that item — there is
+   * no reason to pay for it on every render of every diagram on the page.
+   */
+  latex?: (form: "standalone" | "figure") => string;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -207,6 +216,40 @@ export function ExportMenu({
           <Copy />
           Copy image
         </DropdownMenuItem>
+
+        {latex && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs">LaTeX</DropdownMenuLabel>
+            <DropdownMenuItem
+              onClick={() =>
+                saveBlob(
+                  new Blob([latex("standalone")], { type: "text/x-tex" }),
+                  `${name}.tex`,
+                )
+              }
+            >
+              <Sigma />
+              Download .tex
+              <span className="text-muted-foreground ml-auto text-[10px]">standalone</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(latex("figure"));
+                  toast.success("TikZ copied", {
+                    description: "Paste it into your document. It needs \\usepackage{tikz} and nothing else.",
+                  });
+                } catch (e) {
+                  fail(e);
+                }
+              }}
+            >
+              <Copy />
+              Copy TikZ figure
+            </DropdownMenuItem>
+          </>
+        )}
 
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={print}>

@@ -1,4 +1,4 @@
-import type { Block, Port, Side } from "./types";
+import type { Block, DiagramGateOp, Port, Rotation, Side } from "./types";
 import type { DiagramTheme } from "./theme";
 
 /**
@@ -62,6 +62,9 @@ const GATE_PIN_PITCH = 13;
 
 export const IO_H = 26;
 export const IO_PAD_X = 12;
+
+/** A junction dot's box. Small, square, and centred on its single pin. */
+export const NODE_SIZE = 10;
 
 /**
  * Average glyph advance as a fraction of font size.
@@ -181,6 +184,8 @@ export function measure(block: Block, theme: DiagramTheme): Box {
       const w = textWidth(block.title, theme.subtitleSize) + 8;
       return { w: Math.ceil(Math.max(30, w)), h: Math.ceil(theme.subtitleSize * 1.6) };
     }
+    case "node":
+      return { w: NODE_SIZE, h: NODE_SIZE };
     case "box":
       return boxSize(block, theme);
   }
@@ -216,6 +221,25 @@ export function placePorts(block: Block, size: Box): Map<string, PlacedPort> {
       out: v,
     });
   };
+
+  // A junction's pin is its centre, and it has NO stub: a wire meeting a
+  // junction meets it at the dot, from whichever side it arrives. The zero
+  // `out` vector is what tells the router "this end faces nowhere" — see
+  // `route.ts`, which offers a free terminal both an across-then-down and a
+  // down-then-across path instead of forcing an escape direction on it.
+  if (block.kind === "node") {
+    for (const p of block.ports) {
+      out.set(p.id, {
+        port: p,
+        x: size.w / 2,
+        y: size.h / 2,
+        ax: size.w / 2,
+        ay: size.h / 2,
+        out: { x: 0, y: 0 },
+      });
+    }
+    return out;
+  }
 
   if (block.kind === "io" || block.kind === "label") {
     // An IO tag has at most one port, and it sits on the edge the tag faces.
@@ -258,5 +282,125 @@ export function placePorts(block: Block, size: Box): Map<string, PlacedPort> {
     }
   }
 
+  return out;
+}
+
+// --- gate geometry ----------------------------------------------------------
+
+/**
+ * Where the LEFTMOST drawn line of a gate is, at height `y`.
+ *
+ * An AND gate has a flat back, so its input pins at `x = 0` touch it. An OR
+ * gate does not: its back is bowed inward, and at the middle of a 56px-wide
+ * body that bow is more than 7px to the RIGHT of the bounding box. Every input
+ * wire therefore stopped 7px short of the symbol and hung in space — most
+ * visibly on a 2-input OR, whose pins sit exactly where the bow is deepest.
+ *
+ * This is the fix, and it belongs here rather than in the renderer because it
+ * is the same curve `svg.ts` and `latex.ts` both draw: one source for the
+ * shape, and the wire is extended to meet it.
+ *
+ * The two curves are quadratic Béziers whose y-component works out linear in
+ * `t` (`y(t) = tH`), so `t` is simply `y / h` and there is nothing to solve.
+ */
+export function gateBackX(op: DiagramGateOp, size: Box, y: number): number {
+  const t = size.h === 0 ? 0.5 : Math.min(1, Math.max(0, y / size.h));
+  const bow = 2 * t * (1 - t);
+  if (op === "xor" || op === "xnor") {
+    // The extra arc, which stands off in FRONT of the back and is the leftmost
+    // thing drawn near the ends. `-6` mirrors the offset in the renderers.
+    return -6 * ((1 - t) ** 2 + t ** 2) + bow * size.w * 0.2;
+  }
+  if (op === "or" || op === "nor") return bow * size.w * 0.26;
+  return 0;
+}
+
+// --- rotation ---------------------------------------------------------------
+
+/**
+ * Rotation is applied to a PLACEMENT, so all of it lives in these four
+ * functions and every consumer — the router, the hit test, both exporters —
+ * reads the rotated numbers without knowing rotation exists.
+ *
+ * Clockwise, because that is the direction the on-screen button turns.
+ */
+export const rotatedSize = (size: Box, rotation: Rotation): Box =>
+  rotation === 90 || rotation === 270 ? { w: size.h, h: size.w } : size;
+
+/** A point in the block's own frame, mapped into the rotated frame. */
+export function rotatePoint(p: Vec, size: Box, rotation: Rotation): Vec {
+  switch (rotation) {
+    case 90:
+      return { x: size.h - p.y, y: p.x };
+    case 180:
+      return { x: size.w - p.x, y: size.h - p.y };
+    case 270:
+      return { x: p.y, y: size.w - p.x };
+    default:
+      return p;
+  }
+}
+
+/**
+ * A direction vector, rotated. Zero stays zero — a junction faces nowhere.
+ *
+ * Negating a component of a unit vector produces `-0`, which compares equal to
+ * `0` under `===` and NOT equal under `Object.is` — so it is invisible until it
+ * reaches a deep-equality check or gets printed into a file. Normalised here,
+ * once, rather than defended against everywhere downstream.
+ */
+export function rotateVec(v: Vec, rotation: Rotation): Vec {
+  switch (rotation) {
+    case 90:
+      return { x: z(-v.y), y: z(v.x) };
+    case 180:
+      return { x: z(-v.x), y: z(-v.y) };
+    case 270:
+      return { x: z(v.y), y: z(-v.x) };
+    default:
+      return v;
+  }
+}
+
+const z = (n: number): number => (n === 0 ? 0 : n);
+
+/**
+ * The translation that must precede `rotate(deg)` for the rotated shape to land
+ * with its bounding box at the origin. SVG and TikZ both need it.
+ */
+export function rotationOffset(size: Box, rotation: Rotation): Vec {
+  switch (rotation) {
+    case 90:
+      return { x: size.h, y: 0 };
+    case 180:
+      return { x: size.w, y: size.h };
+    case 270:
+      return { x: 0, y: size.w };
+    default:
+      return { x: 0, y: 0 };
+  }
+}
+
+/** Every port of a block, positioned and turned. One place does both. */
+export function placeRotatedPorts(
+  block: Block,
+  size: Box,
+  rotation: Rotation,
+): Map<string, PlacedPort> {
+  const local = placePorts(block, size);
+  if (rotation === 0) return local;
+  const out = new Map<string, PlacedPort>();
+  for (const [id, p] of local) {
+    const at = rotatePoint({ x: p.x, y: p.y }, size, rotation);
+    const anchor = rotatePoint({ x: p.ax, y: p.ay }, size, rotation);
+    out.set(id, {
+      port: p.port,
+      x: at.x,
+      y: at.y,
+      ax: anchor.x,
+      ay: anchor.y,
+      out: rotateVec(p.out, rotation),
+    });
+  }
   return out;
 }

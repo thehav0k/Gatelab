@@ -13,6 +13,7 @@ import {
   type DiagramThemePatch,
 } from "@/lib/diagram/theme";
 import type { ParamValue, ParamValues } from "@/lib/diagram/problems";
+import type { Implementation } from "@/lib/diagram/editor/synthesize";
 
 /**
  * What the diagram workspace remembers between visits.
@@ -56,6 +57,10 @@ interface DiagramState {
   /** Last problem opened, so the page comes back where you left it. */
   lastProblem: string | null;
   setLastProblem: (id: string) => void;
+
+  /** How the builder's synthesis panel should implement a function. */
+  implementation: Implementation;
+  setImplementation: (i: Implementation) => void;
 }
 
 export const useDiagramStore = create<DiagramState>()(
@@ -97,6 +102,9 @@ export const useDiagramStore = create<DiagramState>()(
 
       lastProblem: null,
       setLastProblem: (lastProblem) => set({ lastProblem }),
+
+      implementation: "gates",
+      setImplementation: (implementation) => set({ implementation }),
     }),
     { name: "gatelab-diagrams", version: 1 },
   ),

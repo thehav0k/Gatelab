@@ -8,6 +8,7 @@ import type { DiagramTheme } from "@/lib/diagram/theme";
 import type { Diagram } from "@/lib/diagram/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { renderTikz } from "@/lib/diagram/latex";
 import { ExportMenu } from "./export-menu";
 
 /**
@@ -41,10 +42,8 @@ export function DiagramFigure({
   maxHeight?: number;
   toolbar?: boolean;
 }) {
-  const svg = useMemo(
-    () => renderSvg(layout(diagram, theme), theme),
-    [diagram, theme],
-  );
+  const placed = useMemo(() => layout(diagram, theme), [diagram, theme]);
+  const svg = useMemo(() => renderSvg(placed, theme), [placed, theme]);
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -121,7 +120,17 @@ export function DiagramFigure({
             >
               <Maximize2 className="size-3.5" />
             </Button>
-            <ExportMenu svg={svg} name={diagram.id} theme={theme} />
+            <ExportMenu
+              svg={svg}
+              name={diagram.id}
+              theme={theme}
+              latex={(form) =>
+                renderTikz(placed, theme, {
+                  standalone: form === "standalone",
+                  background: form === "standalone" && theme.background !== "none",
+                })
+              }
+            />
           </div>
         </div>
       )}

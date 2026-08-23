@@ -60,6 +60,16 @@ export interface Port {
   readonly width?: number;
   /** Pushes a visual gap ABOVE this port — separates `A1 A0` from `E`. */
   readonly gapBefore?: boolean;
+  /**
+   * A pin with no direction of its own — a junction dot.
+   *
+   * `dir` is still required because every consumer reads it, but for a pin like
+   * this it is a placeholder: which end of a link is the SOURCE is decided by
+   * the OTHER end, in `connect()`. A junction between a gate output and three
+   * gate inputs is downstream of the output and upstream of the inputs, and no
+   * single `dir` can say both.
+   */
+  readonly bidirectional?: boolean;
 }
 
 /**
@@ -68,8 +78,16 @@ export interface Port {
  *   gate  — an ANSI distinctive-shape gate body, reusing the lab's symbols.
  *   io    — a small tag for a top-level input/output signal.
  *   label — free text with no body and no ports. Annotations, bus names.
+ *   node  — a junction dot: one pin, at the centre, facing nowhere.
+ *
+ * `node` is what makes a wire between two arbitrary POINTS expressible. Every
+ * other block is a thing with an interface; a junction is a place on the sheet
+ * where wires meet, which is a real part of every hand-drawn schematic and had
+ * no representation here at all. Modelling it as a block rather than as a
+ * special kind of link keeps one rule — a wire runs from a pin to a pin — and
+ * means the router, the exporter and undo/redo needed no changes to support it.
  */
-export type BlockKind = "box" | "gate" | "io" | "label";
+export type BlockKind = "box" | "gate" | "io" | "label" | "node";
 
 /** The gate operators a `gate` block may take. Mirrors `simulation/logic.ts`. */
 export type DiagramGateOp =
@@ -102,6 +120,22 @@ export interface Block {
   /** Layout hint: preferred vertical order inside its column. Lower is higher. */
   readonly row?: number;
 }
+
+/**
+ * How far a block is turned, clockwise, in degrees.
+ *
+ * Four values and not an arbitrary angle, because a block diagram is drawn on a
+ * grid and its wires are orthogonal: a symbol at 37° has no pin a horizontal
+ * wire can meet. Rotation is a property of a PLACEMENT, never of a `Block` —
+ * the block is what the thing is, the rotation is how it happens to be sitting.
+ */
+export type Rotation = 0 | 90 | 180 | 270;
+
+export const ROTATIONS: readonly Rotation[] = [0, 90, 180, 270];
+
+/** Normalise any multiple of 90 (including negatives) into a `Rotation`. */
+export const asRotation = (deg: number): Rotation =>
+  (((Math.round(deg / 90) * 90) % 360 + 360) % 360) as Rotation;
 
 export interface Endpoint {
   readonly block: string;

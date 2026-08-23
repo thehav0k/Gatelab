@@ -421,6 +421,60 @@ export function muxResidues(
 
 // --- a tree of 2:1 multiplexers --------------------------------------------
 
+/**
+ * A reduced binary decision diagram over the variables in order.
+ *
+ * Extracted from the drawing code because TWO callers need the same tree: the
+ * catalogue, which renders it as a figure, and the editor, which places it as
+ * real multiplexer instances you can then edit. A second implementation would be
+ * a second reduction, and the two would disagree about how many muxes the answer
+ * needs — which is the number the question is asking for.
+ */
+export type DecisionNode =
+  | { readonly kind: "const"; readonly value: 0 | 1 }
+  | {
+      readonly kind: "test";
+      /** Index into the function's variable list. */
+      readonly level: number;
+      readonly lo: DecisionNode;
+      readonly hi: DecisionNode;
+    };
+
+const nodeKey = (n: DecisionNode): string =>
+  n.kind === "const" ? `c${n.value}` : `t${n.level}(${nodeKey(n.lo)},${nodeKey(n.hi)})`;
+
+/**
+ * Build the tree and reduce it: wherever both branches lead to the same place
+ * the test cannot affect the answer, so it disappears. That reduction is what
+ * turns the 2^n - 1 worst case into the small circuit an exam expects.
+ *
+ * A don't-care resolves to 0 so that identical branches can collapse — which is
+ * the whole point of having them.
+ */
+export function decisionTree(spec: FunctionSpec): {
+  root: DecisionNode;
+  tests: number;
+} {
+  const values = Array.from(toFunction(spec).values) as TruthValue[];
+  const n = spec.variables.length;
+  const seen = new Set<string>();
+
+  const build = (level: number, prefix: number): DecisionNode => {
+    if (level === n) {
+      return { kind: "const", value: values[prefix] === 1 ? 1 : 0 };
+    }
+    const lo = build(level + 1, prefix << 1);
+    const hi = build(level + 1, (prefix << 1) | 1);
+    if (nodeKey(lo) === nodeKey(hi)) return lo;
+    const node: DecisionNode = { kind: "test", level, lo, hi };
+    seen.add(nodeKey(node));
+    return node;
+  };
+
+  const root = build(0, 0);
+  return { root, tests: seen.size };
+}
+
 type Leaf =
   | { readonly kind: "const"; readonly value: 0 | 1 }
   | { readonly kind: "node"; readonly ep: Endpoint; readonly key: string };

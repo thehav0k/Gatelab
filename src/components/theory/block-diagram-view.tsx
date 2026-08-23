@@ -160,8 +160,8 @@ export function BlockDiagramView({ fn }: { fn: BooleanFunction }) {
             </SelectContent>
           </Select>
           <Button asChild variant="outline" size="sm">
-            <Link href="/diagrams">
-              More styling <ExternalLink />
+            <Link href="/diagram">
+              Open in builder <ExternalLink />
             </Link>
           </Button>
         </div>
@@ -184,13 +184,13 @@ export function BlockDiagramView({ fn }: { fn: BooleanFunction }) {
       )}
 
       <p className="text-muted-foreground text-xs text-pretty">
-        Every figure here exports as SVG or PNG from the toolbar above it. The full
-        set of worked block-diagram problems — demultiplexer trees, adders,
-        counters, memory expansion — is on the{" "}
-        <Link href="/diagrams" className="text-foreground underline underline-offset-4">
-          Diagrams
-        </Link>{" "}
-        page.
+        Every figure here exports as SVG or PNG from the toolbar above it. To draw
+        something these four constructions do not cover — a decoder tree, a counter,
+        a memory map — build it by hand in the{" "}
+        <Link href="/diagram" className="text-foreground underline underline-offset-4">
+          circuit builder
+        </Link>
+        .
       </p>
     </div>
   );

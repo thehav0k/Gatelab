@@ -47,6 +47,9 @@ export const KEYWORDS = [
   "half adder full adder",
   "multiplexer decoder encoder",
   "logic circuit diagram generator",
+  "logic circuit builder",
+  "block diagram editor",
+  "drag and drop circuit diagram",
   "block diagram digital logic",
   "implement function using multiplexer",
   "full adder using decoder",
@@ -54,6 +57,9 @@ export const KEYWORDS = [
   "memory expansion decoder chip select",
   "ripple counter timing diagram",
   "export circuit diagram svg png",
+  "circuit diagram latex tikz",
+  "logic gate tikz",
+  "block diagram to latex",
 ] as const;
 
 /**
@@ -80,7 +86,9 @@ export const jsonLd = () => ({
     "Four-state logic (0, 1, Z, X) with fault detection",
     "NAND-only and NOR-only technology mapping",
     "Timing waveforms and static hazard detection",
-    "Block and circuit diagram generator for decoders, multiplexers, adders, counters and memory",
-    "Customisable diagram styling with SVG and PNG export",
+    "Drag-and-drop block diagram builder for decoders, multiplexers, adders, counters, registers and memory",
+    "Group a selection into a reusable block and build hierarchical circuits",
+    "Customisable diagram styling with SVG, PNG and LaTeX (TikZ) export",
+    "Rotate blocks, place junctions, and snap wires straight",
   ],
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { layout } from "./layout";
+import { gateBackX, measure } from "./measure";
 import { renderSvg } from "./svg";
 import {
   BLUEPRINT,
@@ -159,3 +160,53 @@ describe("themes", () => {
     }
   });
 });
+
+
+describe("gate back geometry", () => {
+  const size = { w: 56, h: 42 };
+
+  it("is flat for an AND, a NAND and a NOT", () => {
+    for (const op of ["and", "nand", "not", "buf"] as const) {
+      expect(gateBackX(op, size, size.h / 2)).toBe(0);
+    }
+  });
+
+  it("bows inward for an OR, deepest at the middle", () => {
+    const middle = gateBackX("or", size, size.h / 2);
+    expect(middle).toBeGreaterThan(6);
+    expect(gateBackX("or", size, 0)).toBe(0);
+    expect(gateBackX("or", size, size.h)).toBe(0);
+    expect(gateBackX("nor", size, size.h / 3)).toBeGreaterThan(0);
+    expect(gateBackX("or", size, size.h / 3)).toBeLessThan(middle);
+  });
+
+  it("gives an XOR the outer arc, which stands off in front at the ends", () => {
+    expect(gateBackX("xor", size, 0)).toBeCloseTo(-6, 5);
+    expect(gateBackX("xnor", size, size.h / 2)).toBeGreaterThan(0);
+    // The arc is always in FRONT of the body's own back — that gap is the
+    // notation, and drawing the wire to the back would fill it in.
+    for (const y of [0.2, 0.4, 0.6, 0.8]) {
+      expect(gateBackX("xor", size, size.h * y)).toBeLessThan(
+        gateBackX("or", size, size.h * y),
+      );
+    }
+  });
+
+  it("is clamped for a y outside the body", () => {
+    expect(gateBackX("or", size, -50)).toBe(0);
+    expect(gateBackX("or", size, 500)).toBe(0);
+    expect(gateBackX("or", { w: 56, h: 0 }, 10)).toBeGreaterThan(0);
+  });
+
+  it("puts an OR gate's input stubs on the ink and not on the bounding box", () => {
+    const gate = C.gate("G", "or", 2);
+    const size2 = measure(gate, TEXTBOOK);
+    const svg = renderSvg(layout({ id: "g", title: "g", blocks: [gate], links: [] }, TEXTBOOK), TEXTBOOK);
+    // Two stubs, each starting at the bow rather than at x = 0.
+    const inset = gateBackX("or", size2, Math.round(size2.h / 3));
+    expect(inset).toBeGreaterThan(1);
+    expect(svg).toContain(`M${round(inset)},`);
+  });
+});
+
+const round = (v: number): string => String(Math.round(v * 100) / 100);

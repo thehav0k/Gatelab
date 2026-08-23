@@ -26,7 +26,7 @@ that matches under a column swap means two input wires are crossed.
 
 It runs entirely in your browser. Nothing is uploaded, and there is no backend.
 
-## The three modules
+## The modules
 
 **Theory** — one function, five views. Write it as an expression, as `Σm(1,3,7)`, or
 just fill in a blank truth table; they are the same document, and editing one rewrites
@@ -42,7 +42,52 @@ the others.
   as packed 74xx chips, and as a **pin-by-pin wiring list** (`U1 pin 2 (1Y) → U2 pin 1
   (1A)`) you can transcribe straight onto a breadboard.
 
-**Diagrams** — the block-and-circuit-diagram answers, generated rather than stored.
+**Builder** — a drag-and-drop canvas for block diagrams of any size.
+
+Drag gates, decoders, multiplexers, encoders, adders, comparators, ALUs,
+flip-flops, registers, counters, shift registers and memory onto a sheet and wire
+pin to pin. Every part is *parametric* — a decoder is not a block, a decoder with
+three address lines and an active-low enable is — so a placed block changes shape
+when you change its settings, and the wires that still have pins stay attached.
+When the palette has not got what you need, the **Custom block** is a box whose
+title and pin lists you type in.
+
+- **Type an equation and have it built.** An expression, a minterm list, or the
+  output column — whichever your question gave you, one function per line — and
+  six ways to implement it: gates, NAND-only, NOR-only, a decoder with collecting
+  OR gates, one multiplexer by Shannon expansion, or a reduced tree of 2-to-1
+  multiplexers. What lands on the canvas is ordinary parts and ordinary wires,
+  editable like anything else.
+- **Or auto-wire a block you placed yourself.** Drop a 3-to-8 decoder, give it a
+  truth table, and it grows the inputs, the collecting gates and the outputs
+  around *that* decoder — the answer to "implement f using a 3-to-8 decoder",
+  where the part is dictated and only the wiring is yours. Pins you already wired
+  are left alone, and a decoder of the wrong width is refused with the number to
+  change rather than silently reshaped.
+- **Group a selection into one reusable block.** This is the part that makes it a
+  design tool rather than a drawing tool: build a 4-bit adder, fold it into a
+  block, place it four times, and you have a 16-bit adder. The new block's pins
+  come from the Input and Output tags inside it plus any wire that crossed the
+  boundary; ungrouping puts the contents back and reconnects the outside world to
+  the right inner pins.
+- **Rotate anything** with `R`, in either direction. The symbol turns; the
+  writing does not — a rotated title is not a style, it is an upside-down title.
+- **Junctions.** Drag a wire into empty space and you get a dot there, wired up.
+  A wire runs pin to pin, so two arbitrary *points* had nothing to join them
+  until the dot became a block with one pin — which is what a junction has
+  always been on paper.
+- **Wires come out straight.** Pins sit at fractions of their block's height and
+  almost never line up, so a rough drag used to leave a 3px jog in nearly every
+  wire. While you drag, a block within a few pixels of straightening one of its
+  wires is pulled the rest of the way. Type exact coordinates if you would
+  rather, or nudge with the arrow keys.
+- **Auto-arrange** is not a second layout engine — it runs the same layered
+  placement the solutions use and writes the coordinates back as ordinary
+  positions, so the result is still yours to move.
+- Save and reopen as JSON, or export as SVG, PNG or LaTeX.
+
+**Worked solutions** — the same engine, aimed at a set of standard exam questions,
+and **behind a password** (`DIAGRAMS_PASSWORD`).
 
 Forty-six of the standard digital-logic questions, each one parameterised down to
 the thing it is actually about. "Implement a 1-to-16 demultiplexer using 2-to-4
@@ -58,12 +103,13 @@ them and you get a correct answer to a question that was not on the sheet.
 - Every drawing comes with the truth table, the minimal expression and the worked
   reasoning — all recomputed from the same engine, so the prose cannot claim
   three gates beside a picture of six.
-- **Export is the deliverable.** SVG or PNG, with the background, the wire
-  colours and widths, the corner radii, the fonts and the per-category block
-  colours all yours. There is one renderer, and the viewer injects exactly the
-  string the exporter writes — what you export is byte-for-byte what you were
-  looking at. The exported file is self-contained: inline hex, no stylesheet, no
-  web font, so it survives being dropped into somebody else's document.
+
+**Export is the deliverable**, for both of them. SVG, PNG or **LaTeX**, with the background,
+the wire colours and widths, the corner radii, the fonts and the per-category
+block colours all yours. There is one renderer, and the canvas injects exactly
+the string the exporter writes — what you export is byte-for-byte what you were
+looking at. The exported file is self-contained: inline hex, no stylesheet, no
+web font, so it survives being dropped into somebody else's document.
 
 **Lab** — a 74xx TTL sandbox on a schematic or a real breadboard.
 
@@ -144,6 +190,16 @@ version is:
   answer is boxes and buses; flattening a demultiplexer tree to 96 gates destroys the
   decomposition that *is* the answer. Where they overlap they share code — the
   gate-level drawing runs the lab's own synthesizer — rather than agreeing by hand.
+- **The builder is that model with authored coordinates, and nothing else.** It
+  produces the same placed diagram the auto-layout produces, so one renderer draws
+  both and the canvas shows you the exporter's own bytes.
+- **A rotation belongs to the placement, never to the block.** A block is what a
+  thing *is*; how it happens to be sitting is somebody's drawing decision, and
+  every consumer reads already-rotated numbers without knowing rotation exists.
+- **The LaTeX export transforms nothing.** Every coordinate is a plain number: no
+  `rotate=` scope and no `arc`, because in a y-flipped TikZ picture the sign of
+  an angle is exactly the kind of thing only pdfLaTeX can settle — and nothing
+  here can run pdfLaTeX. It needs `\usepackage{tikz}` and nothing else.
 - **`variables[0]` is the MSB**, and a variable's bit is decided by its position *in the
   function*, never in the alphabet — `F(S,A,B)` is the natural way to write a
   multiplexer, and lining it up alphabetically reports a correct mux as wrong.
@@ -152,6 +208,13 @@ version is:
 the thing every later algorithm is property-tested against. The highest-value property
 in the codebase is `truthTable(ast) === truthTable(minimize(ast))` over random ASTs —
 it catches almost every Quine–McCluskey bug on its own.
+
+## Configuration
+
+| Variable | What it does |
+| --- | --- |
+| `DIAGRAMS_PASSWORD` | The shared password for `/solutions`. **Unset means locked**, not open — the gate fails closed, so a missing variable can never publish the catalogue by accident. |
+| `NEXT_PUBLIC_FEEDBACK_ENDPOINT` | Where the feedback form posts. Defaults to a FormSubmit relay. |
 
 ## Feedback
 

@@ -6,7 +6,7 @@ import {
   type PlacedPort,
 } from "./measure";
 import type { DiagramTheme } from "./theme";
-import type { Block, Diagram, Link } from "./types";
+import type { Block, Diagram, Link, Rotation } from "./types";
 
 /**
  * Turning a `Diagram` (boxes and links, no coordinates) into something drawable.
@@ -41,9 +41,15 @@ export interface PlacedBlock {
   readonly block: Block;
   readonly x: number;
   readonly y: number;
+  /** The size AFTER rotation — what the router and the hit test must see. */
   readonly w: number;
   readonly h: number;
   readonly ports: ReadonlyMap<string, PlacedPort>;
+  /**
+   * Clockwise turn, for the renderers. Absent means upright, which is every
+   * block the automatic layout produces — only the editor turns things.
+   */
+  readonly rotation?: Rotation;
 }
 
 export interface RoutedLink {

@@ -15,11 +15,11 @@ const MODULES = [
       "Parse an expression, sweep its truth table, and watch Quine–McCluskey reduce it one column at a time. Every prime implicant is drawn back onto the K-map.",
   },
   {
-    href: "/diagrams",
+    href: "/diagram",
     icon: Network,
-    title: "Diagrams",
+    title: "Builder",
     blurb:
-      "Block and circuit diagrams for the standard problems — decoder and multiplexer implementations, adders, counters, memory expansion — generated from the question, and exportable as SVG or PNG in your own colours.",
+      "Drag decoders, multiplexers, adders, flip-flops and memory onto a canvas and wire them up. Fold a selection into one reusable block, then build something bigger out of it. Exports as SVG or PNG in your own colours.",
   },
   {
     href: "/lab",

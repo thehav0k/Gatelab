@@ -1,7 +1,15 @@
 import type { PlacedBlock, PlacedDiagram, Point, RoutedLink } from "./layout";
-import { STUB, textWidth } from "./measure";
+import {
+  gateBackX,
+  NODE_SIZE,
+  placePorts,
+  rotationOffset,
+  textWidth,
+  type Box,
+  type PlacedPort,
+} from "./measure";
 import type { DiagramTheme } from "./theme";
-import type { Block, TimingChart } from "./types";
+import type { Block, Rotation, TimingChart } from "./types";
 
 /**
  * The one renderer.
@@ -33,6 +41,16 @@ export interface RenderOptions {
   readonly scale?: number;
   /** A small credit line in the corner. */
   readonly credit?: string;
+  /**
+   * `"figure"` (the default) frames the drawing: margin, title, caption, notes.
+   *
+   * `"canvas"` draws it RAW — no margin, no chrome, and the SVG's user units are
+   * the placement's own coordinates. That is what the editor needs, because its
+   * hit-testing works in document coordinates and any offset between the two
+   * would mean clicking a pin an inch away from where it looks. Not a different
+   * renderer: the same block and wire code, differently framed.
+   */
+  readonly frame?: "figure" | "canvas";
 }
 
 const esc = (s: string): string =>
@@ -53,12 +71,15 @@ export function renderSvg(
   theme: DiagramTheme,
   opts: RenderOptions = {},
 ): string {
-  const pad = theme.padding;
-  const title = opts.title ?? (theme.showTitle ? placed.diagram.title : undefined);
-  const caption = opts.caption ?? (theme.showCaption ? placed.diagram.caption : undefined);
+  const canvas = opts.frame === "canvas";
+  const pad = canvas ? 0 : theme.padding;
+  const title = canvas ? undefined : (opts.title ?? (theme.showTitle ? placed.diagram.title : undefined));
+  const caption = canvas
+    ? undefined
+    : (opts.caption ?? (theme.showCaption ? placed.diagram.caption : undefined));
 
   const titleH = title ? theme.titleSize * 1.6 + 10 : 0;
-  const timing = placed.diagram.timing;
+  const timing = canvas ? undefined : placed.diagram.timing;
   const timingH = timing ? timingHeight(timing, theme) : 0;
   // Notes and captions are wrapped to the DRAWING's width, not left to run off
   // the side of it. An SVG has no overflow to scroll and no reflow — a line that
@@ -66,7 +87,7 @@ export function renderSvg(
   const contentW = Math.max(placed.width, timing ? timingWidth(timing) : 0);
   const captionLines = caption ? wrap(caption, contentW, theme) : [];
   const captionH = captionLines.length * (theme.subtitleSize * 1.5) + (caption ? 10 : 0);
-  const noteLines = (placed.diagram.notes ?? []).flatMap((note, i) =>
+  const noteLines = (canvas ? [] : (placed.diagram.notes ?? [])).flatMap((note, i) =>
     wrap(note, contentW, theme).map((line, k) => ({
       text: k === 0 ? `• ${line}` : `   ${line}`,
       first: k === 0,
@@ -81,12 +102,18 @@ export function renderSvg(
   const body: string[] = [];
 
   // --- background -----------------------------------------------------------
-  if (theme.background !== "none") {
+  //
+  // In CANVAS framing the host paints the background and the grid instead. The
+  // sheet is only as big as its contents, so painting it here would put a small
+  // white page in the middle of the editor with the workspace showing around it
+  // — and worse, panning would move the "paper" out from under the blocks. The
+  // host has a viewport; this function does not.
+  if (!canvas && theme.background !== "none") {
     body.push(
       `<rect x="0" y="0" width="${n(width)}" height="${n(height)}" fill="${esc(theme.background)}"/>`,
     );
   }
-  if (theme.grid !== "none") body.push(grid(width, height, theme));
+  if (!canvas && theme.grid !== "none") body.push(grid(width, height, theme));
   if (theme.showFrame) {
     body.push(
       `<rect x="4" y="4" width="${n(width - 8)}" height="${n(height - 8)}" fill="none" stroke="${esc(theme.frameColor)}" stroke-width="1"/>`,
@@ -192,7 +219,7 @@ function grid(w: number, h: number, theme: DiagramTheme): string {
  * colour, because they are the same net — which is the only reason the colouring
  * helps a reader trace a connection at all.
  */
-function wireColorOf(colorKey: string | null, theme: DiagramTheme): string {
+export function wireColorOf(colorKey: string | null, theme: DiagramTheme): string {
   if (theme.wireColoring === "mono" || colorKey === null) return theme.wireColor;
   let hash = 0;
   for (let i = 0; i < colorKey.length; i++) {
@@ -321,39 +348,106 @@ function wireLabel(l: RoutedLink, theme: DiagramTheme): string {
 
 // --- blocks -----------------------------------------------------------------
 
+/**
+ * A block, drawn in ITS OWN upright frame and then turned by the group
+ * transform.
+ *
+ * The ports are re-derived here rather than read off the `PlacedBlock`, and
+ * that is the point: `b.ports` are absolute and already rotated, and a body
+ * path is not. Mixing the two draws an OR gate upright with its pins down the
+ * side. `placePorts` is a pure function of the block and its size, so asking it
+ * again costs nothing and cannot disagree with the placement.
+ */
 function renderBlock(b: PlacedBlock, theme: DiagramTheme): string {
-  const g = (inner: string): string =>
-    `<g transform="translate(${n(b.x)} ${n(b.y)})">${inner}</g>`;
+  const rotation = b.rotation ?? 0;
+  // b.w/b.h are the ROTATED extents, so undo the swap to get the block's own.
+  const size =
+    rotation === 90 || rotation === 270 ? { w: b.h, h: b.w } : { w: b.w, h: b.h };
+  const local = placePorts(b.block, size);
+  const off = rotationOffset(size, rotation);
 
-  switch (b.block.kind) {
-    case "label":
-      return g(
-        `<text x="0" y="${n(b.h * 0.75)}" font-family="${esc(theme.fontFamily)}" font-size="${n(theme.subtitleSize * 1.1)}" fill="${esc(theme.mutedTextColor)}">${esc(b.block.title)}</text>`,
-      );
-    case "io":
-      return g(ioTag(b, theme));
-    case "gate":
-      return g(gateBody(b, theme));
-    case "box":
-      return g(boxBody(b, theme));
-  }
+  const inner =
+    b.block.kind === "label"
+      ? `<text x="0" y="${n(size.h * 0.75)}" font-family="${esc(theme.fontFamily)}" font-size="${n(theme.subtitleSize * 1.1)}" fill="${esc(theme.mutedTextColor)}">${esc(b.block.title)}</text>`
+      : b.block.kind === "node"
+        ? nodeBody(theme)
+        : b.block.kind === "io"
+          ? ioTag(b.block, size, local, theme)
+          : b.block.kind === "gate"
+            ? gateBody(b.block, size, local, theme)
+            : boxBody(b.block, size, local, theme);
+
+  const transform =
+    rotation === 0
+      ? `translate(${n(b.x)} ${n(b.y)})`
+      : `translate(${n(b.x + off.x)} ${n(b.y + off.y)}) rotate(${rotation})`;
+  // Pin labels are drawn OUTSIDE the rotated group, in the sheet's own frame.
+  //
+  // Not a tidiness preference: a label's placement depends on which EDGE its
+  // pin is on, and after a turn that is a different edge. Drawn inside, a
+  // 180-degree box put every left-hand label outside its own border, reading
+  // outwards, because "6px to the right, anchored at the start" is a rule about
+  // an upright box. Out here the rule is applied to the rotated pin direction,
+  // which is the thing it was always really about.
+  return `<g transform="${transform}">${upright(inner, rotation)}</g>${portLabels(b, theme)}`;
+}
+
+/**
+ * Turn every label back the right way up inside a rotated block.
+ *
+ * A rotated symbol is what the reader wants; rotated TEXT is not — at 180° the
+ * title is upside down, and at 90° a column of port labels has to be read with
+ * your head on one side. Every `<text>` this module writes carries its own
+ * `x`/`y`, so counter-rotating each one about its own anchor leaves it exactly
+ * where the layout put it, only readable.
+ *
+ * The regex reads this file's OWN output, and only its own: the text content
+ * has already been through `esc`, so it can contain no `<`, and the element is
+ * always written on one line with `x` first and `y` second.
+ */
+const TEXT_ELEMENT =
+  /<text x="(-?[\d.]+)" y="(-?[\d.]+)"[^>]*>(?:[^<]|<tspan[^>]*>[^<]*<\/tspan>)*<\/text>/g;
+
+function upright(body: string, rotation: Rotation): string {
+  if (rotation === 0) return body;
+  return body.replace(
+    TEXT_ELEMENT,
+    (element, x: string, y: string) =>
+      `<g transform="rotate(${360 - rotation} ${x} ${y})">${element}</g>`,
+  );
 }
 
 const toneOf = (block: Block, theme: DiagramTheme) => theme.tones[block.tone];
 
+/**
+ * A junction: a filled dot, and nothing else.
+ *
+ * It is deliberately drawn in the WIRE colour rather than a tone's. A junction
+ * is not a component — it is a place where wires meet, and painting it like a
+ * component would make a drawing look as though it had a part in it that a
+ * reader would then go looking for in the parts list.
+ */
+const nodeBody = (theme: DiagramTheme): string =>
+  `<circle cx="${n(NODE_SIZE / 2)}" cy="${n(NODE_SIZE / 2)}" r="${n(Math.max(2.4, theme.wireWidth * 1.8))}" fill="${esc(theme.wireColor)}"/>`;
+
 /** A signal tag: a rectangle with one chamfered end, pointing the way it flows. */
-function ioTag(b: PlacedBlock, theme: DiagramTheme): string {
-  const t = toneOf(b.block, theme);
-  const { w, h } = b;
+function ioTag(
+  block: Block,
+  size: Box,
+  local: ReadonlyMap<string, PlacedPort>,
+  theme: DiagramTheme,
+): string {
+  const t = toneOf(block, theme);
+  const { w, h } = size;
   const c = 8;
-  const outward = b.block.ports.some((p) => p.dir === "out");
+  const outward = block.ports.some((p) => p.dir === "out");
   const d = outward
     ? `M0,0H${n(w - c)}L${n(w)},${n(h / 2)}L${n(w - c)},${n(h)}H0Z`
     : `M${n(c)},0H${n(w)}V${n(h)}H${n(c)}L0,${n(h / 2)}Z`;
   return (
     `<path d="${d}" fill="${esc(t.fill)}" stroke="${esc(t.stroke)}" stroke-width="${n(theme.blockStrokeWidth)}"/>` +
-    `<text x="${n(w / 2 - (outward ? c / 2 : -c / 2))}" y="${n(h / 2)}" dominant-baseline="central" text-anchor="middle" font-family="${esc(theme.monoFamily)}" font-size="${n(theme.titleSize * 0.85)}" fill="${esc(t.text)}">${esc(b.block.title)}</text>` +
-    stubs(b, theme)
+    `<text x="${n(w / 2 - (outward ? c / 2 : -c / 2))}" y="${n(h / 2)}" dominant-baseline="central" text-anchor="middle" font-family="${esc(theme.monoFamily)}" font-size="${n(theme.titleSize * 0.85)}" fill="${esc(t.text)}">${esc(block.title)}</text>` +
+    stubs(block, size, local, theme)
   );
 }
 
@@ -365,9 +459,14 @@ function ioTag(b: PlacedBlock, theme: DiagramTheme): string {
  * import a component (Invariant 3) — and the shapes are a fixed, 60-year-old
  * standard, so the duplication is of something that cannot change.
  */
-function gateBody(b: PlacedBlock, theme: DiagramTheme): string {
-  const t = toneOf(b.block, theme);
-  const op = b.block.op ?? "and";
+function gateBody(
+  block: Block,
+  size: Box,
+  local: ReadonlyMap<string, PlacedPort>,
+  theme: DiagramTheme,
+): string {
+  const t = toneOf(block, theme);
+  const op = block.op ?? "and";
   const inverted = op === "nand" || op === "nor" || op === "xnor" || op === "not";
   const shape =
     op === "and" || op === "nand"
@@ -375,8 +474,8 @@ function gateBody(b: PlacedBlock, theme: DiagramTheme): string {
       : op === "or" || op === "nor" || op === "xor" || op === "xnor"
         ? "or"
         : "not";
-  const W = b.w;
-  const H = b.h;
+  const W = size.w;
+  const H = size.h;
   const bubbleR = 4;
 
   const body =
@@ -406,54 +505,74 @@ function gateBody(b: PlacedBlock, theme: DiagramTheme): string {
   );
   // A gate's title is written under it — inside the body there is no room, and a
   // shrunk-to-fit label is unreadable at the size these are printed.
-  if (b.block.title) {
+  if (block.title) {
     parts.push(
-      `<text x="${n(W / 2)}" y="${n(H + theme.subtitleSize + 2)}" text-anchor="middle" font-family="${esc(theme.monoFamily)}" font-size="${n(theme.subtitleSize)}" fill="${esc(theme.mutedTextColor)}">${esc(b.block.title)}</text>`,
+      `<text x="${n(W / 2)}" y="${n(H + theme.subtitleSize + 2)}" text-anchor="middle" font-family="${esc(theme.monoFamily)}" font-size="${n(theme.subtitleSize)}" fill="${esc(theme.mutedTextColor)}">${esc(block.title)}</text>`,
     );
   }
-  parts.push(stubs(b, theme));
+  parts.push(stubs(block, size, local, theme));
   return parts.join("");
 }
 
-function boxBody(b: PlacedBlock, theme: DiagramTheme): string {
-  const t = toneOf(b.block, theme);
-  const { w, h } = b;
-  const hasSub = Boolean(b.block.subtitle) && theme.showSubtitles;
+function boxBody(
+  block: Block,
+  size: Box,
+  local: ReadonlyMap<string, PlacedPort>,
+  theme: DiagramTheme,
+): string {
+  const t = toneOf(block, theme);
+  const { w, h } = size;
+  const hasSub = Boolean(block.subtitle) && theme.showSubtitles;
   const titleY = hasSub ? h / 2 - theme.subtitleSize * 0.55 : h / 2;
 
-  const parts = [
+  // The title and the subtitle are ONE text element with a `tspan`, not two
+  // elements. They are one paragraph — and when the block is turned, two
+  // separately positioned lines each turn about their own anchor and land on
+  // top of each other, spelling "2-to-4decoder". A tspan keeps the second line
+  // where it belongs: under the first, in the first one's frame.
+  const sub = hasSub
+    ? `<tspan x="${n(w / 2)}" dy="${n(theme.titleSize * 0.7 + theme.subtitleSize * 0.55)}" font-size="${n(theme.subtitleSize)}" font-weight="400" fill="${esc(theme.mutedTextColor)}">${esc(block.subtitle as string)}</tspan>`
+    : "";
+
+  return [
     `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" rx="${n(theme.blockRadius)}" fill="${esc(t.fill)}" stroke="${esc(t.stroke)}" stroke-width="${n(theme.blockStrokeWidth)}"${theme.blockShadow ? ` filter="url(#bshadow)"` : ""}/>`,
-    `<text x="${n(w / 2)}" y="${n(titleY)}" dominant-baseline="central" text-anchor="middle" font-family="${esc(theme.fontFamily)}" font-size="${n(theme.titleSize)}" font-weight="600" fill="${esc(t.text)}">${esc(b.block.title)}</text>`,
-  ];
-  if (hasSub) {
-    parts.push(
-      `<text x="${n(w / 2)}" y="${n(h / 2 + theme.titleSize * 0.7)}" dominant-baseline="central" text-anchor="middle" font-family="${esc(theme.fontFamily)}" font-size="${n(theme.subtitleSize)}" fill="${esc(theme.mutedTextColor)}">${esc(b.block.subtitle as string)}</text>`,
-    );
-  }
-  parts.push(stubs(b, theme));
-  return parts.join("");
+    `<text x="${n(w / 2)}" y="${n(titleY)}" dominant-baseline="central" text-anchor="middle" font-family="${esc(theme.fontFamily)}" font-size="${n(theme.titleSize)}" font-weight="600" fill="${esc(t.text)}">${esc(block.title)}${sub}</text>`,
+    stubs(block, size, local, theme),
+  ].join("");
 }
 
 /**
- * The pin stubs, their bubbles, and their labels — drawn in the block's local
- * frame, which is why they need the block's own placed ports offset back.
+ * The pin stubs, their bubbles, and their labels — drawn in the block's own
+ * upright frame, which is where the body paths are too.
  */
-function stubs(b: PlacedBlock, theme: DiagramTheme): string {
-  const t = toneOf(b.block, theme);
+function stubs(
+  block: Block,
+  size: Box,
+  local: ReadonlyMap<string, PlacedPort>,
+  theme: DiagramTheme,
+): string {
+  const t = toneOf(block, theme);
   const parts: string[] = [];
   const bubbleR = 3.2;
 
-  for (const p of b.ports.values()) {
-    const x = p.x - b.x;
-    const y = p.y - b.y;
-    const ax = p.ax - b.x;
-    const ay = p.ay - b.y;
+  for (const p of local.values()) {
+    const { x, y, ax, ay } = p;
+    // A junction's pin has no stub: the wire meets the dot. Drawing the
+    // zero-length line anyway paints a round cap on top of the dot.
+    if (x === ax && y === ay) continue;
     const low = p.port.activeLow === true;
 
     // An active-low pin's stub starts past its bubble, so the bubble sits ON the
     // border where it belongs rather than floating in the middle of the wire.
-    const sx = low ? x + p.out.x * bubbleR * 2 : x;
+    let sx = low ? x + p.out.x * bubbleR * 2 : x;
     const sy = low ? y + p.out.y * bubbleR * 2 : y;
+
+    // An OR gate's back is a curve, so a pin's `x = 0` is NOT where the symbol
+    // is: at mid-height the bow is 7px to the right, and every input wire used
+    // to stop short of the body and hang in space. Extend it to the ink.
+    if (block.kind === "gate" && p.port.side === "left" && !low) {
+      sx = Math.max(sx, gateBackX(block.op ?? "and", size, y));
+    }
     parts.push(
       `<path d="M${n(sx)},${n(sy)}L${n(ax)},${n(ay)}" stroke="${esc(t.stroke)}" stroke-width="${n(theme.wireWidth)}"/>`,
     );
@@ -462,26 +581,43 @@ function stubs(b: PlacedBlock, theme: DiagramTheme): string {
         `<circle cx="${n(x + p.out.x * bubbleR)}" cy="${n(y + p.out.y * bubbleR)}" r="${n(bubbleR)}" fill="${esc(t.fill)}" stroke="${esc(t.stroke)}" stroke-width="${n(theme.blockStrokeWidth * 0.9)}"/>`,
       );
     }
+  }
+  return parts.join("");
+}
 
-    if (!theme.showPortLabels || b.block.kind !== "box" || !p.port.label) continue;
+/**
+ * The pin labels, in the SHEET's frame rather than the block's.
+ *
+ * Which side of the pin the label goes on, and which way it is anchored, is
+ * decided by the pin's outward direction AFTER any rotation — so a turned block
+ * keeps its labels inside its own border, reading the right way, without the
+ * placement rules knowing that rotation exists.
+ */
+function portLabels(b: PlacedBlock, theme: DiagramTheme): string {
+  if (!theme.showPortLabels || b.block.kind !== "box") return "";
+  const size = theme.portLabelSize;
+  const inset = 6;
+  const parts: string[] = [];
 
-    const inset = 6;
-    const size = theme.portLabelSize;
-    if (p.port.side === "left") {
+  for (const p of b.ports.values()) {
+    if (!p.port.label) continue;
+    const font = `font-family="${esc(theme.monoFamily)}" font-size="${n(size)}" fill="${esc(theme.mutedTextColor)}"`;
+    const label = esc(p.port.label);
+    if (p.out.x < 0) {
       parts.push(
-        `<text x="${n(x + inset)}" y="${n(y)}" dominant-baseline="central" font-family="${esc(theme.monoFamily)}" font-size="${n(size)}" fill="${esc(theme.mutedTextColor)}">${esc(p.port.label)}</text>`,
+        `<text x="${n(p.x + inset)}" y="${n(p.y)}" dominant-baseline="central" ${font}>${label}</text>`,
       );
-    } else if (p.port.side === "right") {
+    } else if (p.out.x > 0) {
       parts.push(
-        `<text x="${n(x - inset)}" y="${n(y)}" text-anchor="end" dominant-baseline="central" font-family="${esc(theme.monoFamily)}" font-size="${n(size)}" fill="${esc(theme.mutedTextColor)}">${esc(p.port.label)}</text>`,
+        `<text x="${n(p.x - inset)}" y="${n(p.y)}" text-anchor="end" dominant-baseline="central" ${font}>${label}</text>`,
       );
-    } else if (p.port.side === "top") {
+    } else if (p.out.y < 0) {
       parts.push(
-        `<text x="${n(x)}" y="${n(y + size + 2)}" text-anchor="middle" font-family="${esc(theme.monoFamily)}" font-size="${n(size)}" fill="${esc(theme.mutedTextColor)}">${esc(p.port.label)}</text>`,
+        `<text x="${n(p.x)}" y="${n(p.y + size + 2)}" text-anchor="middle" ${font}>${label}</text>`,
       );
     } else {
       parts.push(
-        `<text x="${n(x)}" y="${n(y - 5)}" text-anchor="middle" font-family="${esc(theme.monoFamily)}" font-size="${n(size)}" fill="${esc(theme.mutedTextColor)}">${esc(p.port.label)}</text>`,
+        `<text x="${n(p.x)}" y="${n(p.y - 5)}" text-anchor="middle" ${font}>${label}</text>`,
       );
     }
   }

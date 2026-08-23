@@ -156,6 +156,155 @@ it is not attached to.
 are arguments. A stored answer is correct for exactly one phrasing of one
 question, and next year's paper changes the 16 to a 32.
 
+**10. The editor is the same model with authored coordinates.**
+`src/lib/diagram/editor/` adds a document whose blocks have positions, and
+NOTHING else. It produces the same `PlacedDiagram` that `layout()` produces, so
+one renderer draws both, one exporter exports both, and "auto-arrange" is
+literally `layout()` with its coordinates written back into the document.
+
+**An instance stores the RECIPE, not the block.** `{ part: "decoder", values: {
+addr: 3 }, x, y }`, rebuilt through the parts registry on every draw. Storing the
+built block would freeze it — changing a placed decoder from 3 address lines to 4
+would be impossible, and every saved file would carry a snapshot of whatever the
+catalogue looked like that day.
+
+**The canvas draws the exporter's own bytes.** The interactive layer is a
+transparent SVG on top that catches pointers and draws selection handles; the
+picture underneath is the string `svg.ts` writes. A React tree for the screen
+plus a serializer for the file is two renderers, and two renderers drift.
+Both layers share the placement's coordinate system (`frame: "canvas"`), so a hit
+test compares against the same numbers that were drawn — any offset would mean
+clicking a pin an inch from where it appears.
+
+**The editor's router is deliberately NOT the lab's A\*.** `simulation/router.ts`
+finds better paths and allocates megabytes per wire; it runs once when a board
+changes. A canvas re-routes sixty times a second while a block is dragged, so
+`editor/route.ts` proposes the handful of shapes a person would draw, scores them
+on bends, length and blocks crossed, and takes the best. It can be beaten in a
+dense corner. That is the right trade for an editor and the wrong one for a board.
+
+**An input pin may take more than one wire.** This was forbidden at first, on the
+grounds that two drivers on a pin is a bus fight — and it silently deleted three
+quarters of every memory diagram, because four chips driving one data bus is
+exactly that shape and exactly correct. The lab is where a double-driven net is a
+fault with a diagnostic; the editor is a drawing tool, and refusing to draw a
+legitimate thing is the tool being wrong about its domain.
+
+**Grouping is the point, and the direction flips at the boundary.** Folding a
+selection into a reusable block is what makes this a design tool rather than a
+drawing one — a 4-bit adder placed four times is a 16-bit adder. The block's pins
+come from the IO tags inside plus any wire that crossed the boundary, and an
+Input tag's own pin is an OUTPUT (it drives), so the block's pin on that side is
+an INPUT. Taking the direction from the inner pin puts every input on the wrong
+side of the box, which the router, the arrowheads and `connect()` all then read.
+
+**Ungrouping dissolves a tag that an outside wire replaced.** Restore the Input
+tag as well as the outside driver and the net has two sources. So a boundary pin
+that something was wired to is connected straight through to whatever the tag was
+feeding; a pin nothing was wired to keeps its tag.
+
+**Generated circuits go through the same operations a hand does.**
+`editor/assemble.ts` is the only way anything — the starter templates, the
+equation synthesizer — creates a circuit, and it builds through `addFromPalette`
+and `connect`. So a generator cannot produce a document the editor could not
+have produced: no pin that does not exist, no link the connection rules would
+have refused. It throws on a bad wire rather than skipping it, because a
+generator with a typo should fail in the test suite, not draw a diagram with one
+wire quietly missing.
+
+Nothing hand-places anything either. A generator emits blocks at the origin and
+calls `arrange()`, which is `layout()` with its coordinates written back — so
+there is still exactly one thing that knows how to lay a diagram out.
+
+**The acceptance test is that the wires compute the function.** `synthesize.test.ts`
+walks each generated document back to a value by following its links — through
+decoder address decoding, multiplexer select decoding and the gate tables — and
+checks every row of the truth table, for six implementations. An inverted enable,
+a decoder addressed LSB-first, a Shannon residue read off the wrong half of the
+table: none of those look wrong in a picture, and all of them fail here.
+
+**A bit column is a truth table somebody may have got wrong.** `1010` is also a
+valid expression — four constants ANDed, which is 0 — so an input that is only
+0s, 1s and don't-cares is treated as a truth table and its LENGTH is checked
+against the variables. Falling through to the expression parser built a circuit
+for the constant 0 from an obvious typo, silently.
+
+**11. A ROTATION belongs to the placement, never to the block.**
+A `Block` is what a thing IS; `rotation` is how it happens to be sitting on the
+sheet, so it lives on the editor's `Instance` and on `PlacedBlock`, and every
+consumer reads already-rotated numbers out of `place.ts` without knowing that
+rotation exists. Four angles and not an arbitrary one, because the wires are
+orthogonal: a symbol at 37° has no pin a horizontal wire can meet.
+
+**The symbol turns; the writing does not.** A rotated title is not a stylistic
+choice, it is an upside-down title. In the SVG each `<text>` is counter-rotated
+about its own anchor; in the LaTeX nothing is transformed at all, so labels are
+upright for free. Two consequences that were bugs first:
+
+- A box's title and subtitle are ONE text element (a `<tspan>`, a `\\` inside one
+  `\node`). Two separately positioned lines each counter-rotated about their own
+  anchor land on top of each other, spelling `2-to-4decoder`.
+- Pin labels are drawn OUTSIDE the rotated group, from the pin's ROTATED
+  direction. "6px right, anchored at the start" is a rule about an upright box;
+  applied inside the turn it put every label of a 180° block outside its own
+  border, reading outwards.
+
+**A JUNCTION is a block with one pin, not a special kind of wire.** A wire runs
+pin to pin, so "somewhere on the sheet" had no representation and two arbitrary
+points could not be joined at all. Modelling the dot as a `node` block meant the
+router, the exporters, grouping and undo needed no changes. Its pin is
+`bidirectional`: a junction is downstream of what drives it and upstream of what
+it feeds, so `connect()` takes the direction from the OTHER end. Its `out` vector
+is zero — it faces nowhere — and it is NOT an obstacle, because it is a point,
+and a router made to avoid it could never reach it.
+
+**A drag places from the ORIGIN, not from last frame.** Blocks snap to an 8px
+grid; applying each frame's delta and re-snapping means a 3px move rounds away to
+nothing, and the block sticks and then jumps instead of following the pointer.
+`dragInstances` takes the positions captured on pointer-down and rounds once, on
+the total.
+
+**And the magnet is an EDITING gesture, not a routing one.** A pin sits at a
+fraction of its block's height, so two different parts almost never line up, and
+the router — correctly doing as it was told — drew a 3px two-bend jog into nearly
+every wire. The router cannot fix that: a route's endpoints are the pins and it
+may not move them. So `align.ts` moves the BLOCK, during a drag, when a wire is
+within a few pixels of straight. It runs nowhere else: silently repositioning
+blocks on load, on paste or on undo is the tool arguing with the user.
+
+**12. The worked-solutions catalogue is gated in MIDDLEWARE, not in the page.**
+Every route in this app is statically prerendered, so a check inside the page
+would run in the browser — after the HTML, answers and all, had already been
+sent. `src/middleware.ts` runs before the response exists, which is the only
+place a gate can gate.
+
+`solutions-gate.ts` FAILS CLOSED: with no `DIAGRAMS_PASSWORD` set there is no
+token that opens the route. Treating "unset" as "open" means one missing
+environment variable silently publishes everything, and nothing tells you.
+
+**13. The LaTeX exporter is a THIRD renderer, and it transforms nothing.**
+`latex.ts` draws the same `PlacedDiagram` the SVG writer draws, using the same
+`measure` / `placePorts` / `gateBackX` geometry — a report written in LaTeX wants
+a figure made of the same ink as the rest of the document, not a PNG of one.
+
+**Every coordinate is a plain number.** No `rotate=` scope, no `arc`, no
+`transform shape`. The picture's y basis vector is negative (`y=-1pt`) so that
+the emitted numbers are the SAME numbers as in the SVG and a bug can be found by
+diffing the two — but in a flipped basis, whether a TikZ `rotate=90` reads
+clockwise, and which side of the pen an `arc`'s centre falls on, are questions
+only pdfLaTeX can settle. Nothing here can run pdfLaTeX. So the rotation is done
+in TypeScript and the half-circles are Béziers, and the file cannot be silently
+wrong in a way the test suite cannot see.
+
+**Self-contained, for the same reason the SVG is:** `\usepackage{tikz}` and
+nothing else. No circuitikz, no arrow library, no font. A figure that only
+compiles inside the preamble that generated it is not an export.
+
+**Block circuits only.** Timing charts are not emitted — a waveform strip is a
+different kind of figure with its own conventions, and a half-translated one is
+worse than an honest omission, so the omission is stated in a comment in the
+file.
+
 ## The MSB contract
 
 For variable `variables[i]` of an n-variable function, its bit inside minterm
