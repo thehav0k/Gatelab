@@ -151,6 +151,15 @@ export interface Link {
   /** Bus width; >1 draws it thick with a slash tick. */
   readonly width?: number;
   readonly style?: "solid" | "dashed";
+  /**
+   * An explicit colour, overriding whatever the theme would have chosen.
+   *
+   * Automatic per-signal colouring is right almost always and wrong exactly
+   * when the reader needs one wire to stand out — the carry chain, the enable,
+   * the one line the paragraph underneath is about. A `#rrggbb` here, and
+   * nothing else in the theme has to change.
+   */
+  readonly color?: string;
 }
 
 /**

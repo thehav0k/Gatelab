@@ -1,13 +1,12 @@
 import type { PlacedBlock, PlacedDiagram, Point, RoutedLink } from "./layout";
 import {
   gateBackX,
-  NODE_SIZE,
   placePorts,
   rotatePoint,
   type Box,
   type PlacedPort,
 } from "./measure";
-import { wireColorOf } from "./svg";
+import { colorOfLink, wireColorOf } from "./svg";
 import type { DiagramTheme } from "./theme";
 import type { Block, Rotation } from "./types";
 
@@ -179,12 +178,13 @@ export function renderTikz(
   }
 
   for (const link of placed.links) body.push(...wire(link, theme, palette));
-  if (theme.showJunctions) {
-    for (const j of placed.junctions) {
-      body.push(
-        `\\fill[${palette.of(wireColorOf(null, theme))}] (${n(j.x)},${n(j.y)}) circle (${n(theme.wireWidth * 1.8)}pt);`,
-      );
-    }
+  // Placed junctions are components and are always drawn; derived ones are the
+  // ones the theme switch is about. Same rule as the SVG, same dots.
+  for (const j of placed.junctions) {
+    if (!j.placed && !theme.showJunctions) continue;
+    body.push(
+      `\\fill[${palette.of(j.color ?? wireColorOf(j.colorIndex, theme))}] (${n(j.x)},${n(j.y)}) circle (${n(Math.max(2.4, theme.wireWidth * 1.8))}pt);`,
+    );
   }
   for (const b of placed.blocks) body.push(...blockAt(b, theme, palette));
 
@@ -281,8 +281,7 @@ const node = (x: number, y: number, anchor: string, content: string): string =>
 
 function wire(l: RoutedLink, theme: DiagramTheme, palette: Palette): string[] {
   const bus = l.width > 1;
-  const color =
-    bus && theme.wireColoring === "mono" ? theme.busColor : wireColorOf(l.colorKey, theme);
+  const color = colorOfLink(l, theme);
   const width = bus ? theme.busWidth : theme.wireWidth;
 
   const options = [
@@ -413,9 +412,7 @@ function blockAt(b: PlacedBlock, theme: DiagramTheme, palette: Palette): string[
           `\\node[anchor=base west,inner sep=0pt] at ${at(0, size.h * 0.75)} {${text(b.block.title, theme.subtitleSize * 1.1, palette.of(theme.mutedTextColor), false)}};`,
         ]
       : b.block.kind === "node"
-        ? [
-            `\\fill[${palette.of(theme.wireColor)}] ${at(NODE_SIZE / 2, NODE_SIZE / 2)} circle (${n(Math.max(2.4, theme.wireWidth * 1.8))}pt);`,
-          ]
+        ? [] // Its dot comes from the junction pass, with every other dot.
         : b.block.kind === "io"
           ? ioTag(b.block, size, at, theme, palette)
           : b.block.kind === "gate"

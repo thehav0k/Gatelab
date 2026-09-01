@@ -72,6 +72,9 @@ title and pin lists you type in.
   the right inner pins.
 - **Rotate anything** with `R`, in either direction. The symbol turns; the
   writing does not — a rotated title is not a style, it is an upside-down title.
+- **Per-wire colour.** Signals get their own hue automatically, cycled through
+  the theme's palette in order; select a wire and pick a colour to override it
+  when the reader has to be shown *that* one.
 - **Junctions.** Drag a wire into empty space and you get a dot there, wired up.
   A wire runs pin to pin, so two arbitrary *points* had nothing to join them
   until the dot became a block with one pin — which is what a junction has
@@ -193,6 +196,11 @@ version is:
 - **The builder is that model with authored coordinates, and nothing else.** It
   produces the same placed diagram the auto-layout produces, so one renderer draws
   both and the canvas shows you the exporter's own bytes.
+- **A junction dot is derived from where the wires ended up.** Counting the
+  distinct directions of ink leaving a point puts the dot at the T, where the
+  branches actually part — not on the pin, where nothing branches and the old
+  rule put it, leaving the real junction undotted and therefore saying "not
+  connected".
 - **A rotation belongs to the placement, never to the block.** A block is what a
   thing *is*; how it happens to be sitting is somebody's drawing decision, and
   every consumer reads already-rotated numbers without knowing rotation exists.

@@ -106,7 +106,7 @@ describe("layered placement", () => {
     }
   });
 
-  it("marks a fan-out port with exactly one junction dot", () => {
+  it("puts the fan-out's dot where the wires actually part, not on the pin", () => {
     const diagram: Diagram = {
       id: "fan",
       title: "fan",
@@ -120,7 +120,50 @@ describe("layered placement", () => {
         { id: "2", from: { block: "S", port: "Y" }, to: { block: "B", port: "A" } },
       ],
     };
-    expect(layout(diagram, TEXTBOOK).junctions).toHaveLength(1);
+    const placed = layout(diagram, TEXTBOOK);
+    expect(placed.junctions).toHaveLength(1);
+
+    // The old rule — "a port with two wires on it" — put the dot on the pin,
+    // where nothing branches: the two wires run together for a while first. The
+    // T was left undotted, which on a schematic says NOT connected.
+    const dot = placed.junctions[0]!;
+    const source = placed.blocks.find((b) => b.block.id === "S")!.ports.get("Y")!;
+    expect(dot.x).toBeGreaterThan(source.ax + 10);
+
+    // And it sits ON both wires — not necessarily on a corner of either, since
+    // one of them simply passes through the point where the other leaves.
+    for (const wire of placed.links) {
+      const onIt = wire.points.slice(1).some((b, i) => {
+        const a = wire.points[i]!;
+        return (
+          Math.min(a.x, b.x) - 1 <= dot.x &&
+          dot.x <= Math.max(a.x, b.x) + 1 &&
+          Math.min(a.y, b.y) - 1 <= dot.y &&
+          dot.y <= Math.max(a.y, b.y) + 1
+        );
+      });
+      expect(onIt).toBe(true);
+    }
+  });
+
+  it("leaves a crossing between two different signals undotted", () => {
+    // Two wires that cross is not two wires that meet, and the dot is the only
+    // thing that says which one a drawing means.
+    const diagram: Diagram = {
+      id: "cross",
+      title: "cross",
+      blocks: [
+        { id: "P", kind: "io", title: "P", tone: "input", ports: [{ id: "Y", label: "", side: "right", dir: "out" }] },
+        { id: "Q", kind: "io", title: "Q", tone: "input", ports: [{ id: "Y", label: "", side: "right", dir: "out" }] },
+        { id: "X", kind: "io", title: "X", tone: "output", ports: [{ id: "A", label: "", side: "left", dir: "in" }] },
+        { id: "Z", kind: "io", title: "Z", tone: "output", ports: [{ id: "A", label: "", side: "left", dir: "in" }] },
+      ],
+      links: [
+        { id: "1", from: { block: "P", port: "Y" }, to: { block: "Z", port: "A" } },
+        { id: "2", from: { block: "Q", port: "Y" }, to: { block: "X", port: "A" } },
+      ],
+    };
+    expect(layout(diagram, TEXTBOOK).junctions).toHaveLength(0);
   });
 
   it("drops a link that names a block that is not there, rather than throwing", () => {

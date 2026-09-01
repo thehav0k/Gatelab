@@ -23,8 +23,11 @@ import {
   setValues,
   ungroup,
 } from "@/lib/diagram/editor/ops";
-import { blockOf, rotationOf, type Instance } from "@/lib/diagram/editor/document";
+import { blockOf, rotationOf, toDiagram, type Instance } from "@/lib/diagram/editor/document";
 import { getPart, partDefaults, type PartParam } from "@/lib/diagram/editor/parts";
+import { colorSlots } from "@/lib/diagram/layout";
+import { wireColorOf } from "@/lib/diagram/svg";
+import { cn } from "@/lib/utils";
 import { useBuilderStore } from "@/stores/builder-store";
 import { useDiagramTheme } from "@/stores/diagram-store";
 
@@ -236,6 +239,89 @@ function Placement({ instance }: { instance: Instance }) {
   );
 }
 
+/**
+ * One wire's colour.
+ *
+ * Automatic colouring — a hue per signal, shared by every branch of a fan-out —
+ * is the right default and is wrong in exactly one situation, which is the one
+ * that matters: when the reader has to be shown *this* wire. The carry chain,
+ * the enable, the one line the paragraph underneath is about. So the automatic
+ * choice is offered first and is where the wire starts, and the theme's own
+ * palette is offered next, because a figure with one colour that came from
+ * outside its palette looks like a mistake rather than an emphasis.
+ */
+function WireColor({ id }: { id: string }) {
+  const doc = useBuilderStore((s) => s.doc);
+  const commit = useBuilderStore((s) => s.commit);
+  const theme = useDiagramTheme();
+  const link = doc.links[id];
+  if (!link) return null;
+
+  const set = (color: string | undefined) => commit(setLink(doc, id, { color }));
+
+  // What the theme would have chosen, so the "Automatic" chip shows the colour
+  // it actually means rather than a grey placeholder.
+  const slot = colorSlots(toDiagram(doc).links).get(`${link.from.block}.${link.from.port}`);
+  const automatic = wireColorOf(slot ?? null, theme);
+  const swatches = theme.wireColoring === "mono" ? [] : theme.palette;
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Colour</Label>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => set(undefined)}
+          aria-label="Automatic colour"
+          aria-pressed={link.color === undefined}
+          title="Automatic — this signal's own colour"
+          className={cn(
+            "flex h-6 items-center gap-1 rounded border px-1.5 text-[10px]",
+            link.color === undefined ? "border-foreground" : "border-border",
+          )}
+        >
+          <span
+            className="size-3 rounded-full border"
+            style={{ backgroundColor: automatic }}
+          />
+          Auto
+        </button>
+
+        {swatches.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => set(c)}
+            aria-label={`Colour ${c}`}
+            aria-pressed={link.color === c}
+            title={c}
+            className={cn(
+              "size-6 rounded border-2",
+              link.color === c ? "border-foreground" : "border-transparent",
+            )}
+            style={{ backgroundColor: c }}
+          />
+        ))}
+
+        <input
+          type="color"
+          aria-label="Custom wire colour"
+          title="Any other colour"
+          value={link.color ?? automatic}
+          onChange={(e) => set(e.target.value)}
+          className="size-6 cursor-pointer rounded border bg-transparent p-0"
+        />
+      </div>
+      {theme.wireColoring === "mono" && link.color === undefined && (
+        <p className="text-muted-foreground text-[11px] text-pretty">
+          The theme is drawing every wire in one colour. Pick one here to make this
+          wire the exception, or switch to per-signal colouring in Style.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ParamField({
   param,
   value,
@@ -411,6 +497,8 @@ function LinkInspector({ id }: { id: string }) {
           that turns sixteen address lines into one readable line.
         </p>
       </div>
+
+      <WireColor id={id} />
 
       <div className="flex items-center gap-3">
         <span className="flex-1 text-xs">Dashed</span>

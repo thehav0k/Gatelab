@@ -89,6 +89,19 @@ keep their own unmistakable colour and dashing. Net identity is a convenience;
 `Z` and `X` are the product, and a broken wire must never be able to look like a
 working one.
 
+**In the diagram module, slots are handed out IN ORDER and the palette is
+interleaved by hue.** `colorSlots` numbers signals by first appearance; it
+replaced a hash of the port name, which with eight hues collided about one
+signal in eight — and two colours that mean two signals, except when they do
+not, is worse than one colour meaning nothing. The palettes are then ordered so
+consecutive slots are at least 80° apart in hue, because neighbouring wires get
+neighbouring slots and burnt orange next to amber reads as one colour at 1.6px.
+
+**And a wire may be given a colour outright.** `Link.color` overrides the whole
+scheme for one wire, because automatic colouring is right until the reader has
+to be shown *this* wire — the carry chain, the enable, the one line the
+paragraph is about.
+
 **7. The component constraint is part of the problem, not a lint.**
 "Implement this with NAND only" IS the exercise. So the rule is chosen before you
 build: the palette narrows to match (you cannot place what you may not use), and
@@ -249,6 +262,16 @@ upright for free. Two consequences that were bugs first:
   applied inside the turn it put every label of a 180° block outside its own
   border, reading outwards.
 
+**A DOT is derived from where the wires ended up, never from the netlist.**
+`junctionsOf` groups the routed wires by signal and counts the distinct
+DIRECTIONS of ink leaving each point: two is a corner or a wire carrying on,
+three or more is a junction. It used to be "a port with more than one wire on
+it", which put the dot on the PIN — where nothing branches, because the branches
+run together for a while and separate somewhere out in the channel. The actual T
+was left undotted, and an undotted crossing means NOT CONNECTED, so the picture
+stated the opposite of the truth. Counting directions rather than segments is
+what makes the shared run of a fan-out, drawn once per branch, count once.
+
 **A JUNCTION is a block with one pin, not a special kind of wire.** A wire runs
 pin to pin, so "somewhere on the sheet" had no representation and two arbitrary
 points could not be joined at all. Modelling the dot as a `node` block meant the
@@ -257,6 +280,13 @@ router, the exporters, grouping and undo needed no changes. Its pin is
 it feeds, so `connect()` takes the direction from the OTHER end. Its `out` vector
 is zero — it faces nowhere — and it is NOT an obstacle, because it is a point,
 and a router made to avoid it could never reach it.
+
+A placed junction draws no dot of its own: it goes into the same list as the
+derived ones, so every dot on the sheet is one size and one colour and a placed
+one that also happens to be a T is not painted twice. But it is always drawn,
+`showJunctions` or not — that switch is about a statement the drawing makes
+about wires, and a *component* that vanishes with a display option is a
+component you cannot get back.
 
 **A drag places from the ORIGIN, not from last frame.** Blocks snap to an 8px
 grid; applying each frame's delta and re-snapping means a 3px move rounds away to

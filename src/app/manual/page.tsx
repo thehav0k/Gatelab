@@ -470,6 +470,15 @@ F(A,B,C) = 01101001`}
               Per-signal wire colouring gives every net its own hue and every branch of
               one fan-out the same one. Real jumper wire is multicoloured for exactly
               this reason: so that a connection can be traced across a crowded drawing.
+              The hues are handed out in order and the palette is arranged so that
+              consecutive ones are far apart — two signals side by side have to look
+              like two signals.
+            </p>
+            <p className="text-muted-foreground">
+              Select a wire and you can give it a colour of its own, which is what you
+              want when the reader has to be shown <em>that</em> wire: the carry chain,
+              the enable, the one line the paragraph underneath is about. Auto puts it
+              back.
             </p>
 
             <h3 className="pt-1 text-sm font-medium">Straight from an equation</h3>

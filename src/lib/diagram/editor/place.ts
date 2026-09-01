@@ -1,4 +1,4 @@
-import type { PlacedBlock, PlacedDiagram, Point, RoutedLink } from "../layout";
+import { colorSlots, junctionsOf, type Junction, type PlacedBlock, type PlacedDiagram, type Point, type RoutedLink } from "../layout";
 import { measure, placeRotatedPorts, rotatedSize, type PlacedPort } from "../measure";
 import type { DiagramTheme } from "../theme";
 import type { Link, Rotation } from "../types";
@@ -118,6 +118,7 @@ export function placeDocument(
   // them. Order-dependent by nature — the first wire gets the best lane — but
   // the order is the document's own key order, which is stable.
   const occupied: Occupied[] = [];
+  const slots = colorSlots(diagram.links);
 
   for (const link of diagram.links) {
     const from = portIndex.get(`${link.from.block}.${link.from.port}`);
@@ -133,6 +134,7 @@ export function placeDocument(
       // anchor -> pin. Without the pin points the wire stops short of the symbol.
       points: [{ x: from.x, y: from.y }, ...middle, { x: to.x, y: to.y }],
       colorKey: key,
+      colorIndex: slots.get(key) ?? 0,
       width: link.width ?? 1,
       feedback: false,
     });
@@ -141,17 +143,10 @@ export function placeDocument(
     }
   }
 
-  const fanout = new Map<string, number>();
-  for (const link of diagram.links) {
-    const key = `${link.from.block}.${link.from.port}`;
-    fanout.set(key, (fanout.get(key) ?? 0) + 1);
-  }
-  const junctions: Point[] = [];
-  for (const [key, n] of fanout) {
-    if (n < 2) continue;
-    const p = portIndex.get(key);
-    if (p) junctions.push({ x: p.ax, y: p.ay });
-  }
+  // Exactly the same derivation the automatic layout uses — a dot means the
+  // same thing on both, and two implementations of "are these wires joined"
+  // would eventually disagree about a picture.
+  const junctions: Junction[] = junctionsOf(blocks, routed);
 
   // --- framing --------------------------------------------------------------
   let x0 = 0;
@@ -164,7 +159,7 @@ export function placeDocument(
       { x: b.x + b.w, y: b.y + b.h },
     ]),
     ...routed.flatMap((r) => r.points),
-    ...junctions,
+    ...junctions.map((j) => ({ x: j.x, y: j.y })),
   ];
   if (all.length > 0) {
     x0 = Math.min(...all.map((p) => p.x));
@@ -203,7 +198,7 @@ export function placeDocument(
       ),
     })),
     links: routed.map((r) => ({ ...r, points: r.points.map(shift) })),
-    junctions: junctions.map(shift),
+    junctions: junctions.map((j) => ({ ...j, x: j.x + dx, y: j.y + dy })),
     width: Math.ceil(x1 - x0 + margin * 2),
     height: Math.ceil(y1 - y0 + margin * 2),
   };

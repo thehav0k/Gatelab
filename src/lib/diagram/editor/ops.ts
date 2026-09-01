@@ -438,14 +438,36 @@ const same = (a: Endpoint, b: Endpoint): boolean =>
 /** A link is a bus if either end is. Wider wins, so a 8-bit pin into a 1-bit one shows 8. */
 const widthOf = (a: Port, b: Port): number => Math.max(a.width ?? 1, b.width ?? 1);
 
+/**
+ * What can be changed about a wire.
+ *
+ * Every field admits `undefined` explicitly, and that is the point: "no colour
+ * of its own" is a state the user can choose, not merely the state a wire
+ * starts in. Without it there would be a button to override a wire's colour and
+ * no way back to automatic.
+ */
+export interface LinkPatch {
+  readonly label?: string | undefined;
+  readonly width?: number | undefined;
+  readonly style?: "solid" | "dashed" | undefined;
+  readonly color?: string | undefined;
+}
+
 export function setLink(
   doc: EditorDocument,
   linkId: string,
-  patch: Partial<Omit<EditorLink, "id" | "from" | "to">>,
+  patch: LinkPatch,
 ): EditorDocument {
   const link = doc.links[linkId];
   if (!link) return doc;
-  return { ...doc, links: { ...doc.links, [linkId]: { ...link, ...patch } } };
+  const next = { ...link } as EditorLink & Record<string, unknown>;
+  for (const [key, value] of Object.entries(patch)) {
+    // Deleted rather than stored as undefined: the document is JSON, and a key
+    // whose value is undefined does not survive the round trip anyway.
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+  }
+  return { ...doc, links: { ...doc.links, [linkId]: next } };
 }
 
 // --- hierarchy --------------------------------------------------------------

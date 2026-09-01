@@ -26,7 +26,16 @@ export interface ToneColors {
   readonly text: string;
 }
 
-export type WireColoring = "mono" | "source" | "kind";
+/**
+ * `"source"` colours a wire by the SIGNAL it carries — every branch of one
+ * fan-out the same hue, which is the only thing that makes the colouring useful
+ * for tracing a connection.
+ *
+ * There used to be a third value, `"kind"`, which nothing implemented and
+ * nothing offered: it behaved exactly like `"source"` if you ever set it, which
+ * is the worst kind of option.
+ */
+export type WireColoring = "mono" | "source";
 
 export interface DiagramTheme {
   readonly name: string;
@@ -130,9 +139,14 @@ export const TEXTBOOK: DiagramTheme = {
   wireColoring: "mono",
   wireColor: "#2b3038",
   busColor: "#2b3038",
+  // Ordered so that CONSECUTIVE slots are far apart in hue, not sorted by it.
+  // Signals are handed slots in order, so neighbouring wires get neighbouring
+  // slots — and the previous order put burnt orange next to amber, which at
+  // 1.6px reads as one colour and defeats the entire point of colouring by
+  // signal. Every adjacent pair here is at least 80 degrees apart.
   palette: [
-    "#c2410c", "#b45309", "#15803d", "#0e7490",
-    "#1d4ed8", "#6d28d9", "#be185d", "#334155",
+    "#c2410c", "#1d4ed8", "#15803d", "#be185d",
+    "#0e7490", "#b45309", "#6d28d9", "#334155",
   ],
   tones: {
     input: tone("#f1f5f9", "#64748b", "#0f172a"),
@@ -159,9 +173,10 @@ export const SLATE: DiagramTheme = {
   wireColoring: "source",
   wireColor: "#9aa3b2",
   busColor: "#c3cad6",
+  // Interleaved by hue, for the same reason as the Textbook palette.
   palette: [
-    "#f87171", "#fb923c", "#fbbf24", "#4ade80",
-    "#22d3ee", "#60a5fa", "#a78bfa", "#f472b6",
+    "#f87171", "#22d3ee", "#fbbf24", "#a78bfa",
+    "#4ade80", "#f472b6", "#60a5fa", "#fb923c",
   ],
   tones: {
     input: tone("#1a1e26", "#7c8798", "#e8eaef"),

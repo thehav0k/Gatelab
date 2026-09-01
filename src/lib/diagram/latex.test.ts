@@ -258,6 +258,36 @@ describe("renderTikz, the rest of the palette", () => {
     expect(out).not.toContain("rounded corners");
   });
 
+  it("honours a colour set on one wire, in the same hex the SVG uses", () => {
+    const painted: Diagram = {
+      ...variants,
+      links: variants.links.map((l, i) => (i === 0 ? { ...l, color: "#FF0000" } : l)),
+    };
+    const out = renderTikz(layout(painted, TEXTBOOK), TEXTBOOK);
+    expect(out).toMatch(/\\definecolor\{gl\d+\}\{HTML\}\{FF0000\}/);
+  });
+
+  it("draws a junction dot where the wires actually meet", () => {
+    const fan: Diagram = {
+      id: "fan",
+      title: "fan",
+      blocks: [
+        C.input("S", "S"),
+        C.gate("G", "and", 2),
+        C.gate("H", "and", 2),
+      ],
+      links: [
+        { id: "1", from: { block: "S", port: "Y" }, to: { block: "G", port: "A" } },
+        { id: "2", from: { block: "S", port: "Y" }, to: { block: "H", port: "A" } },
+      ],
+    };
+    const placed = layout(fan, TEXTBOOK);
+    expect(placed.junctions).toHaveLength(1);
+    const out = renderTikz(placed, TEXTBOOK);
+    const dot = placed.junctions[0]!;
+    expect(out).toContain(`(${dot.x},${dot.y}) circle`);
+  });
+
   it("uses the bus colour on a monochrome theme and a signal colour otherwise", () => {
     const mono = { ...TEXTBOOK, wireColoring: "mono" as const };
     const bussed: Diagram = {

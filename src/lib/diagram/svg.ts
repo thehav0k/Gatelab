@@ -1,7 +1,6 @@
 import type { PlacedBlock, PlacedDiagram, Point, RoutedLink } from "./layout";
 import {
   gateBackX,
-  NODE_SIZE,
   placePorts,
   rotationOffset,
   textWidth,
@@ -131,12 +130,14 @@ export function renderSvg(
   // --- the drawing ----------------------------------------------------------
   body.push(`<g transform="translate(${n(pad)} ${n(cursor)})">`);
   for (const l of placed.links) body.push(wire(l, theme));
-  if (theme.showJunctions) {
-    for (const j of placed.junctions) {
-      body.push(
-        `<circle cx="${n(j.x)}" cy="${n(j.y)}" r="${n(theme.wireWidth * 1.8)}" fill="${esc(wireColorOf(null, theme))}"/>`,
-      );
-    }
+  // A junction the user PLACED is a component and is always drawn; a derived
+  // one is a statement about the wires, and that is what the theme switch is
+  // about. Turning the option off must not make a block disappear.
+  for (const j of placed.junctions) {
+    if (!j.placed && !theme.showJunctions) continue;
+    body.push(
+      `<circle cx="${n(j.x)}" cy="${n(j.y)}" r="${n(Math.max(2.4, theme.wireWidth * 1.8))}" fill="${esc(j.color ?? wireColorOf(j.colorIndex, theme))}"/>`,
+    );
   }
   for (const b of placed.blocks) body.push(renderBlock(b, theme));
   body.push(`</g>`);
@@ -218,22 +219,28 @@ function grid(w: number, h: number, theme: DiagramTheme): string {
  * it carries, never by anything else. Every branch of one fan-out is the same
  * colour, because they are the same net — which is the only reason the colouring
  * helps a reader trace a connection at all.
+ *
+ * The slot comes from `colorSlots`, in order of first appearance. It used to be
+ * a hash of the port's name, which with eight hues collided about one signal in
+ * eight — and two colours that mean two signals, except when they do not, is
+ * worse than one colour meaning nothing.
  */
-export function wireColorOf(colorKey: string | null, theme: DiagramTheme): string {
-  if (theme.wireColoring === "mono" || colorKey === null) return theme.wireColor;
-  let hash = 0;
-  for (let i = 0; i < colorKey.length; i++) {
-    hash = (hash * 31 + colorKey.charCodeAt(i)) >>> 0;
-  }
+export function wireColorOf(colorIndex: number | null, theme: DiagramTheme): string {
+  if (theme.wireColoring === "mono" || colorIndex === null) return theme.wireColor;
   const palette = theme.palette.length > 0 ? theme.palette : [theme.wireColor];
-  return palette[hash % palette.length] as string;
+  return palette[colorIndex % palette.length] as string;
 }
+
+/** A wire's colour: what the author asked for, or what the theme decided. */
+export const colorOfLink = (l: RoutedLink, theme: DiagramTheme): string =>
+  l.link.color ??
+  (l.width > 1 && theme.wireColoring === "mono"
+    ? theme.busColor
+    : wireColorOf(l.colorIndex, theme));
 
 function wire(l: RoutedLink, theme: DiagramTheme): string {
   const bus = l.width > 1;
-  const color = bus && theme.wireColoring === "mono"
-    ? theme.busColor
-    : wireColorOf(l.colorKey, theme);
+  const color = colorOfLink(l, theme);
   const stroke = bus ? theme.busWidth : theme.wireWidth;
   const d = roundedPath(l.points, theme.cornerRadius);
 
@@ -370,7 +377,7 @@ function renderBlock(b: PlacedBlock, theme: DiagramTheme): string {
     b.block.kind === "label"
       ? `<text x="0" y="${n(size.h * 0.75)}" font-family="${esc(theme.fontFamily)}" font-size="${n(theme.subtitleSize * 1.1)}" fill="${esc(theme.mutedTextColor)}">${esc(b.block.title)}</text>`
       : b.block.kind === "node"
-        ? nodeBody(theme)
+        ? ""
         : b.block.kind === "io"
           ? ioTag(b.block, size, local, theme)
           : b.block.kind === "gate"
@@ -420,15 +427,13 @@ function upright(body: string, rotation: Rotation): string {
 const toneOf = (block: Block, theme: DiagramTheme) => theme.tones[block.tone];
 
 /**
- * A junction: a filled dot, and nothing else.
+ * A junction block draws NOTHING of its own.
  *
- * It is deliberately drawn in the WIRE colour rather than a tone's. A junction
- * is not a component — it is a place where wires meet, and painting it like a
- * component would make a drawing look as though it had a part in it that a
- * reader would then go looking for in the parts list.
+ * Its dot comes from the junction pass above, along with every other dot on the
+ * sheet — which is what makes a placed junction and a derived one the same size
+ * and the same colour, and stops a placed one being painted twice in two
+ * different colours when wires meet there as well.
  */
-const nodeBody = (theme: DiagramTheme): string =>
-  `<circle cx="${n(NODE_SIZE / 2)}" cy="${n(NODE_SIZE / 2)}" r="${n(Math.max(2.4, theme.wireWidth * 1.8))}" fill="${esc(theme.wireColor)}"/>`;
 
 /** A signal tag: a rectangle with one chamfered end, pointing the way it flows. */
 function ioTag(

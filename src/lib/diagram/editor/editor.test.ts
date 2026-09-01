@@ -33,6 +33,8 @@ import { placeDocument, blockAt, blocksIn, linkAt, portAt, portPositions } from 
 import { routeLink } from "./route";
 import { TEMPLATES, getTemplate } from "./templates";
 import { TEXTBOOK } from "../theme";
+import { colorSlots } from "../layout";
+import { wireColorOf } from "../svg";
 import { validate } from "../types";
 import { measure, placePorts, placeRotatedPorts, rotatedSize } from "../measure";
 import { renderSvg } from "../svg";
@@ -1271,5 +1273,130 @@ describe("junctions", () => {
     expect(block.kind).toBe("node");
     expect(block.ports).toHaveLength(1);
     expect(renderSvg(placeDocument(doc, TEXTBOOK), TEXTBOOK)).toContain("<circle");
+  });
+
+  it("stays visible with the junction-dot option off, because it is a component", () => {
+    // The switch is about dots DERIVED from where wires meet. A block that
+    // disappears when a display option is turned off is a block you cannot get
+    // back, and the user put this one there on purpose.
+    const { doc, junction } = withJunction();
+    const placed = placeDocument(doc, TEXTBOOK);
+    expect(placed.junctions).toEqual([
+      expect.objectContaining({ placed: true, colorIndex: null }),
+    ]);
+    const hidden = { ...TEXTBOOK, showJunctions: false };
+    expect(renderSvg(placeDocument(doc, hidden), hidden)).toContain("<circle");
+    expect(doc.instances[junction]).toBeDefined();
+  });
+
+  it("is drawn once, not twice, when wires meet on it as well", () => {
+    // The block's own dot and a derived one land on the same point. Two circles
+    // in two different colours, one over the other, is what that used to be.
+    let doc = emptyDocument("Tee");
+    const src = addFromPalette(doc, "input", 40, 100)!;
+    doc = src.doc;
+    const j = addFromPalette(doc, "node", 240, 108)!;
+    doc = j.doc;
+    const outs = [40, 200].map((y) => {
+      const o = addFromPalette(doc, "output", 420, y)!;
+      doc = o.doc;
+      return o.id;
+    });
+    for (const [from, to] of [
+      [{ block: src.id, port: "Y" }, { block: j.id, port: "P" }],
+      [{ block: j.id, port: "P" }, { block: outs[0] as string, port: "A" }],
+      [{ block: j.id, port: "P" }, { block: outs[1] as string, port: "A" }],
+    ] as const) {
+      const r = connect(doc, from, to);
+      if (!r.ok) throw new Error(r.reason);
+      doc = r.doc;
+    }
+    const placed = placeDocument(doc, TEXTBOOK);
+    expect(placed.junctions).toHaveLength(1);
+    expect(placed.junctions[0]!.placed).toBe(true);
+  });
+});
+
+// --- wire colour ------------------------------------------------------------
+
+describe("wire colour", () => {
+  /** One source fanning out, plus a second, independent signal. */
+  const twoSignals = () => {
+    let doc = emptyDocument("Colours");
+    const a = addFromPalette(doc, "input", 40, 40)!;
+    doc = a.doc;
+    const b = addFromPalette(doc, "input", 40, 200)!;
+    doc = b.doc;
+    const g = addFromPalette(doc, "gate", 300, 100)!;
+    doc = g.doc;
+    const h = addFromPalette(doc, "gate", 300, 260)!;
+    doc = h.doc;
+    for (const [from, to] of [
+      [{ block: a.id, port: "Y" }, { block: g.id, port: "A" }],
+      [{ block: a.id, port: "Y" }, { block: h.id, port: "A" }],
+      [{ block: b.id, port: "Y" }, { block: g.id, port: "B" }],
+    ] as const) {
+      const r = connect(doc, from, to);
+      if (!r.ok) throw new Error(r.reason);
+      doc = r.doc;
+    }
+    return { doc, ids: Object.keys(doc.links) };
+  };
+
+  it("gives every branch of one fan-out the same slot and a second signal a different one", () => {
+    const { doc } = twoSignals();
+    const links = placeDocument(doc, TEXTBOOK).links;
+    expect(links[0]!.colorIndex).toBe(links[1]!.colorIndex);
+    expect(links[2]!.colorIndex).not.toBe(links[0]!.colorIndex);
+  });
+
+  it("hands out the palette in order, so nothing repeats before it has to", () => {
+    // The old rule hashed the port's name into the palette, which collides
+    // about one signal in eight — and two hues that mean two signals, except
+    // when they do not, is worse than one hue meaning nothing.
+    const links = Array.from({ length: 8 }, (_, i) => ({
+      id: `w${i}`,
+      from: { block: `b${i}`, port: "Y" },
+      to: { block: "sink", port: "A" },
+    }));
+    const slots = colorSlots(links);
+    expect([...slots.values()]).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("cycles once the palette runs out rather than running out of colours", () => {
+    const theme = { ...TEXTBOOK, wireColoring: "source" as const, palette: ["#111111", "#222222"] };
+    expect(wireColorOf(0, theme)).toBe("#111111");
+    expect(wireColorOf(2, theme)).toBe("#111111");
+    expect(wireColorOf(3, theme)).toBe("#222222");
+  });
+
+  it("falls back to the single wire colour when the palette is empty or the theme is mono", () => {
+    const empty = { ...TEXTBOOK, wireColoring: "source" as const, palette: [] };
+    expect(wireColorOf(0, empty)).toBe(TEXTBOOK.wireColor);
+    expect(wireColorOf(0, { ...TEXTBOOK, wireColoring: "mono" as const })).toBe(TEXTBOOK.wireColor);
+    expect(wireColorOf(null, TEXTBOOK)).toBe(TEXTBOOK.wireColor);
+  });
+
+  it("lets one wire be given a colour of its own, and given it back", () => {
+    const { doc, ids } = twoSignals();
+    const id = ids[0] as string;
+    const painted = setLink(doc, id, { color: "#ff0000" });
+    expect(painted.links[id]!.color).toBe("#ff0000");
+    const theme = { ...TEXTBOOK, wireColoring: "source" as const };
+    expect(renderSvg(placeDocument(painted, theme), theme)).toContain("#ff0000");
+
+    // And back to automatic — the key is removed, not set to undefined, so the
+    // document still round-trips through JSON as the same document.
+    const auto = setLink(painted, id, { color: undefined });
+    expect("color" in auto.links[id]!).toBe(false);
+    expect(JSON.parse(serialize(auto)).document.links[id]).toEqual(doc.links[id]);
+  });
+
+  it("gives the junction dot the colour of the wires that meet at it", () => {
+    const { doc, ids } = twoSignals();
+    const painted = setLink(doc, ids[0] as string, { color: "#ff0000" });
+    const placed = placeDocument(painted, { ...TEXTBOOK, wireColoring: "source" });
+    const dot = placed.junctions.find((j) => !j.placed);
+    expect(dot?.color).toBe("#ff0000");
   });
 });

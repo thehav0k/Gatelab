@@ -41,6 +41,8 @@ export interface EditorLink {
   readonly width?: number;
   readonly label?: string;
   readonly style?: "solid" | "dashed";
+  /** An explicit `#rrggbb`, overriding the theme's choice for this one wire. */
+  readonly color?: string;
 }
 
 /**
@@ -138,6 +140,7 @@ export function toDiagram(doc: EditorDocument): Diagram {
       ...(l.width !== undefined ? { width: l.width } : {}),
       ...(l.label !== undefined ? { label: l.label } : {}),
       ...(l.style !== undefined ? { style: l.style } : {}),
+      ...(l.color !== undefined ? { color: l.color } : {}),
     });
   }
 

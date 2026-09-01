@@ -57,17 +57,41 @@ export interface RoutedLink {
   readonly points: readonly Point[];
   /** Stable key for per-signal colouring — every fanout of one port shares it. */
   readonly colorKey: string;
+  /** That signal's slot in the theme palette. See `colorSlots`. */
+  readonly colorIndex: number;
   readonly width: number;
   /** True when the link had to be routed backwards, around the outside. */
   readonly feedback: boolean;
+}
+
+/**
+ * A dot saying "these wires are connected here".
+ *
+ * On a schematic the dot is not decoration — it is the difference between a
+ * junction and a crossing, and it is the only thing that distinguishes them.
+ */
+export interface Junction {
+  readonly x: number;
+  readonly y: number;
+  /** The signal's slot in the palette, for per-signal colouring. */
+  readonly colorIndex: number | null;
+  /** An explicit colour set on the wires that meet here. */
+  readonly color?: string;
+  /**
+   * A junction the user PLACED as a component, rather than one derived from
+   * where the wires ended up. A placed one is always drawn: it is a thing on
+   * the sheet that can be selected and dragged, and a component that vanishes
+   * when a display option is turned off is a component you cannot get back.
+   */
+  readonly placed: boolean;
 }
 
 export interface PlacedDiagram {
   readonly diagram: Diagram;
   readonly blocks: readonly PlacedBlock[];
   readonly links: readonly RoutedLink[];
-  /** Ports with more than one wire leaving them — a T junction gets a dot. */
-  readonly junctions: readonly Point[];
+  /** Where wires of one signal actually meet. See `junctionsOf`. */
+  readonly junctions: readonly Junction[];
   readonly width: number;
   readonly height: number;
 }
@@ -215,6 +239,10 @@ export function layout(diagram: Diagram, theme: DiagramTheme): PlacedDiagram {
     return { placed, portIndex };
   };
 
+  // Palette slots, handed out in the order the signals first appear. See
+  // `colorSlots` — an order beats a hash, which collides.
+  const slots = colorSlots(links);
+
   const routeAll = (
     router: Router,
     portIndex: ReadonlyMap<string, PlacedPort>,
@@ -230,10 +258,12 @@ export function layout(diagram: Diagram, theme: DiagramTheme): PlacedDiagram {
       const points = isBack
         ? router.routeBack(from, to)
         : router.routeForward(from, to, a.col, b.col, chains.get(l.id) ?? []);
+      const colorKey = `${l.from.block}.${l.from.port}`;
       out.push({
         link: l,
         points,
-        colorKey: `${l.from.block}.${l.from.port}`,
+        colorKey,
+        colorIndex: slots.get(colorKey) ?? 0,
         width: l.width ?? 1,
         feedback: isBack,
       });
@@ -253,20 +283,10 @@ export function layout(diagram: Diagram, theme: DiagramTheme): PlacedDiagram {
   const routed = routeAll(router, portIndex);
 
   // --- 7. junction dots -----------------------------------------------------
-  const fanout = new Map<string, number>();
-  for (const l of links) {
-    const key = `${l.from.block}.${l.from.port}`;
-    fanout.set(key, (fanout.get(key) ?? 0) + 1);
-  }
-  const junctions: Point[] = [];
-  for (const [key, n] of fanout) {
-    if (n < 2) continue;
-    const p = portIndex.get(key);
-    if (p) junctions.push({ x: p.ax, y: p.ay });
-  }
+  const junctions = junctionsOf(placed, routed);
 
   // --- 8. canvas size -------------------------------------------------------
-  const all = [...routed.flatMap((r) => r.points), ...junctions];
+  const all: Point[] = [...routed.flatMap((r) => r.points), ...junctions];
   let x0 = bounds.x0;
   let y0 = bounds.y0;
   let x1 = bounds.x1;
@@ -299,10 +319,150 @@ export function layout(diagram: Diagram, theme: DiagramTheme): PlacedDiagram {
       ),
     })),
     links: routed.map((r) => ({ ...r, points: r.points.map(shiftP) })),
-    junctions: junctions.map(shiftP),
+    junctions: junctions.map((j) => ({ ...j, x: j.x + dx, y: j.y + dy })),
     width: Math.ceil(x1 - x0),
     height: Math.ceil(y1 - y0),
   };
+}
+
+// --- signal colours and junction dots ---------------------------------------
+
+/**
+ * Which palette slot each signal gets, by ORDER OF FIRST APPEARANCE.
+ *
+ * This replaced a hash of the port's name, and the hash was wrong twice over.
+ * With eight hues and a hash, two signals side by side collide about one time
+ * in eight — and the whole point of per-signal colouring is that two different
+ * colours mean two different signals. It also meant the colours jumped around
+ * when a block was renamed, which is not something a rename should do. Handing
+ * them out in order cycles the palette, uses every hue before repeating any,
+ * and is stable under everything except adding a wire earlier in the document.
+ */
+export function colorSlots(links: readonly Link[]): Map<string, number> {
+  const slots = new Map<string, number>();
+  for (const l of links) {
+    const key = `${l.from.block}.${l.from.port}`;
+    if (!slots.has(key)) slots.set(key, slots.size);
+  }
+  return slots;
+}
+
+/**
+ * Where the dots go.
+ *
+ * A dot marks wires of ONE signal meeting, and it is not decoration: on a
+ * schematic the dot is the entire difference between a junction and a crossing.
+ *
+ * This used to be "a port with more than one wire leaving it", which put the dot
+ * on the PIN — where nothing branches, because the branches all run together for
+ * a while first and separate somewhere out in the channel. The T was left
+ * undotted, which by convention says the wires are NOT connected: three wires
+ * crossing, no dot, and the picture stating the opposite of the truth.
+ *
+ * So it is derived from the drawn geometry instead. Within one signal, count the
+ * distinct DIRECTIONS of wire leaving a point — a segment that passes straight
+ * through contributes two. Two directions is a corner or a wire carrying on;
+ * three or more is a junction. Counting directions rather than segments is what
+ * makes the shared run of a fan-out — the same stretch drawn once per branch —
+ * count once, as the one wire it looks like.
+ */
+export function junctionsOf(
+  blocks: readonly PlacedBlock[],
+  links: readonly RoutedLink[],
+): Junction[] {
+  const out: Junction[] = [];
+
+  /**
+   * Two dots a pixel apart are one dot that looks slightly fat, and a wire with
+   * a small jog in it produces exactly that. Nearby is the same junction.
+   */
+  const claim = (j: Junction): void => {
+    if (out.some((o) => Math.abs(o.x - j.x) < 4 && Math.abs(o.y - j.y) < 4)) return;
+    out.push(j);
+  };
+
+  // Junctions the user PLACED go in first, so that when a derived one lands on
+  // the same spot the component wins and the dot is drawn once.
+  for (const b of blocks) {
+    if (b.block.kind !== "node") continue;
+    const attached = links.find(
+      (l) => l.link.from.block === b.block.id || l.link.to.block === b.block.id,
+    );
+    claim({
+      x: b.x + b.w / 2,
+      y: b.y + b.h / 2,
+      colorIndex: attached?.colorIndex ?? null,
+      ...(attached?.link.color !== undefined ? { color: attached.link.color } : {}),
+      placed: true,
+    });
+  }
+
+  const byNet = new Map<string, RoutedLink[]>();
+  for (const l of links) {
+    const group = byNet.get(l.colorKey);
+    if (group) group.push(l);
+    else byNet.set(l.colorKey, [l]);
+  }
+
+  for (const group of byNet.values()) {
+    const segments: (readonly [Point, Point])[] = [];
+    const vertices: Point[] = [];
+    for (const l of group) {
+      for (let i = 1; i < l.points.length; i++) {
+        const a = l.points[i - 1] as Point;
+        const b = l.points[i] as Point;
+        if (Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5) continue;
+        segments.push([a, b]);
+        vertices.push(a);
+      }
+      const last = l.points[l.points.length - 1];
+      if (last) vertices.push(last);
+    }
+
+    const first = group[0] as RoutedLink;
+    for (const v of vertices) {
+      const directions = new Set<string>();
+      for (const [a, b] of segments) {
+        for (const d of directionsAt(v, a, b)) directions.add(d);
+      }
+      if (directions.size < 3) continue;
+      claim({
+        x: v.x,
+        y: v.y,
+        colorIndex: first.colorIndex,
+        ...(first.link.color !== undefined ? { color: first.link.color } : {}),
+        placed: false,
+      });
+    }
+  }
+
+  return out;
+}
+
+/** Which way, if any, the segment `a-b` leaves the point `p`. */
+function directionsAt(p: Point, a: Point, b: Point): string[] {
+  const near = (q: Point) => Math.abs(q.x - p.x) < 0.6 && Math.abs(q.y - p.y) < 0.6;
+  const towards = (q: Point) =>
+    Math.abs(q.x - p.x) > Math.abs(q.y - p.y)
+      ? q.x > p.x
+        ? "E"
+        : "W"
+      : q.y > p.y
+        ? "S"
+        : "N";
+
+  if (near(a) && near(b)) return [];
+  if (near(a)) return [towards(b)];
+  if (near(b)) return [towards(a)];
+  // Not an endpoint — but the wire may still run straight through it, which is
+  // exactly the shape of a branch taken off the middle of an existing run.
+  const inside =
+    Math.min(a.x, b.x) - 0.6 <= p.x &&
+    p.x <= Math.max(a.x, b.x) + 0.6 &&
+    Math.min(a.y, b.y) - 0.6 <= p.y &&
+    p.y <= Math.max(a.y, b.y) + 0.6 &&
+    Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) < 0.6 * Math.hypot(b.x - a.x, b.y - a.y);
+  return inside ? [towards(a), towards(b)] : [];
 }
 
 // --- layering ---------------------------------------------------------------
