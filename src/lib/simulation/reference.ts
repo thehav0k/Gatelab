@@ -246,7 +246,26 @@ export interface IcDoc {
   readonly pins: readonly { readonly pin: number; readonly name: string }[];
   readonly vcc: number;
   readonly gnd: number;
+  /**
+   * What the package contains, in words.
+   *
+   * Built here rather than in the view because "4 x 2-input NAND" is only true
+   * of a gate package: a '74 has a gate count of zero and an op of BUF, and the
+   * badge read "0 × 0-input BUF", which is worse than saying nothing.
+   */
+  readonly contains: string;
+  readonly sequential: boolean;
 }
+
+/** Two flip-flops, four flip-flops — and which kind, since it is the point. */
+const describe = (d: IcDefinition): string => {
+  if (d.flops.length === 0) {
+    return `${d.gateCount} × ${d.inputsPerGate}-input ${d.op.toUpperCase()}`;
+  }
+  const kind = d.flops[0]?.kind === "jk" ? "J-K" : (d.flops[0]?.kind ?? "d").toUpperCase();
+  const edge = d.flops[0]?.edge === "falling" ? "negative edge" : "positive edge";
+  return `${d.flops.length} × ${kind} flip-flop, ${edge}`;
+};
 
 /**
  * The library stores the power pins by NAME, because that is what the datasheet
@@ -264,6 +283,8 @@ export const IC_DOCS: readonly IcDoc[] = IC_LIBRARY.map((d: IcDefinition) => ({
   inputsPerGate: d.inputsPerGate,
   pinCount: d.pinNames.length,
   pins: d.pinNames.map((name, i) => ({ pin: i + 1, name })),
+  contains: describe(d),
+  sequential: d.flops.length > 0,
   vcc: pinNumberOf(d, d.power.vcc),
   gnd: pinNumberOf(d, d.power.gnd),
 }));

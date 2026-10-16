@@ -31,7 +31,6 @@ import {
 import type { DiagramTheme } from "@/lib/diagram/theme";
 import { useBuilderStore } from "@/stores/builder-store";
 import { useDiagramTheme } from "@/stores/diagram-store";
-import { useIsCompact } from "@/hooks/use-media-query";
 
 /**
  * The circuit builder.
@@ -42,7 +41,6 @@ import { useIsCompact } from "@/hooks/use-media-query";
  */
 export default function DiagramBuilderPage() {
   const theme = useDiagramTheme();
-  const compact = useIsCompact();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
 
@@ -52,56 +50,53 @@ export default function DiagramBuilderPage() {
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
       <BuilderToolbar theme={theme} />
 
-      {compact && (
-        <div className="flex gap-2 border-b px-3 py-2">
-          <Sheet open={paletteOpen} onOpenChange={setPaletteOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Boxes /> Blocks
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-80 p-0">
-              <SheetHeader className="border-b">
-                <SheetTitle>Blocks</SheetTitle>
-              </SheetHeader>
-              <PartPalette className="h-[calc(100dvh-4.5rem)]" />
-            </SheetContent>
-          </Sheet>
+      <div className="flex gap-2 border-b px-3 py-2 lg:hidden">
+        <Sheet open={paletteOpen} onOpenChange={setPaletteOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm">
+              <Boxes /> Blocks
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-80 p-0">
+            <SheetHeader className="border-b">
+              <SheetTitle>Blocks</SheetTitle>
+            </SheetHeader>
+            <PartPalette
+              className="h-[calc(100dvh-4.5rem)]"
+              onPlace={() => setPaletteOpen(false)}
+            />
+          </SheetContent>
+        </Sheet>
 
-          <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
-            <SheetTrigger asChild>
-              <Button variant="outline" size="sm">
-                <SlidersHorizontal /> Properties
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-80 p-0">
-              <SheetHeader className="border-b">
-                <SheetTitle>Properties</SheetTitle>
-              </SheetHeader>
-              <ScrollArea className="h-[calc(100dvh-4.5rem)]">
-                <SidePanels theme={theme} />
-              </ScrollArea>
-            </SheetContent>
-          </Sheet>
-        </div>
-      )}
+        <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm">
+              <SlidersHorizontal /> Properties
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="right" className="w-80 p-0">
+            <SheetHeader className="border-b">
+              <SheetTitle>Properties</SheetTitle>
+            </SheetHeader>
+            <ScrollArea className="h-[calc(100dvh-4.5rem)]">
+              <SidePanels theme={theme} />
+            </ScrollArea>
+          </SheetContent>
+        </Sheet>
+      </div>
 
       <div className="flex min-h-0 flex-1">
-        {!compact && (
-          <aside className="bg-card w-64 shrink-0 border-r">
-            <PartPalette className="h-full" />
-          </aside>
-        )}
+        <aside className="bg-card hidden w-64 shrink-0 border-r lg:block">
+          <PartPalette className="h-full" />
+        </aside>
 
         <BuilderCanvas theme={theme} className="min-w-0 flex-1" />
 
-        {!compact && (
-          <aside className="bg-card w-72 shrink-0 overflow-hidden border-l xl:w-80">
-            <ScrollArea className="h-full">
-              <SidePanels theme={theme} />
-            </ScrollArea>
-          </aside>
-        )}
+        <aside className="bg-card hidden w-72 shrink-0 overflow-hidden border-l lg:block xl:w-80">
+          <ScrollArea className="h-full">
+            <SidePanels theme={theme} />
+          </ScrollArea>
+        </aside>
       </div>
 
       <footer className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1.5 text-[11px]">

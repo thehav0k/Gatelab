@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Printer, TriangleAlert } from "lucide-react";
+import { CircuitBoard, FileText, Printer, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { KMapGrid } from "@/components/theory/kmap-grid";
 import { TruthTable } from "@/components/theory/truth-table";
@@ -10,6 +10,7 @@ import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { BreadboardView } from "@/components/lab/breadboard-view";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useSpecStore } from "@/stores/spec-store";
+import { useWorkspaceStore } from "@/stores/workspace-store";
 import { buildReport, type LabReport } from "@/lib/report";
 import { LOGIC_NAMES, type Logic } from "@/lib/simulation/logic";
 import { DONT_CARE } from "@/lib/core-engine/types";
@@ -28,7 +29,9 @@ import { cn } from "@/lib/utils";
  * content is line art and text, that is strictly worse in every dimension.
  */
 export default function ReportPage() {
-  const source = useSpecStore((s) => s.source);
+  const specSource = useSpecStore((s) => s.source);
+  const theorySource = useWorkspaceStore((s) => s.theorySource);
+  const source = specSource || theorySource;
   const doc = useCircuitStore((s) => s.doc);
 
   const report = useMemo(() => {
@@ -40,30 +43,47 @@ export default function ReportPage() {
   if (!report) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16 text-center sm:px-6 sm:py-20">
+        <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-muted">
+          <FileText className="text-muted-foreground size-6" />
+        </div>
         <h1 className="text-2xl font-semibold tracking-tight">Nothing to report yet</h1>
         <p className="text-muted-foreground mt-3 text-sm">
-          Minimize a function in the{" "}
-          <Link href="/theory" className="text-foreground underline underline-offset-4">
-            theory workspace
-          </Link>{" "}
-          and build its circuit, and this page will assemble the whole derivation —
-          truth table, K-map, Quine–McCluskey trace, the board you built, and the
-          verification against your algebra.
+          No derivation or circuit is loaded. Enter a Boolean function in the theory workspace
+          and build its circuit in the lab to generate a complete report with truth tables, K-maps,
+          Quine–McCluskey derivations, circuit schematics, and verification.
         </p>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <Button asChild>
+            <Link href="/theory">1. Start with Theory</Link>
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/lab">2. Go to Lab</Link>
+          </Button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8 print:max-w-none print:px-0 print:py-0">
-      <div className="no-print mb-6 flex items-center justify-between">
-        <p className="text-muted-foreground text-sm">
-          Everything below is recomputed from the engine — it is a derivation, not
-          a screenshot.
-        </p>
-        <Button onClick={() => window.print()}>
-          <Printer /> Print / Save as PDF
-        </Button>
+      <div className="print:hidden no-print mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-xs">
+        <div>
+          <h2 className="text-sm font-semibold">Laboratory Derivation & Verification Report</h2>
+          <p className="text-muted-foreground text-xs">
+            Recomputed live from the engine. Vector graphics remain crisp in browser print/PDF export.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/theory">Edit Theory</Link>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/lab">Edit Lab Circuit</Link>
+          </Button>
+          <Button size="sm" onClick={() => window.print()} className="gap-1.5">
+            <Printer className="size-4" /> Print / Save as PDF
+          </Button>
+        </div>
       </div>
 
       <Report report={report} />
@@ -307,14 +327,28 @@ function Report({ report }: { report: LabReport }) {
             )}
           </>
         ) : (
-          <p className="text-muted-foreground">No circuit was built.</p>
+          <div className="rounded-lg border border-dashed p-6 text-center">
+            <CircuitBoard className="text-muted-foreground mx-auto mb-2 size-8" />
+            <p className="text-sm font-medium">No circuit has been built yet in the Lab</p>
+            <p className="text-muted-foreground mx-auto mt-1 max-w-md text-xs">
+              Synthesize or wire a circuit on schematic or breadboard to embed circuit drawings, pin connections, and bill-of-materials in this report.
+            </p>
+            <div className="mt-4 flex flex-wrap justify-center gap-3">
+              <Button size="sm" asChild>
+                <Link href="/lab">Open Practical Lab</Link>
+              </Button>
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/theory">View in Theory</Link>
+              </Button>
+            </div>
+          </div>
         )}
       </Section>
 
       {/* --- 5. verification -------------------------------------------------- */}
-      {verification && (
-        <Section n={5} title="Verification" breakBefore>
-          {verification.error ? (
+      <Section n={5} title="Verification" breakBefore>
+        {verification ? (
+          verification.error ? (
             <p className="text-muted-foreground">{verification.error}</p>
           ) : (
             <>
@@ -385,32 +419,44 @@ function Report({ report }: { report: LabReport }) {
                 </div>
               )}
             </>
-          )}
-
-          {report.faults.length > 0 && (
-            <div className="mt-5">
-              <h3 className="mb-2 font-medium">Diagnostics</h3>
-              <ul className="space-y-1 text-xs">
-                {report.faults.map((f, i) => (
-                  <li key={i} className="flex gap-2">
-                    <code
-                      className={cn(
-                        "shrink-0",
-                        f.severity === "error" && "text-destructive",
-                        f.severity === "warning" && "text-logic-z",
-                        f.severity === "info" && "text-muted-foreground",
-                      )}
-                    >
-                      {f.code}
-                    </code>
-                    <span className="text-muted-foreground">{f.message}</span>
-                  </li>
-                ))}
-              </ul>
+          )
+        ) : (
+          <div className="rounded-lg border border-dashed p-6 text-center">
+            <p className="text-sm font-medium">Verification requires a built circuit</p>
+            <p className="text-muted-foreground mx-auto mt-1 max-w-md text-xs">
+              Once a circuit is built in the Lab, the automated verification bridge sweeps every row of the truth table and compares live simulation against the derived algebra.
+            </p>
+            <div className="mt-4 flex justify-center gap-3">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/lab">Build Circuit in Lab</Link>
+              </Button>
             </div>
-          )}
-        </Section>
-      )}
+          </div>
+        )}
+
+        {report.faults.length > 0 && (
+          <div className="mt-5">
+            <h3 className="mb-2 font-medium">Diagnostics</h3>
+            <ul className="space-y-1 text-xs">
+              {report.faults.map((f, i) => (
+                <li key={i} className="flex gap-2">
+                  <code
+                    className={cn(
+                      "shrink-0",
+                      f.severity === "error" && "text-destructive",
+                      f.severity === "warning" && "text-logic-z",
+                      f.severity === "info" && "text-muted-foreground",
+                    )}
+                  >
+                    {f.code}
+                  </code>
+                  <span className="text-muted-foreground">{f.message}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Section>
 
       {/* --- 6. hazards ------------------------------------------------------- */}
       {report.timing && report.timing.glitches.length > 0 && (

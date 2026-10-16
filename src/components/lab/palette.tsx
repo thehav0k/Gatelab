@@ -1,16 +1,20 @@
 "use client";
 
+import { useState } from "react";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { IC_LIBRARY } from "@/lib/simulation/ic-library";
+import { IC_LIBRARY, isSequential, type IcDefinition } from "@/lib/simulation/ic-library";
 import { allowsGate, allowsPart } from "@/lib/simulation/constraints";
 import { useConstraint } from "@/stores/workspace-store";
-import { gateNode, useCircuitStore } from "@/stores/circuit-store";
+import { gateNode, useCircuitStore, type NewNode } from "@/stores/circuit-store";
 import { GATE_LABELS } from "@/lib/simulation/parts";
 import type { GateOp } from "@/lib/simulation/logic";
 import { cn } from "@/lib/utils";
@@ -54,6 +58,12 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
   // e.g. close themselves so the freshly placed part is actually visible.
   const addNode: typeof rawAdd = (node) => {
     const id = rawAdd(node);
+    if (id === null) {
+      toast.error("No room left on the board", {
+        description: "Delete something, or go back to the schematic to rearrange.",
+      });
+      return null;
+    }
     onPlace?.();
     return id;
   };
@@ -67,11 +77,57 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
   // You cannot place what you are not allowed to use. Filtering the palette makes
   // the rule DISCOVERABLE — a constraint you find out you broke afterwards is a
   // grade, not a lesson.
-  const gates = GATES.filter((op) => allowsGate(constraint, op));
-  const parts = IC_LIBRARY.filter((def) => allowsPart(constraint, def.part));
+  /**
+   * A filter over the whole palette.
+   *
+   * There are twenty-odd parts now, in five sections, and the power rails —
+   * which every single chip needs both of — had ended up below the fold. A box
+   * you can type "gnd" or "7474" into is the fix that does not depend on
+   * guessing which section somebody expects a part to be in.
+   */
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matches = (...text: (string | undefined)[]) =>
+    q === "" || text.some((t) => (t ?? "").toLowerCase().includes(q));
+
+  const gates = GATES.filter(
+    (op) => allowsGate(constraint, op) && matches(op, GATE_LABELS[op]),
+  );
+  const parts = IC_LIBRARY.filter(
+    (def) => allowsPart(constraint, def.part) && matches(def.part, def.name, def.summary),
+  );
+  // Two sections, because they are two kinds of thing. A gate is a function of
+  // its inputs; a flip-flop is a function of its inputs AND what happened last.
+  const gatePacks = parts.filter((def) => !isSequential(def));
+  const flopPacks = parts.filter(isSequential);
+
+  const io = [
+    { label: "Switch", match: ["switch", "input"], node: { kind: "switch" as const, state: 0 as const, pos: nextDrop() } },
+    { label: "LED", match: ["led", "output", "lamp"], node: { kind: "led" as const, pos: nextDrop() } },
+    { label: "+5V", match: ["+5v", "vcc", "power", "rail", "supply"], node: { kind: "rail" as const, rail: "vcc" as const, pos: nextDrop() } },
+    { label: "GND", match: ["gnd", "ground", "power", "rail", "supply", "0v"], node: { kind: "rail" as const, rail: "gnd" as const, pos: nextDrop() } },
+  ].filter((entry) => matches(entry.label, ...entry.match));
+
+  const clockShown = matches("clock", "clk", "edge", "pulse");
+  const nothingMatches =
+    q !== "" && gates.length === 0 && parts.length === 0 && io.length === 0 && !clockShown;
 
   return (
     <div className="space-y-4 p-3">
+      <Input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Find a part"
+        aria-label="Find a part"
+        className="h-8 text-xs"
+      />
+
+      {nothingMatches && (
+        <p className="text-muted-foreground text-xs text-pretty">
+          Nothing matches “{query}”.
+        </p>
+      )}
+
       {constraint.id !== "none" && (
         <div className="bg-muted/60 rounded-md border p-2">
           <p className="text-xs font-medium">{constraint.name}</p>
@@ -81,6 +137,7 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
         </div>
       )}
 
+      {gates.length > 0 && (
       <Section title="Gates">
         {/* Input count for the next gate placed. */}
         <div className="mb-2 flex items-center gap-1.5">
@@ -130,81 +187,73 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
           NOT is always 1-input. Select a gate on the canvas to change its inputs.
         </p>
       </Section>
+      )}
 
       <Separator />
 
       <SelectedGateInputs />
 
-      <Section title="I/O">
-        <div className="grid grid-cols-2 gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs"
-            onClick={() => addNode({ kind: "switch", state: 0, pos: nextDrop() })}
-          >
-            Switch
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs"
-            onClick={() => addNode({ kind: "led", pos: nextDrop() })}
-          >
-            LED
-          </Button>
-        </div>
-      </Section>
+      {(io.length > 0 || clockShown) && (
+        <Section title="In & out">
+          <div className="grid grid-cols-2 gap-1.5">
+            {io.map((entry) => (
+              <Button
+                key={entry.label}
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => addNode(entry.node)}
+              >
+                {entry.label}
+              </Button>
+            ))}
+            {clockShown && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="col-span-2 text-xs"
+                    onClick={() => addNode({ kind: "clock", state: 0, pos: nextDrop() })}
+                  >
+                    Clock
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="max-w-56">
+                  <p className="font-medium">Clock source</p>
+                  <p className="text-muted-foreground text-xs">
+                    A switch the app can drive for you. Click it for one edge, or use
+                    the clock panel under the canvas to pulse and run it.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </Section>
+      )}
 
       <Separator />
 
-      <Section title="74xx TTL">
-        <div className="grid grid-cols-2 gap-1.5">
-          {parts.map((def) => (
-            <Tooltip key={def.part}>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="font-mono text-xs"
-                  onClick={() => addNode({ kind: "ic", part: def.part, pos: nextIcDrop() })}
-                >
-                  {def.part}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                <p className="font-medium">{def.name}</p>
-                <p className="text-muted-foreground text-xs">
-                  Vcc on pin 14, GND on pin 7 — wire both, or it does nothing.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-      </Section>
+      {gatePacks.length > 0 && (
+        <Section title="74xx gates">
+          <PartGrid parts={gatePacks} onAdd={addNode} />
+        </Section>
+      )}
 
-      <Separator />
+      {flopPacks.length > 0 && (
+        <>
+          <Separator />
+          <Section title="Flip-flops & registers">
+            <PartGrid parts={flopPacks} onAdd={addNode} />
+            <p className="text-muted-foreground mt-1.5 text-[10px] leading-snug">
+              These remember. Wire a Clock to CLK, and a clear to CLR — a flip-flop
+              powers up unknown, which is why every counter has one.
+            </p>
+          </Section>
+        </>
+      )}
 
-      <Section title="Power">
-        <div className="grid grid-cols-2 gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs"
-            onClick={() => addNode({ kind: "rail", rail: "vcc", pos: nextDrop() })}
-          >
-            +5V
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs"
-            onClick={() => addNode({ kind: "rail", rail: "gnd", pos: nextDrop() })}
-          >
-            GND
-          </Button>
-        </div>
-      </Section>
+      
     </div>
   );
 }
@@ -253,6 +302,54 @@ function SelectedGateInputs() {
       </Section>
       <Separator />
     </>
+  );
+}
+
+/**
+ * A grid of chip buttons, with the datasheet facts on hover.
+ *
+ * The supply pins are named per part rather than in one blanket sentence,
+ * because they are NOT all on the corners — the '76 puts them on 5 and 13, and
+ * a tooltip that said "pin 14 and pin 7" for that part would be teaching the
+ * exact mistake this library exists to prevent.
+ */
+function PartGrid({
+  parts,
+  onAdd,
+}: {
+  parts: readonly IcDefinition[];
+  onAdd: (node: NewNode) => unknown;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-1.5">
+      {parts.map((def) => {
+        const vcc = def.pins.find((p) => p.name === "VCC")?.number;
+        const gnd = def.pins.find((p) => p.name === "GND")?.number;
+        return (
+          <Tooltip key={def.part}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="font-mono text-[11px]"
+                onClick={() => onAdd({ kind: "ic", part: def.part, pos: nextIcDrop() })}
+              >
+                {def.part}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="max-w-60">
+              <p className="font-medium">{def.name}</p>
+              {def.summary && (
+                <p className="text-muted-foreground text-xs text-pretty">{def.summary}</p>
+              )}
+              <p className="text-muted-foreground mt-1 text-xs">
+                Vcc on pin {vcc}, GND on pin {gnd} — wire both, or it does nothing.
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </div>
   );
 }
 

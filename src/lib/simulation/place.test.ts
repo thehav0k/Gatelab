@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { placeOnBreadboard, stripOfPin } from "./place";
+import { placeOnBreadboard, seatOnBoard, stripOfPin } from "./place";
 import { realize, synthesize, technologyMap, type Strategy } from "./synth";
 import { verify } from "./verify";
 import { elaborate } from "./elaborate";
@@ -12,7 +12,8 @@ import { parseInput } from "@/lib/core-engine/canonical";
 import { minimize } from "@/lib/core-engine/minimizer";
 import { arbFunction } from "@/lib/core-engine/testing/arbitraries";
 import type { BooleanFunction } from "@/lib/core-engine/types";
-import type { CircuitDocument } from "./netlist";
+import { circuit } from "./testing/build";
+import type { CircuitDocument, CircuitNode } from "./netlist";
 
 const fnOf = (src: string): BooleanFunction => {
   const r = parseInput(src);
@@ -214,5 +215,73 @@ describe("the placed board is the same circuit", () => {
       verify(doc, fn).rows.map((r) => r.actual);
 
     expect(rowsOf(placed)).toEqual(rowsOf(schematic));
+  });
+});
+
+
+describe("seating a part onto a board that is already built", () => {
+  /** A board with one 7486 on it, seated the normal way. */
+  const seated = (): CircuitDocument => {
+    const built = circuit().ic("U1", "7486").build();
+    return placeOnBreadboard(built).doc;
+  };
+
+  const node = (over: Partial<CircuitNode> & Pick<CircuitNode, "kind">) =>
+    ({ id: "new", label: "X", pos: { x: 420, y: 260 }, ...over }) as CircuitNode;
+
+  it("gives a chip real board columns instead of its schematic pixels", () => {
+    // THE BUG THIS EXISTS FOR: clicking 7400 in the palette while the board was
+    // on screen added the chip with `pos.x = 420` still on it — a pixel offset
+    // read as a column, so the renderer drew it at column 420 of a 63-column
+    // board. The part was in the netlist, raised faults, and was nowhere to be
+    // seen.
+    const doc = seated();
+    const placed = seatOnBoard(doc, node({ kind: "ic", part: "7400" }), DEFAULT_BOARD);
+    expect(placed).not.toBeNull();
+    expect(placed!.pos.x).toBeGreaterThanOrEqual(1);
+    expect(placed!.pos.x).toBeLessThanOrEqual(DEFAULT_BOARD.columns);
+  });
+
+  it("does not seat a chip on top of one already there", () => {
+    const doc = seated();
+    const existing = Object.values(doc.nodes).find((n) => n.kind === "ic")!;
+    const span = pinsOf(existing).length / 2;
+    const placed = seatOnBoard(doc, node({ kind: "ic", part: "7400" }), DEFAULT_BOARD)!;
+    const newSpan = 7;
+    const a = [existing.pos.x, existing.pos.x + span - 1];
+    const b = [placed.pos.x, placed.pos.x + newSpan - 1];
+    expect(b[1]! < a[0]! || b[0]! > a[1]!).toBe(true);
+  });
+
+  it("puts a switch on the bottom bank and an LED on the top", () => {
+    const doc = seated();
+    expect(seatOnBoard(doc, node({ kind: "switch", state: 0 }), DEFAULT_BOARD)!.boardRow).toBe("A");
+    expect(seatOnBoard(doc, node({ kind: "led" }), DEFAULT_BOARD)!.boardRow).toBe("J");
+  });
+
+  it("never puts a part in a chip's own column, because that is one strip", () => {
+    // Two parts in one column are WIRED TOGETHER by the metal, whether or not
+    // that was intended. Sharing a column with a chip's leg would drive its pin
+    // the moment the part was placed.
+    const doc = seated();
+    const chip = Object.values(doc.nodes).find((n) => n.kind === "ic")!;
+    const span = pinsOf(chip).length / 2;
+    const sw = seatOnBoard(doc, node({ kind: "switch", state: 0 }), DEFAULT_BOARD)!;
+    const inChip = sw.pos.x >= chip.pos.x && sw.pos.x <= chip.pos.x + span - 1;
+    expect(inChip).toBe(false);
+  });
+
+  it("keeps two new single parts off each other's strip", () => {
+    let doc = seated();
+    const first = seatOnBoard(doc, node({ kind: "switch", state: 0 }), DEFAULT_BOARD)!;
+    doc = { ...doc, nodes: { ...doc.nodes, a: { ...first, id: "a" } as CircuitNode } };
+    const second = seatOnBoard(doc, node({ kind: "switch", state: 0 }), DEFAULT_BOARD)!;
+    expect(second.pos.x).not.toBe(first.pos.x);
+  });
+
+  it("refuses rather than putting a chip off the end of the board", () => {
+    const tiny = { ...DEFAULT_BOARD, columns: 4 };
+    const doc = placeOnBreadboard(circuit().ic("U1", "7486").build(), tiny).doc;
+    expect(seatOnBoard(doc, node({ kind: "ic", part: "7400" }), tiny)).toBeNull();
   });
 });

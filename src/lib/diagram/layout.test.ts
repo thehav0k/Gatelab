@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { layout, type PlacedBlock, type Point, type RoutedLink } from "./layout";
+import {
+  registerDiagram,
+  shiftRegisterDiagram,
+} from "./builders/sequential";
 import { TEXTBOOK } from "./theme";
 import { PROBLEMS, defaults } from "./problems";
 import type { Diagram } from "./types";
@@ -176,5 +180,43 @@ describe("layered placement", () => {
     const placed = layout(diagram, TEXTBOOK);
     expect(placed.links).toHaveLength(0);
     expect(placed.blocks).toHaveLength(1);
+  });
+});
+
+
+describe("the register diagrams", () => {
+  it("draws a register as its flip-flops, sharing one clock", () => {
+    // Drawn as n flip-flops rather than as one box on purpose: the shared clock
+    // IS the answer, and a single box hides it.
+    const d = registerDiagram({ bits: 4 });
+    expect(d.blocks.filter((b) => b.title.startsWith("FF"))).toHaveLength(4);
+    const clockWires = d.links.filter((l) => l.to.port === "CLK");
+    expect(clockWires).toHaveLength(4);
+    expect(new Set(clockWires.map((l) => l.from.block)).size).toBe(1);
+  });
+
+  it("wires each Q to the next D on the shift register, and nothing else differs", () => {
+    const shift = shiftRegisterDiagram({ bits: 4 });
+    const chained = shift.links.filter(
+      (l) => l.from.port === "Q" && l.to.port === "D",
+    );
+    expect(chained).toHaveLength(3);
+    // Same parts as the register — the wiring is the whole difference.
+    expect(shift.blocks.filter((b) => b.title.startsWith("FF"))).toHaveLength(4);
+  });
+
+  it("lays both out without a block overlapping another", () => {
+    for (const d of [registerDiagram({ bits: 5 }), shiftRegisterDiagram({ bits: 5 })]) {
+      const placed = layout(d, TEXTBOOK);
+      for (let i = 0; i < placed.blocks.length; i++) {
+        for (let j = i + 1; j < placed.blocks.length; j++) {
+          const a = placed.blocks[i]!;
+          const b = placed.blocks[j]!;
+          const overlap =
+            a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          expect(overlap, `${a.block.id} overlaps ${b.block.id}`).toBe(false);
+        }
+      }
+    }
   });
 });

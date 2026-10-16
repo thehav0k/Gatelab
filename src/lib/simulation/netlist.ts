@@ -131,6 +131,22 @@ export interface SwitchNode extends NodeBase {
   readonly state: 0 | 1;
 }
 
+/**
+ * A clock source: a switch the app can drive for you.
+ *
+ * Electrically identical to a switch — one strong output, one bit of state —
+ * and a separate node kind anyway, for two reasons that both matter downstream.
+ * A clock must NOT join the truth-table sweep: a sequential circuit has no
+ * combinational truth table, and stepping a clock through a Gray-code sweep of
+ * "input combinations" would be describing a circuit nobody built. And the UI
+ * has to be able to find it, because "press this to advance one edge" is the
+ * whole interaction a clocked circuit has.
+ */
+export interface ClockNode extends NodeBase {
+  readonly kind: "clock";
+  readonly state: 0 | 1;
+}
+
 export interface LedNode extends NodeBase {
   readonly kind: "led";
 }
@@ -141,7 +157,13 @@ export interface RailNode extends NodeBase {
   readonly rail: "vcc" | "gnd";
 }
 
-export type CircuitNode = GateNode | IcNode | SwitchNode | LedNode | RailNode;
+export type CircuitNode =
+  | GateNode
+  | IcNode
+  | SwitchNode
+  | ClockNode
+  | LedNode
+  | RailNode;
 
 /**
  * A node before it has an id.

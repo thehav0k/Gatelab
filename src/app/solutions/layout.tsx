@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   title: "Worked solutions",
   robots: { index: false, follow: false },
   description:
-    "Draw and export block diagrams for digital logic design problems: NAND-only circuits, decoder and multiplexer implementations, adders, 2's complement, comparators, counters with timing diagrams, and memory/ROM expansion. Fully customisable colours, and export as SVG or PNG.",
+    "Draw and export block diagrams for digital logic design problems: NAND-only circuits, decoder and multiplexer implementations, adders, 2's complement, comparators, counters with timing diagrams, and memory/ROM expansion. Fully customisable colours, and export as SVG, PNG or LaTeX.",
   alternates: { canonical: "/solutions" },
 };
 

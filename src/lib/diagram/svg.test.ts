@@ -4,12 +4,15 @@ import { gateBackX, measure } from "./measure";
 import { renderSvg } from "./svg";
 import {
   BLUEPRINT,
+  choosePreset,
   PRINT,
+  restorePreset,
   SLATE,
   TEXTBOOK,
   THEMES,
   themeByName,
   withOverrides,
+  type ThemeChoice,
 } from "./theme";
 import type { Diagram } from "./types";
 import * as C from "./catalog";
@@ -210,3 +213,47 @@ describe("gate back geometry", () => {
 });
 
 const round = (v: number): string => String(Math.round(v * 100) / 100);
+
+
+describe("choosing a preset", () => {
+  const clean: ThemeChoice = { themeName: "Textbook", overrides: {}, discarded: null };
+  const customised: ThemeChoice = {
+    themeName: "Textbook",
+    overrides: { background: "#fff8e1", wireColor: "#aa0000" },
+    discarded: null,
+  };
+
+  it("applies the preset instead of leaving the old changes in charge", () => {
+    // The bug this exists to prevent: the background is most of what a preset
+    // IS, so a preset that leaves somebody's old background alone changes the
+    // name in the picker and nothing on the page.
+    const next = choosePreset(customised, "Blueprint");
+    expect(next.themeName).toBe("Blueprint");
+    expect(next.overrides).toEqual({});
+    expect(withOverrides(themeByName(next.themeName), next.overrides).background).toBe(
+      BLUEPRINT.background,
+    );
+  });
+
+  it("keeps what it replaced, so the click can be taken back", () => {
+    const next = choosePreset(customised, "Blueprint");
+    expect(next.discarded).toEqual(customised.overrides);
+    const back = restorePreset(next);
+    // Back on top of the NEW preset — restoring is an undo of the discard, not
+    // an undo of the preset choice.
+    expect(back.themeName).toBe("Blueprint");
+    expect(back.overrides).toEqual(customised.overrides);
+    expect(back.discarded).toBeNull();
+  });
+
+  it("offers nothing back when there was nothing to lose", () => {
+    expect(choosePreset(clean, "Print (mono)").discarded).toBeNull();
+    const same = choosePreset(clean, "Print (mono)");
+    expect(restorePreset(same)).toBe(same);
+  });
+
+  it("clears the offer once it has been taken, so it cannot be taken twice", () => {
+    const back = restorePreset(choosePreset(customised, "Blueprint"));
+    expect(restorePreset(back)).toBe(back);
+  });
+});

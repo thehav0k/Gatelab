@@ -6,9 +6,16 @@ import type { Metadata } from "next";
  * `metadata`. So the title lives in a layout beside it.
  */
 export const metadata: Metadata = {
-  title: "User manual",
+  title: "User manual — notation, K-maps, breadboard wiring & fault codes",
   description:
-    "How to drive Gatelab: Boolean notation, simplifying a function, gate rules, wiring 74xx TTL chips on a breadboard, what every fault code means, and verifying a circuit against its algebra.",
+    "How to drive Gatelab: Boolean notation, simplifying a function, gate rules, building and exporting block diagrams, wiring 74xx TTL chips on a breadboard, what every fault code means, and verifying a circuit against its algebra.",
+  keywords: [
+    "boolean notation guide",
+    "how to use a karnaugh map",
+    "breadboard wiring guide",
+    "logic circuit fault codes",
+    "block diagram editor guide",
+  ],
   alternates: { canonical: "/manual" },
 };
 

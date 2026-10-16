@@ -140,13 +140,14 @@ export function BuilderToolbar({ theme }: { theme: DiagramTheme }) {
   const exportSvg = renderSvg(figure, theme);
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b px-3 py-2">
-      <Input
-        value={doc.title}
-        onChange={(e) => rename(e.target.value)}
-        aria-label="Diagram title"
-        className="h-8 w-48 text-sm font-medium"
-      />
+    <div className="border-b px-3 py-2 overflow-x-auto">
+      <div className="flex min-w-max w-full items-center gap-1.5">
+        <Input
+          value={doc.title}
+          onChange={(e) => rename(e.target.value)}
+          aria-label="Diagram title"
+          className="h-8 w-48 shrink-0 text-sm font-medium"
+        />
 
       <Separator orientation="vertical" className="mx-1 h-6" />
 
@@ -278,6 +279,7 @@ export function BuilderToolbar({ theme }: { theme: DiagramTheme }) {
             })
           }
         />
+      </div>
       </div>
 
       <input

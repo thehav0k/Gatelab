@@ -619,3 +619,83 @@ export const excitationSummary = (spec: SequentialSpec): string[] =>
     const parsed = parse(expr);
     return parsed.ok ? `${pin} = ${format(parsed.value.ast)}` : `${pin} = ${expr}`;
   });
+
+
+/**
+ * A parallel register, drawn as the n flip-flops it actually is.
+ *
+ * Deliberately NOT the single `register` box from the catalogue. That box is
+ * right when a register is a component inside something bigger; here the
+ * register IS the subject, and the whole content of the answer is that the
+ * flip-flops share a clock. Draw it as one box and the only interesting fact
+ * about it is hidden inside the box.
+ */
+export function registerDiagram(opts: {
+  readonly bits: number;
+  readonly id?: string;
+  readonly title?: string;
+}): Diagram {
+  const s = new Sketch();
+  const bits = opts.bits;
+  const clk = s.add(C.input("CLK", "CLK"));
+  const clr = s.add(C.input("CLR", "CLR"));
+
+  for (let i = 0; i < bits; i++) {
+    const din = s.add({ ...C.input(`D${i}`, `D${i}`), row: i });
+    const ff = s.add({
+      ...C.flipFlop(`FF${i}`, "d", { title: `FF${i}`, clear: true, complement: false }),
+      row: i,
+    });
+    const q = s.add({ ...C.output(`Q${i}`, `Q${i}`), row: i });
+    s.wire(at(din, "Y"), at(ff, "D"));
+    s.wire(at(clk, "Y"), at(ff, "CLK"));
+    s.wire(at(clr, "Y"), at(ff, "CLR"));
+    s.wire(at(ff, "Q"), at(q, "A"));
+  }
+
+  return s.done({
+    id: opts.id ?? `register-${bits}`,
+    title: opts.title ?? `${bits}-bit parallel register`,
+    caption:
+      "One clock, one clear, n D flip-flops. Every bit is captured on the same edge — that shared clock is the only thing that makes this a register rather than n unrelated flip-flops. The 74175 is exactly this, with the clock and clear brought out once.",
+  });
+}
+
+/**
+ * A shift register: the same flip-flops, with each Q wired to the next D.
+ *
+ * Drawn next to the register above on purpose. The parts are identical and the
+ * wiring differs by n-1 wires, which is the fact worth carrying away.
+ */
+export function shiftRegisterDiagram(opts: {
+  readonly bits: number;
+  readonly id?: string;
+  readonly title?: string;
+}): Diagram {
+  const s = new Sketch();
+  const bits = opts.bits;
+  const din = s.add(C.input("SIN", "serial in"));
+  const clk = s.add(C.input("CLK", "CLK"));
+  const clr = s.add(C.input("CLR", "CLR"));
+
+  let previous: Endpoint | null = null;
+  for (let i = 0; i < bits; i++) {
+    const ff = s.add({
+      ...C.flipFlop(`FF${i}`, "d", { title: `FF${i}`, clear: true, complement: false }),
+      row: i,
+    });
+    const q = s.add({ ...C.output(`Q${i}`, `Q${i}`), row: i });
+    s.wire(previous ?? at(din, "Y"), at(ff, "D"));
+    s.wire(at(clk, "Y"), at(ff, "CLK"));
+    s.wire(at(clr, "Y"), at(ff, "CLR"));
+    s.wire(at(ff, "Q"), at(q, "A"));
+    previous = at(ff, "Q");
+  }
+
+  return s.done({
+    id: opts.id ?? `shift-${bits}`,
+    title: opts.title ?? `${bits}-bit shift register`,
+    caption:
+      "The same flip-flops as the register, with each output feeding the next input. One edge moves every bit one place along, and after n clocks the first bit has fallen off the end — which makes this a delay line as well as a store.",
+  });
+}

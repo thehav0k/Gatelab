@@ -91,7 +91,7 @@ export default function RootLayout({
               <main className="flex flex-1 flex-col">{children}</main>
               <SiteFooter />
             </div>
-            <Toaster />
+            <Toaster position="bottom-left" offset={16} />
           </TooltipProvider>
         </ThemeProvider>
         <Analytics />

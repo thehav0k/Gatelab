@@ -47,6 +47,7 @@ export function CircuitCanvas() {
   const select = useCircuitStore((s) => s.select);
   const moveNode = useCircuitStore((s) => s.moveNode);
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
+  const toggleClock = useCircuitStore((s) => s.toggleClock);
 
   const [cursor, setCursor] = useState<Point | null>(null);
 
@@ -179,7 +180,9 @@ export function CircuitCanvas() {
           pendingPin={pendingPin}
           onPinClick={clickPin}
           onSelect={() => select([node.id])}
-          onToggle={() => toggleSwitch(node.id)}
+          onToggle={() =>
+            node.kind === "clock" ? toggleClock(node.id) : toggleSwitch(node.id)
+          }
           onDragStart={(el, e) => {
             drag.current = {
               id: node.id,
@@ -385,6 +388,7 @@ function NodeView({
       )}
 
       {node.kind === "switch" && <SwitchBody node={node} selected={selected} onToggle={onToggle} />}
+      {node.kind === "clock" && <ClockBody node={node} selected={selected} onToggle={onToggle} />}
       {node.kind === "led" && <LedBody node={node} selected={selected} />}
       {node.kind === "rail" && <RailBody node={node} selected={selected} />}
       {node.kind === "ic" && <IcBody node={node} selected={selected} />}
@@ -474,6 +478,60 @@ function Pin({
 }
 
 // --- bodies ----------------------------------------------------------------
+
+/**
+ * A clock source.
+ *
+ * Drawn as a square wave rather than as a switch with a different label,
+ * because it behaves differently and the picture should say so: a switch is a
+ * level you set, and this is a thing that produces EDGES. Clicking it advances
+ * one edge; the panel below the canvas runs it.
+ */
+function ClockBody({
+  node,
+  selected,
+  onToggle,
+}: {
+  node: Extract<CircuitNode, { kind: "clock" }>;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  const high = node.state === 1;
+  const level = high ? "var(--logic-high)" : "var(--logic-low)";
+  return (
+    <g
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+      className="cursor-pointer"
+    >
+      <rect
+        width={IO_W}
+        height={IO_H}
+        rx={5}
+        className={cn("fill-card stroke-foreground/70", selected && "stroke-ring stroke-2")}
+      />
+      {/* One cycle of a square wave, with the half it is currently in filled. */}
+      <path
+        d={`M6,${IO_H - 8} H14 V8 H24 V${IO_H - 8} H32 V8 H38`}
+        fill="none"
+        stroke={level}
+        strokeWidth={2}
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+      <text
+        x={IO_W / 2}
+        y={-6}
+        textAnchor="middle"
+        className="fill-foreground pointer-events-none font-mono text-[11px] font-semibold"
+      >
+        {node.label}
+      </text>
+    </g>
+  );
+}
 
 function SwitchBody({
   node,
@@ -659,10 +717,21 @@ function IcBody({
             >
               {spec.number}
             </text>
+            {/*
+              The pin NAME is printed outside the package, which is also where
+              the wires leaving that pin run — on a dense board the two land on
+              top of each other and neither can be read. `paint-order: stroke`
+              with a stroke in the canvas colour draws a halo behind the glyphs
+              first, so the label sits on the wire instead of in it.
+            */}
             <text
               x={spec.offset.x}
               y={bottom ? height + 14 : -6}
               textAnchor="middle"
+              stroke="var(--card)"
+              strokeWidth={2.5}
+              strokeLinejoin="round"
+              style={{ paintOrder: "stroke" }}
               className={cn(
                 "font-mono text-[8px]",
                 spec.dir === "pwr" && "fill-logic-high",

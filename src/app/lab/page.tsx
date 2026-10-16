@@ -14,6 +14,7 @@ import { WaveformPanel } from "@/components/lab/waveform-panel";
 import { PresetMenu } from "@/components/lab/preset-menu";
 import { EquationBuilder } from "@/components/lab/equation-builder";
 import { ConstraintMenu, ConstraintViolations } from "@/components/lab/constraint-menu";
+import { ClockPanel } from "@/components/lab/clock-panel";
 
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -53,6 +54,13 @@ export default function LabPage() {
   const toSchematic = useCircuitStore((s) => s.toSchematic);
   const hasSchematic = useCircuitStore((s) => s.schematic !== null);
   const hasNodes = useCircuitStore((s) => Object.keys(s.doc.nodes).length > 0);
+  // A clocked circuit gets a different chart, so the label has to say so —
+  // "Gray-code sweep" over a counter's waveform would be describing the wrong
+  // thing entirely.
+  const hasFlops = useCircuitStore((s) =>
+    Object.values(s.doc.nodes).some((n) => n.kind === "clock") ||
+    Object.keys(s.flopState).length > 0,
+  );
 
   const compact = useIsCompact();
   /**
@@ -107,7 +115,7 @@ export default function LabPage() {
 
     if (v === "board" && !onBoard) {
       if (!hasNodes) {
-        toast.error("Build or load a circuit first.");
+        toBreadboard();
         return;
       }
       const unplaced = toBreadboard();
@@ -126,6 +134,10 @@ export default function LabPage() {
 
     if (v === "schematic" && onBoard) {
       if (!toSchematic()) {
+        if (!hasNodes) {
+          useCircuitStore.getState().clear();
+          return;
+        }
         toast.error("This board was not seated from a schematic", {
           description: "There is no layout to go back to.",
         });
@@ -286,13 +298,27 @@ export default function LabPage() {
           </ScrollArea>
         </Card>
 
-        <div className="flex min-h-0 flex-col gap-3">
+        {/*
+          `min-w-0` is load-bearing, not tidiness. A grid track's automatic
+          minimum is its content's minimum, so ONE wide child — a 79,000px
+          waveform for a nine-input adder — widened the whole `1fr` track, threw
+          the fault panel off the side of the window and stretched the schematic
+          until its contents were somewhere off-screen. With it, a child that
+          overflows scrolls inside its own box, which is what its
+          `overflow-x-auto` was always for.
+        */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-3">
           {/* The canvas takes ALL the room left over. It used to be pinned to a
               fixed min-height, which meant a big board was squeezed into a letterbox
               while the page grew a scrollbar underneath it. */}
           <div className="min-h-0 flex-1">
             {onBoard ? <BreadboardView /> : <CircuitCanvas />}
           </div>
+
+          {/* Renders nothing at all unless the circuit has something clocked
+              in it — a row of clock controls above a board of AND gates is a
+              control panel for a thing that is not there. */}
+          <ClockPanel />
 
           <Card className="shrink-0 overflow-hidden py-0">
             <button
@@ -302,7 +328,7 @@ export default function LabPage() {
             >
               <span className="text-sm font-medium">Timing</span>
               <span className="text-muted-foreground hidden text-xs sm:inline">
-                unit-delay, Gray-code sweep
+                {hasFlops ? "clock-driven" : "unit-delay, Gray-code sweep"}
               </span>
               <span className="text-muted-foreground ml-auto text-xs">
                 {showTiming ? "hide" : "show"}

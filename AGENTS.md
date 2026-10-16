@@ -31,6 +31,20 @@ it required seeding the strips into the same union-find and nothing else: the
 solver, the diagnostics, and the verification bridge were not touched. A board
 seated from a synthesized design verifies against the original algebra.
 
+**A part added while the board is on screen has to be PLUGGED IN.**
+`placeOnBreadboard` seats a whole circuit; `seatOnBoard` seats one new part into
+a board that already exists, and it was missing. Without it a chip added from
+the palette kept its schematic `pos.x` — a pixel offset, read downstream as a
+column — so it was drawn at column 420 of a 63-column board. It was in the
+netlist, it raised faults, and it could not be seen or reached. It also dragged
+the camera out to the full board trying to contain it.
+
+**A jumper takes the NEAREST free row, not the first one.** `freeHoleOn` used a
+fixed row order, so every jumper end in the lower half landed on row A: a dozen
+wires stacked along one line while four rows of the same strips sat empty.
+Nearest-first spreads them over the strip and shortens every wire, which is also
+what a person with a box of jumper wire does.
+
 The three facts that make a breadboard a breadboard, all of them load-bearing:
 holes A–E short, F–J short *separately*, and **they never meet** (the centre
 channel is what a DIP straddles — short it and every gate is wired
@@ -88,6 +102,14 @@ real jumper wire is multicoloured and for exactly the same reason.
 keep their own unmistakable colour and dashing. Net identity is a convenience;
 `Z` and `X` are the product, and a broken wire must never be able to look like a
 working one.
+
+**A style PRESET is applied, not merged.** Overrides used to survive a preset
+switch, so that "start from Blueprint but make the wires white" carried across.
+What it produced: change the background once — the first thing anybody changes,
+and most of what a preset is — and every preset after that changes the name in
+the picker and nothing on the page. `choosePreset` clears the patch and hands it
+back for one click of undo; the rule lives in `theme.ts` rather than in the
+store, because a rule inside a React store is a rule nothing can test.
 
 **In the diagram module, slots are handed out IN ORDER and the palette is
 interleaved by hue.** `colorSlots` numbers signals by first appearance; it
@@ -334,6 +356,109 @@ compiles inside the preamble that generated it is not an export.
 different kind of figure with its own conventions, and a half-translated one is
 worse than an honest omission, so the omission is stated in a comment in the
 file.
+
+**14. STATE LIVES OUTSIDE THE FIXPOINT.**
+`solver.ts` iterates a delta-cycle fixpoint until the net vector stops changing,
+and its entire correctness argument rests on that being a pure function of the
+inputs. A flip-flop breaks it: its output depends on the last clock EDGE, and an
+edge is not something a fixpoint can perceive — by the time the loop has settled,
+the transition that caused it is over.
+
+So a flip-flop is never a `SimCell`. Within one settle it is a CONSTANT that
+drives what it is storing, which leaves the fixpoint pure and every property that
+rested on that intact. Between settles, `advance()` compares each clock net
+against its value at the end of the previous settle and loads the ones that
+moved.
+
+**The outer loop is not an implementation detail — it is what a RIPPLE counter
+is.** Stage 0's output is stage 1's clock, so the edge that advances stage 1 does
+not exist until stage 0 has already moved. One pass per stage, in order, is the
+delay you can see on a real ripple counter's scope trace. The cap is
+`flops + 2`; past that the circuit is clocking itself and is reported unsettled,
+exactly as a three-inverter ring is.
+
+**A flip-flop powers up at X.** A real one comes up in whichever state the
+metastability fell into, which is the entire reason every counter ever built has
+a CLEAR wired to it. Starting at 0 would make a missing reset invisible — the
+same mistake as reading a floating input as false, which is the mistake this
+simulator exists to refuse.
+
+**The stored state is keyed by CHIP AND SLOT, never by array index.** The netlist
+is rebuilt from the document on every simulation, so an index shifts the moment a
+part is added ahead of it — and carrying state across in an array hands flip-flop
+3's bit to flip-flop 4, which is a memory circuit silently changing its mind about
+what it remembered.
+
+**A clock is not an input.** It is kept out of `nl.inputs` because a clocked
+circuit has no combinational truth table, and sweeping a clock as though it were
+another variable would produce a table describing a circuit nobody built.
+
+**15. A sequential part's pin map is DERIVED from its pin names, like a gate's.**
+Same rule as invariant on `ic-library.ts`, and it matters more here because these
+parts are far less alike: the '76 puts VCC on pin 5 and GND on 13 rather than in
+the corners, the '107 has a clear and no preset, and the '175 shares one clock
+across four flip-flops. The grammar is the silkscreen's own — a leading digit is
+the flip-flop number, and a name with NO digit is shared by every flip-flop in the
+package — which is what makes a '74 and a '175 the same nine lines of code.
+
+Every pinout in `ic-library.ts` is transcribed from the TI datasheet and asserted
+pin by pin in `sequential.test.ts`. A web search got the '76 wrong; the datasheet
+did not.
+
+**16. A counter design is derived from its SEQUENCE, and the unused states are
+don't cares.**
+`core-engine/counter.ts` runs the standard procedure forwards: sequence →
+transition table → excitation table → minimized equations. Every other
+sequential path in this app goes the other way (equations in, tables derived),
+and this is the inverse, because "design a counter for this sequence" is the
+exercise.
+
+Step four is the one that matters and the one people skip: the states the
+counter never visits are handed to Quine–McCluskey as DON'T CARES, which
+typically halves the gate count. J-K adds a second source of freedom — half its
+excitation table is don't-care — and the two must not be conflated in a test:
+for D they coincide, for J-K they do not.
+
+**What the circuit does at a don't care is read by EVALUATING the minimized
+equation, never by inspecting its cover.** A degenerate minimization — `KA = 1`,
+which mod-5 produces twice — skips the cube pipeline entirely and returns an
+EMPTY cover, so a cover-based reading called every don't care 0, invented three
+trap states, and reported a textbook self-correcting counter as not
+self-correcting. Confidently, and in a table.
+
+**Where the strays go is a real property, not a footnote.** The minimizer chose
+it for cheapness, not for behaviour, so whether the counter can climb back into
+its own sequence after a glitch is something nobody decided — and it is
+computed and stated rather than left to the reader.
+
+**17. The timing sweep refuses what it cannot draw.**
+Every term of its cost doubles per input: `2^n` combinations, held for a
+propagation delay each, sampled per tick, one array element per tick per
+waveform. Nine inputs — a 4-bit ripple adder — is an 11,275-tick chart 79,000
+pixels wide; seventeen never returns; thirty-three throws inside `Array.from`.
+All three are legitimate circuits and all three are in the preset menu. It is
+the SWEEP that does not scale, so the sweep is what says no, above
+`MAX_SWEEP_INPUTS`.
+
+**A clocked circuit gets a different chart, and it makes a weaker claim.** The
+sweep says "here is the output for every input combination" — a statement about a
+function. A counter has no such thing, so the clock drives the chart instead and
+it says "here is what happened over these cycles". It samples SETTLED values, so
+it reports no glitches at all rather than an empty list, which would be a claim
+about delays it never modelled.
+
+**All of it or none of it.** A capped sweep must not be presented as a whole
+one: this chart claims "here is every input combination" and "no output
+glitches", and both are claims about the entire input space. So `tooWide` is
+returned instead of a partial chart, and the panel says which circuit and by how
+much.
+
+**And a wide child may never widen its container.** A CSS grid track's automatic
+minimum is its content's minimum, so that 79,000px waveform widened the `1fr`
+track, threw the fault panel off the side of the window and stretched the
+schematic until its contents were off-screen — the timing panel's own
+`overflow-x-auto` never got the chance to do anything. `min-w-0` on the track is
+what lets a child overflow inside its own box instead of pushing the page.
 
 ## The MSB contract
 

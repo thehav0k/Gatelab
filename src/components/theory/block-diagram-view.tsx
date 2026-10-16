@@ -26,7 +26,11 @@ import {
 import { THEMES } from "@/lib/diagram/theme";
 import type { Diagram } from "@/lib/diagram/types";
 import { useConstraint } from "@/stores/workspace-store";
-import { useDiagramStore, useDiagramTheme } from "@/stores/diagram-store";
+import {
+  useDiagramStore,
+  useDiagramTheme,
+  useDiscardedCount,
+} from "@/stores/diagram-store";
 
 /**
  * The bridge the other direction: from the function you are minimising to the
@@ -79,6 +83,8 @@ export function BlockDiagramView({ fn }: { fn: BooleanFunction }) {
   const theme = useDiagramTheme();
   const themeName = useDiagramStore((s) => s.themeName);
   const setThemeName = useDiagramStore((s) => s.setThemeName);
+  const restore = useDiagramStore((s) => s.restoreOverrides);
+  const discarded = useDiscardedCount();
 
   const spec: FunctionSpec = useMemo(
     () => ({
@@ -161,11 +167,30 @@ export function BlockDiagramView({ fn }: { fn: BooleanFunction }) {
           </Select>
           <Button asChild variant="outline" size="sm">
             <Link href="/diagram">
-              Open in builder <ExternalLink />
+              Open in Diagram <ExternalLink />
             </Link>
           </Button>
         </div>
       </div>
+
+      {/*
+        This picker shares the builder's style store, so a switch here discards
+        changes that were made over there — and this page has no Style panel to
+        say so. One line, or the change is gone with nothing to click.
+      */}
+      {discarded > 0 && (
+        <p className="text-muted-foreground text-xs">
+          That preset replaced {discarded === 1 ? "one change" : `${discarded} changes`}{" "}
+          you made in Diagram.{" "}
+          <button
+            type="button"
+            onClick={restore}
+            className="text-foreground underline underline-offset-2"
+          >
+            Put them back
+          </button>
+        </p>
+      )}
 
       {active && (
         <p className="text-muted-foreground text-xs text-pretty">{active.blurb}</p>

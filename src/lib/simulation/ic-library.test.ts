@@ -13,6 +13,8 @@ import {
   IC_7432,
   IC_7486,
   IC_LIBRARY,
+  COMBINATIONAL_LIBRARY,
+  getIc,
   pinOffset,
   validateDefinition,
   type IcDefinition,
@@ -91,13 +93,30 @@ describe("pinouts — transcribed, then verified pin by pin", () => {
     expect(gate4?.outputPin).toBe("4Y");
   });
 
-  it("puts Vcc on 14 and GND on 7 for every part", () => {
-    for (const def of IC_LIBRARY) {
+  it("puts Vcc on 14 and GND on 7 for every 14-pin GATE package", () => {
+    for (const def of COMBINATIONAL_LIBRARY) {
       expect(pinNamed(def, 14)?.name, def.part).toBe("VCC");
       expect(pinNamed(def, 14)?.dir, def.part).toBe("pwr");
       expect(pinNamed(def, 7)?.name, def.part).toBe("GND");
       expect(pinNamed(def, 7)?.dir, def.part).toBe("gnd");
     }
+  });
+
+  it("does NOT assume the corners for the sequential parts, because they are not", () => {
+    // The '76 is the reason this test is worded that way: its supply pins are 5
+    // and 13. Assume the corners and it does not power up on a real board.
+    const supplies = (part: string) => {
+      const def = getIc(part) as IcDefinition;
+      return {
+        vcc: def.pins.find((p) => p.name === "VCC")?.number,
+        gnd: def.pins.find((p) => p.name === "GND")?.number,
+      };
+    };
+    expect(supplies("7474")).toEqual({ vcc: 14, gnd: 7 });
+    expect(supplies("74LS107A")).toEqual({ vcc: 14, gnd: 7 });
+    expect(supplies("74LS76A")).toEqual({ vcc: 5, gnd: 13 });
+    expect(supplies("74175")).toEqual({ vcc: 16, gnd: 8 });
+    expect(supplies("74174")).toEqual({ vcc: 16, gnd: 8 });
   });
 
   it("has the right gate count and arity per part", () => {
@@ -371,11 +390,12 @@ describe("the wider-fan-in parts", () => {
     ]);
   });
 
-  it("every part still validates, and still has Vcc on 14 / GND on 7", () => {
+  it("every part in the library validates, and every pin is accounted for", () => {
     for (const def of IC_LIBRARY) {
       expect(validateDefinition(def), def.part).toEqual([]);
-      expect(pinNamed(def, 14)?.name, def.part).toBe("VCC");
-      expect(pinNamed(def, 7)?.name, def.part).toBe("GND");
+      // A pin with no name at all is a transcription that lost its place.
+      expect(def.pins.length, def.part).toBe(def.pinNames.length);
+      for (const pin of def.pins) expect(pin.name.length, def.part).toBeGreaterThan(0);
     }
   });
 

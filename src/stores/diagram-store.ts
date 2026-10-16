@@ -5,6 +5,8 @@ import { create } from "zustand";
 import { useHydrated } from "@/hooks/use-hydrated";
 import { persist } from "zustand/middleware";
 import {
+  choosePreset,
+  restorePreset,
   SLATE,
   TEXTBOOK,
   themeByName,
@@ -28,9 +30,21 @@ import type { Implementation } from "@/lib/diagram/editor/synthesize";
  * comparator and on the memory expansion, and carrying a value across would
  * silently answer the wrong question.
  *
- * Overrides are stored as a PATCH rather than as a resolved theme, so that
- * switching preset keeps the two adjustments you made and improving a preset in
- * a later release actually reaches people who had customised it.
+ * Overrides are stored as a PATCH rather than as a resolved theme, so that a
+ * preset improved in a later release still reaches somebody who had changed one
+ * colour in it, and so the panel can say what has been changed.
+ *
+ * A PRESET SWITCH CLEARS THE PATCH, and this is the whole of the fix for a bug
+ * that made the picker look dead. Overrides used to survive the switch — the
+ * idea being that "start from Blueprint but make the wires white" should carry
+ * across. What it actually produced: change the background once, and from then
+ * on every preset you pick changes the NAME in the box and nothing on the page,
+ * because the background is most of what a preset is. The control silently
+ * stopped doing the one thing it promises.
+ *
+ * A preset is a whole look, and choosing one is asking for that look. So it is
+ * applied, and the patch it replaced is kept in memory for one click of Restore
+ * — recoverable, rather than either lost or silently in charge.
  */
 /**
  * "Follow the app's own light/dark setting."
@@ -45,9 +59,16 @@ export const AUTO = "auto";
 interface DiagramState {
   themeName: string;
   overrides: DiagramThemePatch;
+  /**
+   * What a preset switch just replaced. Session-only and deliberately not
+   * persisted: it is an undo for the click you just made, not a second set of
+   * settings to keep track of.
+   */
+  discarded: DiagramThemePatch | null;
   setThemeName: (name: string) => void;
   patchTheme: (patch: DiagramThemePatch) => void;
   resetTheme: () => void;
+  restoreOverrides: () => void;
 
   /** problem id -> the parameter values it was last solved with. */
   params: Record<string, ParamValues>;
@@ -68,11 +89,14 @@ export const useDiagramStore = create<DiagramState>()(
     (set) => ({
       themeName: AUTO,
       overrides: {},
-      setThemeName: (themeName) => set({ themeName }),
+      discarded: null,
+
+      setThemeName: (themeName) => set((s) => choosePreset(s, themeName)),
       // A deep merge for `tones` specifically: the panel edits one category's one
       // colour at a time, and a shallow spread would drop the other eight.
       patchTheme: (patch) =>
         set((s) => ({
+          discarded: null,
           overrides: {
             ...s.overrides,
             ...patch,
@@ -83,7 +107,9 @@ export const useDiagramStore = create<DiagramState>()(
               : {}),
           },
         })),
-      resetTheme: () => set({ overrides: {} }),
+      resetTheme: () => set({ overrides: {}, discarded: null }),
+
+      restoreOverrides: () => set(restorePreset),
 
       params: {},
       setParam: (problemId, key, value) =>
@@ -106,7 +132,20 @@ export const useDiagramStore = create<DiagramState>()(
       implementation: "gates",
       setImplementation: (implementation) => set({ implementation }),
     }),
-    { name: "gatelab-diagrams", version: 1 },
+    {
+      name: "gatelab-diagrams",
+      version: 1,
+      // `discarded` is an undo for one click and has no business outliving the
+      // session — coming back tomorrow to an offer to restore changes you do
+      // not remember making is worse than not offering.
+      partialize: (s) => ({
+        themeName: s.themeName,
+        overrides: s.overrides,
+        params: s.params,
+        lastProblem: s.lastProblem,
+        implementation: s.implementation,
+      }),
+    },
   ),
 );
 
@@ -156,4 +195,15 @@ export function useDiagramThemeName(): string {
 export function useThemeIsCustomised(): boolean {
   const overrides = useDiagramStore((s) => s.overrides);
   return useHydrated() && Object.keys(overrides).length > 0;
+}
+
+/**
+ * How many of the user's own changes the last preset switch replaced, or 0.
+ *
+ * Needs no hydration gate: it is null on the server and on the first client
+ * render alike, because it is never persisted.
+ */
+export function useDiscardedCount(): number {
+  const discarded = useDiagramStore((s) => s.discarded);
+  return discarded ? Object.keys(discarded).length : 0;
 }

@@ -93,7 +93,7 @@ export function KMapGrid({ fn, layout, loops, highlighted, onHighlight }: Props)
               <text
                 x={PAD + c * CELL + 5}
                 y={PAD + r * CELL + 13}
-                className="fill-muted-foreground/40 font-mono text-[9px]"
+                className="fill-muted-foreground/75 font-mono text-[9px]"
               >
                 {m}
               </text>
@@ -134,7 +134,7 @@ export function KMapGrid({ fn, layout, loops, highlighted, onHighlight }: Props)
                 width={rect.colSpan * CELL - inset * 2}
                 height={rect.rowSpan * CELL - inset * 2}
                 rx={10}
-                strokeWidth={2.5}
+                strokeWidth={highlighted === loop.label ? 3 : 2.25}
                 fillOpacity={0.1}
               />
             ))}

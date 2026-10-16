@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Logic circuit builder — drag-and-drop block diagram editor",
+  title: "Diagram — drag-and-drop logic block diagram editor",
   description:
     "Build any digital logic block diagram by dragging blocks onto a canvas: gates, decoders, multiplexers, adders, comparators, flip-flops, counters, registers and memory. Group a selection into a reusable block, rotate blocks, drop junctions, auto-arrange, and export as SVG, PNG or LaTeX (TikZ) in your own colours. Free, and runs entirely in your browser.",
   keywords: [

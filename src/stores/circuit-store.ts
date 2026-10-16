@@ -3,7 +3,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { elaborate } from "@/lib/simulation/elaborate";
-import { evaluate } from "@/lib/simulation/solver";
+import {
+  evaluate,
+  fromSeqState,
+  toSeqState,
+  type StoredState,
+} from "@/lib/simulation/solver";
 import { diagnose, type Diagnostic } from "@/lib/simulation/diagnostics";
 import {
   asNodeId,
@@ -25,7 +30,7 @@ import {
 import type { GateOp } from "@/lib/simulation/logic";
 import { arityOf, gateInputNames } from "@/lib/simulation/parts";
 import { routeAll, type Route } from "@/lib/simulation/router";
-import { placeOnBreadboard } from "@/lib/simulation/place";
+import { placeOnBreadboard, seatOnBoard } from "@/lib/simulation/place";
 import {
   holeKey,
   stripOf,
@@ -46,7 +51,7 @@ import { simStore } from "./sim-store";
  */
 
 /** A node draft with the label optional too — the store invents one if omitted. */
-type NewNode = SharedDraft extends infer T
+export type NewNode = SharedDraft extends infer T
   ? T extends SharedDraft
     ? Omit<T, "label"> & { label?: string }
     : never
@@ -76,13 +81,33 @@ interface CircuitState {
   gateInputs: number;
   setGateInputs: (n: number) => void;
 
-  addNode: (node: NewNode) => NodeId;
+  /**
+   * Add a part. `null` means the breadboard had no room for it — the caller must
+   * say so, because the alternative is a part that exists in the netlist and
+   * cannot be seen anywhere on the board.
+   */
+  addNode: (node: NewNode) => NodeId | null;
   moveNode: (id: NodeId, pos: Point) => void;
   /** Change how many inputs a gate has. Ignored for NOT/BUF (always 1). */
   setGateArity: (id: NodeId, arity: number) => void;
   deleteSelected: () => void;
   select: (ids: readonly NodeId[]) => void;
   toggleSwitch: (id: NodeId) => void;
+
+  /**
+   * What every flip-flop is storing, keyed by chip and slot.
+   *
+   * In the store rather than recomputed because it is the one thing a circuit
+   * knows that its document does not — the whole difference between a gate and
+   * a flip-flop.
+   */
+  flopState: StoredState;
+  /** Toggle a clock once: one edge. */
+  toggleClock: (id: NodeId) => void;
+  /** Low, high, low — one complete pulse, so both edges happen. */
+  pulseClock: (id: NodeId) => void;
+  /** Forget every stored bit, as though the power had just come on. */
+  resetState: () => void;
 
   clickPin: (ref: PinRef) => void;
   /** The breadboard equivalent: click one hole, then another, to lay a jumper. */
@@ -157,10 +182,14 @@ function defaultLabel(doc: CircuitDocument, node: NewNode): string {
  * sub-millisecond, and incremental net surgery is where ghost connections come
  * from.
  */
-function simulate(doc: CircuitDocument): {
+function simulate(
+  doc: CircuitDocument,
+  stored?: StoredState,
+): {
   index: NetIndex;
   diagnostics: Diagnostic[];
   routes: ReadonlyMap<string, Route | null>;
+  flopState: StoredState;
 } {
   const { index, netlist } = elaborate(doc);
 
@@ -171,7 +200,9 @@ function simulate(doc: CircuitDocument): {
     return node?.kind === "switch" ? node.state : 0;
   });
 
-  const state = evaluate(netlist, inputs);
+  // Sequential state is carried IN and back OUT. A flip-flop is the one thing
+  // here whose output is not a function of the document alone.
+  const state = evaluate(netlist, inputs, { state: toSeqState(netlist, stored) });
   const diagnostics = diagnose(doc, index, netlist, state);
 
   // Push values into the high-frequency store. React does not subscribe to this
@@ -195,7 +226,7 @@ function simulate(doc: CircuitDocument): {
         return netId ? (index.ordinalOf.get(netId) ?? 0) + 1 : 0;
       }).paths;
 
-  return { index, diagnostics, routes };
+  return { index, diagnostics, routes, flopState: fromSeqState(netlist, state.state) };
 }
 
 export const useCircuitStore = create<CircuitState>()(
@@ -210,22 +241,41 @@ export const useCircuitStore = create<CircuitState>()(
    * topology at all — dragging a chip, flipping a switch — where the board is still
    * exactly what was built.
    */
+  /** Drive one clock node to a new level and re-simulate. Not an edit. */
+  const setClock = (id: NodeId, to: (level: 0 | 1) => 0 | 1): void => {
+    const { doc } = get();
+    const node = doc.nodes[id];
+    if (node?.kind !== "clock") return;
+    const level = to(node.state);
+    if (level === node.state) return;
+    commit(
+      { ...doc, nodes: { ...doc.nodes, [id]: { ...node, state: level } } },
+      true,
+    );
+  };
+
   const commit = (doc: CircuitDocument, keepOrigin = false): void => {
-    const { doc: prev, past, origin } = get();
-    const { index, diagnostics, routes } = simulate(doc);
+    const { doc: prev, past, origin, flopState } = get();
+    // The stored state is carried through every edit. Adding a wire does not
+    // make a counter forget what it was counting, and it is keyed by chip and
+    // slot so a rebuilt netlist hands each bit back to the flip-flop it came
+    // from rather than to whichever one now has that index.
+    const next = simulate(doc, flopState);
     set({
       doc,
       past: [...past, prev].slice(-100),
       future: [],
-      index,
-      diagnostics,
-      routes,
+      index: next.index,
+      diagnostics: next.diagnostics,
+      routes: next.routes,
+      flopState: next.flopState,
       origin: keepOrigin ? origin : null,
     });
   };
 
   return {
     doc: emptyDocument(),
+    flopState: {},
     selection: [],
     pendingPin: null,
     pendingHole: null,
@@ -245,7 +295,15 @@ export const useCircuitStore = create<CircuitState>()(
       const id = asNodeId(nextId("n"));
       const label = partial.label ?? defaultLabel(doc, partial);
       const node = { ...partial, id, label } as CircuitNode;
-      commit({ ...doc, nodes: { ...doc.nodes, [id]: node } });
+
+      // On a board, a part has to be PLUGGED IN somewhere. Its schematic
+      // coordinates mean nothing here — left as they were, the renderer drew
+      // the chip at column 420 of a 63-column board and the camera zoomed out
+      // to the whole board trying to reach it.
+      const placed = doc.board ? seatOnBoard(doc, node, doc.board) : node;
+      if (!placed) return null;
+
+      commit({ ...doc, nodes: { ...doc.nodes, [id]: placed } });
       return id;
     },
 
@@ -321,6 +379,39 @@ export const useCircuitStore = create<CircuitState>()(
       );
     },
 
+    toggleClock: (id) => setClock(id, (level) => (level === 1 ? 0 : 1)),
+
+    /**
+     * One complete pulse, as two separate evaluations.
+     *
+     * It has to be two, not one: a rising-edge part loads on the way up and a
+     * falling-edge part on the way down, and a "pulse" that only ever set the
+     * level to 1 would leave every '107 in the circuit untouched. Running both
+     * halves means one press advances a counter whichever polarity it is.
+     */
+    pulseClock: (id) => {
+      setClock(id, () => 1);
+      setClock(id, () => 0);
+    },
+
+    /**
+     * Power-cycle the memory.
+     *
+     * Not a document edit — nothing about the circuit changes — so it does not
+     * touch the undo stack. It puts every flip-flop back to unknown, which is
+     * where a real one starts.
+     */
+    resetState: () => {
+      const { doc } = get();
+      const next = simulate(doc, {});
+      set({
+        flopState: next.flopState,
+        index: next.index,
+        diagnostics: next.diagnostics,
+        routes: next.routes,
+      });
+    },
+
     clickPin: (ref) => {
       const { pendingPin, doc } = get();
 
@@ -377,9 +468,10 @@ export const useCircuitStore = create<CircuitState>()(
       const { doc: placed, unplaced } = spec
         ? placeOnBreadboard(doc, spec)
         : placeOnBreadboard(doc);
-      const { index, diagnostics, routes } = simulate(placed);
+      const { index, diagnostics, routes, flopState } = simulate(placed, get().flopState);
       set({
         doc: placed,
+        flopState,
         // Keep the schematic. Seating is a realization, not a translation — the
         // board has no memory of the layout it came from, so the only honest way
         // back is to have kept it.
@@ -401,9 +493,10 @@ export const useCircuitStore = create<CircuitState>()(
       if (!doc.board) return true; // already there
       if (!schematic) return false; // built on the board; there is nothing to go back to
 
-      const { index, diagnostics, routes } = simulate(schematic);
+      const { index, diagnostics, routes, flopState } = simulate(schematic, get().flopState);
       set({
         doc: schematic,
+        flopState,
         index,
         diagnostics,
         routes,
@@ -426,10 +519,13 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     load: (doc, origin = null) => {
-      const { index, diagnostics, routes } = simulate(doc);
+      // A freshly loaded circuit has not been clocked. Carrying the old state in
+      // would have its flip-flops start at values from a different circuit.
+      const { index, diagnostics, routes, flopState } = simulate(doc, {});
       set({
         doc,
         origin,
+        flopState,
         index,
         diagnostics,
         routes,
@@ -446,10 +542,11 @@ export const useCircuitStore = create<CircuitState>()(
 
     clear: () => {
       const doc = emptyDocument();
-      const { index, diagnostics, routes } = simulate(doc);
+      const { index, diagnostics, routes, flopState } = simulate(doc, {});
       set({
         doc,
         origin: null,
+        flopState,
         schematic: null,
         index,
         diagnostics,
@@ -466,9 +563,10 @@ export const useCircuitStore = create<CircuitState>()(
       const { past, doc, future } = get();
       const prev = past[past.length - 1];
       if (!prev) return;
-      const { index, diagnostics, routes } = simulate(prev);
+      const { index, diagnostics, routes, flopState } = simulate(prev, get().flopState);
       set({
         doc: prev,
+        flopState,
         past: past.slice(0, -1),
         future: [doc, ...future],
         index,
@@ -483,9 +581,10 @@ export const useCircuitStore = create<CircuitState>()(
       const { future, doc, past } = get();
       const next = future[0];
       if (!next) return;
-      const { index, diagnostics, routes } = simulate(next);
+      const { index, diagnostics, routes, flopState } = simulate(next, get().flopState);
       set({
         doc: next,
+        flopState,
         past: [...past, doc],
         future: future.slice(1),
         index,
@@ -516,8 +615,8 @@ export const useCircuitStore = create<CircuitState>()(
        */
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        const { index, diagnostics, routes } = simulate(state.doc);
-        useCircuitStore.setState({ index, diagnostics, routes });
+        const { index, diagnostics, routes, flopState } = simulate(state.doc, state.flopState);
+        useCircuitStore.setState({ index, diagnostics, routes, flopState });
       },
     },
   ),

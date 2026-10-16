@@ -16,6 +16,8 @@ import { ConstraintMenu } from "@/components/lab/constraint-menu";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
+import { SequentialView } from "@/components/theory/sequential-view";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { useAnalysis } from "@/hooks/use-analysis";
@@ -101,17 +103,19 @@ export default function TheoryPage() {
           </Card>
 
           <Tabs defaultValue="derivation" className="mt-5">
-            {/* Five tabs do not fit on a 390px screen. Scroll them rather than
-                clipping the last two off the edge, where nobody will find them. */}
-            <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
-              <TabsTrigger value="derivation">How it was derived</TabsTrigger>
-              <TabsTrigger value="table">Truth table</TabsTrigger>
-              <TabsTrigger value="kmap">K-map</TabsTrigger>
-              <TabsTrigger value="tabular">Tabular method</TabsTrigger>
-              <TabsTrigger value="circuit">Circuit</TabsTrigger>
-              <TabsTrigger value="diagram">Block diagram</TabsTrigger>
-              <TabsTrigger value="build">Build it</TabsTrigger>
-            </TabsList>
+            {/* Seven tabs do not fit on narrow screens. Scroll them smoothly rather than
+                clipping the last tabs off the edge. */}
+            <div className="w-full overflow-x-auto pb-1">
+              <TabsList className="inline-flex h-auto w-max justify-start gap-1 p-1">
+                <TabsTrigger value="derivation">How it was derived</TabsTrigger>
+                <TabsTrigger value="table">Truth table</TabsTrigger>
+                <TabsTrigger value="kmap">K-map</TabsTrigger>
+                <TabsTrigger value="tabular">Tabular method</TabsTrigger>
+                <TabsTrigger value="circuit">Circuit</TabsTrigger>
+                <TabsTrigger value="diagram">Block diagram</TabsTrigger>
+                <TabsTrigger value="build">Build it</TabsTrigger>
+              </TabsList>
+            </div>
 
             <TabsContent value="derivation" className="mt-4">
               <Card>
@@ -287,6 +291,11 @@ export default function TheoryPage() {
           </Tabs>
         </>
       )}
+
+      {/* Below everything, and outside the function's own tabs on purpose — see
+          the note in SequentialView. A counter is not a view of a function. */}
+      <Separator className="my-8" />
+      <SequentialView />
     </div>
   );
 }

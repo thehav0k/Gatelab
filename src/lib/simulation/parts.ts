@@ -1,4 +1,5 @@
 import type { GateOp } from "./logic";
+import type { Edge, FlopKind } from "./sequential";
 import type { CircuitNode, PinSpec, Point } from "./netlist";
 
 /**
@@ -25,6 +26,28 @@ export interface CellTemplate {
   readonly op: GateOp;
   readonly inputPins: readonly string[];
   readonly outputPin: string;
+}
+
+/**
+ * One flip-flop inside a package, addressed by PIN NAME.
+ *
+ * Deliberately shaped like `CellTemplate`: a template names pins, and only
+ * `elaborate` turns pin names into net ordinals. That is what keeps the library
+ * a transcription of a datasheet rather than a description of a netlist.
+ */
+export interface FlopTemplate {
+  readonly slot: number;
+  readonly kind: FlopKind;
+  readonly edge: Edge;
+  readonly clockPin: string;
+  /** `[D]`, `[J, K]`, `[T]`, `[S, R]` — positional, per kind. */
+  readonly dataPins: readonly string[];
+  /** Active low, and `null` when the package simply has no such pin. */
+  readonly presetPin: string | null;
+  readonly clearPin: string | null;
+  readonly qPin: string;
+  /** The '174 has no complementary outputs. */
+  readonly qnPin: string | null;
 }
 
 export interface PowerPins {
@@ -98,7 +121,10 @@ export function pinsOf(node: CircuitNode): readonly PinSpec[] {
       ];
     }
 
+    // A clock is a switch the app drives. Same one strong output, same offset —
+    // the difference is who presses it, and that is a UI concern.
     case "switch":
+    case "clock":
       return [
         {
           number: 0,
@@ -154,10 +180,16 @@ export function cellsOf(node: CircuitNode): readonly CellTemplate[] {
     case "ic":
       return icRegistry.cells(node.part);
     case "switch":
+    case "clock":
     case "led":
     case "rail":
       return [];
   }
+}
+
+/** The flip-flops inside a node. Only ICs have any; gate primitives are ideal. */
+export function flopsOf(node: CircuitNode): readonly FlopTemplate[] {
+  return node.kind === "ic" ? icRegistry.flops(node.part) : [];
 }
 
 /**
@@ -179,6 +211,7 @@ export function powerOf(node: CircuitNode): PowerPins | null {
 export interface IcRegistry {
   pins(part: string): readonly PinSpec[];
   cells(part: string): readonly CellTemplate[];
+  flops(part: string): readonly FlopTemplate[];
   power(part: string): PowerPins | null;
   has(part: string): boolean;
 }
@@ -190,6 +223,7 @@ const missing = (part: string): never => {
 let icRegistry: IcRegistry = {
   pins: missing,
   cells: missing,
+  flops: missing,
   power: missing,
   has: () => false,
 };

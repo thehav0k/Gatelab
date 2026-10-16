@@ -89,6 +89,33 @@ title and pin lists you type in.
   positions, so the result is still yours to move.
 - Save and reopen as JSON, or export as SVG, PNG or LaTeX.
 
+**Sequential circuits** — flip-flops, a clock, and the counters you build from them.
+
+Five real packages, with every pin name transcribed from the TI datasheet and
+asserted pin by pin in the tests: **7474** (dual D, positive edge, preset and
+clear), **74LS76A** (dual J-K, negative edge — and its supply is on pins 5 and 13,
+not the corners), **74LS107A** (dual J-K, clear only), **74175** (quad D register)
+and **74174** (hex D register).
+
+- **A clock is a part.** Drop one, wire it to CLK, and press Pulse — one press
+  runs the level up and back down, because half these parts load on the rising
+  edge and half on the falling one.
+- **A flip-flop powers up at X**, not at 0. A real one comes up in whichever state
+  the metastability fell into, which is the entire reason every counter has a
+  CLEAR wired to it — and starting at 0 would make a missing reset invisible.
+- **Presets** for a divide-by-two, ripple counters, a synchronous counter, a
+  register and a shift register. Open the 2-bit ripple and the 2-bit synchronous
+  counter together: they count the same and differ by one wire.
+- Theory has the same circuits as block diagrams, each linking to the Lab preset
+  that builds it out of real chips.
+- **Design a counter from its sequence.** Type the states you want counted, in
+  any order — `0, 3, 5, 6` is a counter, and so is a Gray-code or a down-count —
+  and it derives the transition table, the excitation table, the minimal
+  equations and the circuit. The unused states go to Quine–McCluskey as don't
+  cares, which is the step people skip; and it says where each stray state
+  actually ends up, which is what decides whether the thing recovers from a
+  power-up glitch.
+
 **Worked solutions** — the same engine, aimed at a set of standard exam questions,
 and **behind a password** (`DIAGRAMS_PASSWORD`).
 
@@ -196,6 +223,10 @@ version is:
 - **The builder is that model with authored coordinates, and nothing else.** It
   produces the same placed diagram the auto-layout produces, so one renderer draws
   both and the canvas shows you the exporter's own bytes.
+- **The timing sweep refuses what it cannot draw.** Its cost doubles per input,
+  so nine inputs is a chart 79,000px wide and thirty-three is eight billion
+  combinations. Above the limit it says which circuit and by how much, rather
+  than drawing part of the input space and captioning it as all of it.
 - **A junction dot is derived from where the wires ended up.** Counting the
   distinct directions of ink leaving a point puts the dot at the T, where the
   branches actually part — not on the pin, where nothing branches and the old
@@ -208,6 +239,11 @@ version is:
   `rotate=` scope and no `arc`, because in a y-flipped TikZ picture the sign of
   an angle is exactly the kind of thing only pdfLaTeX can settle — and nothing
   here can run pdfLaTeX. It needs `\usepackage{tikz}` and nothing else.
+- **State lives outside the fixpoint.** The delta-cycle solver's correctness rests
+  on being a pure function of its inputs, and an edge is not something a fixpoint
+  can perceive. So within a settle a flip-flop is a constant that drives what it is
+  storing, and edges are found *between* settles — which is also what makes the
+  outer loop a ripple counter rather than a synchronous one.
 - **`variables[0]` is the MSB**, and a variable's bit is decided by its position *in the
   function*, never in the alphabet — `F(S,A,B)` is the natural way to write a
   multiplexer, and lining it up alphabetically reports a correct mux as wrong.

@@ -20,7 +20,7 @@ export function SiteFooter() {
   if (pathname.startsWith("/lab")) return null;
 
   return (
-    <footer className="no-print mt-auto border-t">
+    <footer className="no-print print:hidden mt-auto border-t">
       <div className="text-muted-foreground mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 py-6 text-xs sm:flex-row sm:items-center sm:px-6">
         <p className="text-pretty">
           Gatelab runs entirely in your browser. Nothing you build is uploaded.

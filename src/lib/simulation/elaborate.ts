@@ -1,7 +1,8 @@
 import type { Driver, GateOp } from "./logic";
 import { L0, L1 } from "./logic";
 import { buildNetIndex, netOf, type CircuitDocument, type NetIndex, type NodeId } from "./netlist";
-import { cellsOf, pinsOf, powerOf } from "./parts";
+import { cellsOf, flopsOf, pinsOf, powerOf } from "./parts";
+import type { Edge, FlopKind } from "./sequential";
 
 // Registers the 74xx parts into the registry that parts.ts reads through.
 // parts.ts cannot import the library itself (that would be a cycle), so the
@@ -32,10 +33,57 @@ export interface SimCell {
   readonly owner: { readonly node: NodeId; readonly slot: number };
 }
 
+/**
+ * One flip-flop, in net ordinals.
+ *
+ * It is NOT a `SimCell`, and the difference is the whole design: a cell is a
+ * pure function of the nets it reads, evaluated inside the fixpoint, whereas
+ * this thing's output is whatever it is currently storing and changes only when
+ * its clock moves. Putting it in `cells` would mean the fixpoint had to decide
+ * what a flip-flop outputs, which is a question the fixpoint cannot answer.
+ */
+export interface SimFlop {
+  readonly id: number;
+  readonly kind: FlopKind;
+  readonly edge: Edge;
+  readonly clock: number;
+  /** `[D]`, `[J, K]`, `[T]`, `[S, R]` — positional, per kind. */
+  readonly data: readonly number[];
+  /** Active-low async pins. `null` when the package has no such pin at all. */
+  readonly preset: number | null;
+  readonly clear: number | null;
+  readonly q: number;
+  readonly qn: number | null;
+  readonly power: { readonly vcc: number; readonly gnd: number } | null;
+  readonly owner: { readonly node: NodeId; readonly slot: number };
+}
+
+/**
+ * A clock source and the level it is currently sitting at.
+ *
+ * The level lives HERE rather than in the input vector because a clock is not
+ * an input variable — nothing sweeps it — and it lives on the port rather than
+ * in the document because the timing panel and the tests have to be able to
+ * drive it thousands of times without rebuilding the netlist each time.
+ */
+export interface SimClock extends SimPort {
+  readonly state: 0 | 1;
+}
+
+
 export interface SimPort {
   readonly node: NodeId;
   readonly label: string;
   readonly net: number;
+  /**
+   * Where the user left this switch, for consumers that are not sweeping.
+   *
+   * The truth-table sweep supplies its own vector and ignores this. The clocked
+   * chart cannot: it is not varying the inputs, it is holding them, and holding
+   * them all at 0 would assert every active-low clear on the board and produce
+   * a counter that never leaves zero.
+   */
+  readonly state?: 0 | 1;
 }
 
 export interface SimNetlist {
@@ -47,6 +95,16 @@ export interface SimNetlist {
   readonly railDrivers: readonly (readonly Driver[])[];
   /** Input switches, in stable label order. Indexes into evaluate()'s vector. */
   readonly inputs: readonly SimPort[];
+  /** Flip-flops, in placement order. Their state is carried between evaluations. */
+  readonly flops: readonly SimFlop[];
+  /**
+   * Clock sources, in stable label order.
+   *
+   * Deliberately NOT in `inputs`. A clocked circuit has no combinational truth
+   * table, and sweeping a clock as though it were another input variable would
+   * produce a table describing a circuit nobody built.
+   */
+  readonly clocks: readonly SimClock[];
   /** LED probes, in stable label order. */
   readonly outputs: readonly SimPort[];
   /** Net ordinals that short Vcc to GND — the solver pins these to X. */
@@ -80,8 +138,10 @@ export function elaborate(doc: CircuitDocument): Elaboration {
 
   const netCount = index.nets.length;
   const cells: SimCell[] = [];
+  const flops: SimFlop[] = [];
   const railDrivers: Driver[][] = Array.from({ length: netCount }, () => []);
   const inputs: SimPort[] = [];
+  const clocks: SimClock[] = [];
   const outputs: SimPort[] = [];
 
   for (const node of Object.values(doc.nodes)) {
@@ -103,7 +163,15 @@ export function elaborate(doc: CircuitDocument): Elaboration {
         // A switch with nothing attached still belongs in the input list — the
         // user placed it, and the truth-table sweep should still name it.
         if (net !== null) {
-          inputs.push({ node: node.id, label: node.label, net });
+          inputs.push({ node: node.id, label: node.label, net, state: node.state });
+        }
+        break;
+      }
+
+      case "clock": {
+        const net = ord(node.id, "Y");
+        if (net !== null) {
+          clocks.push({ node: node.id, label: node.label, net, state: node.state });
         }
         break;
       }
@@ -139,6 +207,30 @@ export function elaborate(doc: CircuitDocument): Elaboration {
             owner: { node: node.id, slot: template.slot },
           });
         }
+
+        for (const template of flopsOf(node)) {
+          const clock = ord(node.id, template.clockPin);
+          const q = ord(node.id, template.qPin);
+          const data = template.dataPins.map((p) => ord(node.id, p));
+          // A flip-flop whose clock, data or Q is not on any net cannot be
+          // simulated at all — but a MISSING preset pin is different from an
+          // unconnected one, so those two stay distinguishable below.
+          if (clock === null || q === null || data.some((n) => n === null)) continue;
+
+          flops.push({
+            id: flops.length,
+            kind: template.kind,
+            edge: template.edge,
+            clock,
+            data: data as number[],
+            preset: template.presetPin === null ? null : (ord(node.id, template.presetPin) ?? -1),
+            clear: template.clearPin === null ? null : (ord(node.id, template.clearPin) ?? -1),
+            q,
+            qn: template.qnPin === null ? null : ord(node.id, template.qnPin),
+            power: power ? { vcc: vcc ?? -1, gnd: gnd ?? -1 } : null,
+            owner: { node: node.id, slot: template.slot },
+          });
+        }
         break;
       }
     }
@@ -153,6 +245,7 @@ export function elaborate(doc: CircuitDocument): Elaboration {
 
   // Stable, human order — so the truth table's columns don't shuffle between runs.
   inputs.sort((a, b) => a.label.localeCompare(b.label));
+  clocks.sort((a, b) => a.label.localeCompare(b.label));
   outputs.sort((a, b) => a.label.localeCompare(b.label));
 
   const railShorts = index.nets
@@ -164,9 +257,11 @@ export function elaborate(doc: CircuitDocument): Elaboration {
     netlist: {
       netCount,
       cells,
+      flops,
       fanout,
       railDrivers,
       inputs,
+      clocks,
       outputs,
       railShorts,
       feedbackLoops: findFeedbackLoops(cells, fanout),

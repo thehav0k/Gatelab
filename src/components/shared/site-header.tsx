@@ -17,10 +17,10 @@ import {
 } from "@/components/ui/sheet";
 
 const NAV = [
-  { href: "/theory", label: "Theory" },
-  { href: "/diagram", label: "Builder" },
-  { href: "/lab", label: "Lab" },
-  { href: "/report", label: "Report" },
+  { href: "/theory", label: "1. Theory" },
+  { href: "/diagram", label: "2. Diagram" },
+  { href: "/lab", label: "3. Lab" },
+  { href: "/report", label: "4. Report" },
   { href: "/manual", label: "Manual" },
 ] as const;
 
@@ -36,7 +36,7 @@ export function SiteHeader() {
   const isActive = (href: string) => pathname.startsWith(href);
 
   return (
-    <header className="bg-background/80 no-print sticky top-0 z-50 border-b backdrop-blur">
+    <header className="bg-background/80 print:hidden no-print sticky top-0 z-50 border-b backdrop-blur">
       <div className="flex h-14 items-center gap-2 px-3 sm:gap-6 sm:px-4">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
           <CircuitBoard className="text-logic-high size-5" />
@@ -48,6 +48,7 @@ export function SiteHeader() {
             <Link
               key={href}
               href={href}
+              aria-current={isActive(href) ? "page" : undefined}
               className={cn(
                 "rounded-md px-3 py-1.5 text-sm transition-colors",
                 isActive(href)
@@ -79,9 +80,15 @@ export function SiteHeader() {
             </SheetTrigger>
             <SheetContent side="right" className="w-64">
               <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <CircuitBoard className="text-logic-high size-5" />
-                  Gatelab
+                <SheetTitle asChild>
+                  <Link
+                    href="/"
+                    onClick={() => setMenu(false)}
+                    className="flex items-center gap-2"
+                  >
+                    <CircuitBoard className="text-logic-high size-5" />
+                    <span>Gatelab</span>
+                  </Link>
                 </SheetTitle>
               </SheetHeader>
 
@@ -90,6 +97,7 @@ export function SiteHeader() {
                   <Link
                     key={href}
                     href={href}
+                    aria-current={isActive(href) ? "page" : undefined}
                     onClick={() => setMenu(false)}
                     className={cn(
                       "rounded-md px-3 py-2 text-sm transition-colors",

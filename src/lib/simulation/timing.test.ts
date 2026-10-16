@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { simulateTimed } from "./timing";
+import { MAX_SWEEP_INPUTS, simulateTimed } from "./timing";
+import { getSequentialPreset } from "./sequential-presets";
+import { evaluate } from "./solver";
 import { elaborate } from "./elaborate";
 import { realize, synthesize, technologyMap } from "./synth";
 import { circuit } from "./testing/build";
-import { L0, L1, type Logic } from "./logic";
+import { L0, L1, LX, type Logic } from "./logic";
 import { parse } from "@/lib/core-engine/parser";
 import type { CircuitDocument } from "./netlist";
 
@@ -187,5 +189,128 @@ describe("waveforms", () => {
     );
     const result = timed(doc);
     expect(perStep(result, "F", 4)).toEqual([L0, L0, L1, L0]); // Gray order
+  });
+});
+
+
+describe("the sweep refuses what it cannot draw", () => {
+  /** A circuit with `n` independent inputs, each through an inverter to an LED. */
+  const wide = (n: number): CircuitDocument => {
+    const b = circuit();
+    for (let i = 0; i < n; i++) {
+      b.switch(`S${i}`, 0)
+        .gate(`N${i}`, "not", 1)
+        .led(`L${i}`)
+        .wire(`S${i}`, "Y", `N${i}`, "A")
+        .wire(`N${i}`, "Y", `L${i}`, "A");
+    }
+    return b.build();
+  };
+
+  it("sweeps a circuit at the limit", () => {
+    const r = timed(wide(MAX_SWEEP_INPUTS));
+    expect(r.tooWide).toBeUndefined();
+    expect(r.steps).toBe(2 * 2 ** MAX_SWEEP_INPUTS);
+    expect(r.ticks).toBeGreaterThan(0);
+  });
+
+  it("refuses one input past it, and says how far past", () => {
+    // Every term of the cost is exponential, so there is no "slow" here, only
+    // "never": the 8-bit ripple adder's 17 inputs asked for 262,144 held steps
+    // and the 16-bit one's 33 asked for 17 billion, which `Array.from` throws
+    // on outright. The failure arrived as an empty lab with no explanation.
+    const n = MAX_SWEEP_INPUTS + 1;
+    const r = timed(wide(n));
+    expect(r.tooWide).toEqual({ inputs: n, combinations: 2 ** n });
+    expect(r.ticks).toBe(0);
+    expect(r.waves).toEqual([]);
+  });
+
+  it("returns immediately rather than trying and failing", () => {
+    // 33 inputs is the 16-bit adder. Before the guard this threw a RangeError
+    // from inside an Array.from of 17 billion elements.
+    const started = Date.now();
+    const r = timed(wide(33));
+    expect(r.tooWide?.inputs).toBe(33);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it("claims nothing about glitches it did not look for", () => {
+    // "No glitches" is a statement about the WHOLE input space. A partial sweep
+    // that reported an empty glitch list would be making that claim falsely.
+    const r = timed(wide(MAX_SWEEP_INPUTS + 1));
+    expect(r.glitches).toEqual([]);
+    expect(r.combinations).toEqual([]);
+    expect(r.tooWide).toBeDefined();
+  });
+});
+
+
+describe("the clocked chart", () => {
+  /** The 4-bit ripple counter preset, which is a circuit with memory. */
+  const counter = () =>
+    elaborate(getSequentialPreset("ripple-4")!.build()).netlist;
+
+  /** Pull the counter's active-low clear down once, and keep the state. */
+  const cleared = (nl: ReturnType<typeof counter>) => {
+    const clr = nl.inputs.findIndex((p) => p.label === "CLR");
+    return evaluate(nl, nl.inputs.map((_, i) => (i === clr ? 0 : 1)), { clocks: [0] }).state;
+  };
+
+  it("drives the clock instead of sweeping inputs", () => {
+    const r = simulateTimed(counter(), { cycles: 8 });
+    expect(r.clocked).toEqual({ cycles: 8 });
+    // A sweep would have claimed a combination per step. This one has none,
+    // because there is no combination to name — only a moment in a sequence.
+    expect(r.combinations).toEqual([]);
+    expect(r.ticks).toBeGreaterThan(0);
+  });
+
+  it("puts the clock on the chart, above the outputs", () => {
+    const r = simulateTimed(counter(), { cycles: 4 });
+    expect(r.waves[0]?.label).toBe("CLK");
+    expect(r.waves.map((w) => w.label)).toContain("Q0");
+    expect(r.waves.map((w) => w.label)).toContain("Q3");
+  });
+
+  it("shows unknowns for a counter nobody has cleared, because that is the truth", () => {
+    // A flip-flop powers up in whichever state it fell into. A chart that drew
+    // a tidy count here would be inventing the one thing the clear exists for.
+    const r = simulateTimed(counter(), { cycles: 6 });
+    const q0 = r.waves.find((w) => w.label === "Q0");
+    expect(q0?.samples.every((v) => v === LX)).toBe(true);
+  });
+
+  it("halves the rate at every stage, which is what a ripple counter IS", () => {
+    // Q0 changes once per clock cycle, Q1 once per two, Q2 once per four. If
+    // the stages were clocked together this would come out flat.
+    const nl = counter();
+    const r = simulateTimed(nl, { cycles: 24, state: cleared(nl) });
+    const edges = (label: string) => {
+      const w = r.waves.find((x) => x.label === label);
+      let count = 0;
+      for (let i = 1; i < (w?.samples.length ?? 0); i++) {
+        if (w?.samples[i] !== w?.samples[i - 1]) count += 1;
+      }
+      return count;
+    };
+    expect(edges("Q0")).toBeGreaterThan(edges("Q1"));
+    expect(edges("Q1")).toBeGreaterThan(edges("Q2"));
+    expect(edges("Q2")).toBeGreaterThan(edges("Q3"));
+  });
+
+  it("claims no glitches, because it does not model the delays that make them", () => {
+    // An empty list on a chart that never looked would be a claim. This chart
+    // samples settled values, so it reports nothing rather than "none found".
+    const r = simulateTimed(counter(), { cycles: 6 });
+    expect(r.glitches).toEqual([]);
+    expect(r.clocked).toBeDefined();
+  });
+
+  it("still sweeps a circuit with no memory in it", () => {
+    const doc = fromExpr("A*B", ["A", "B"]);
+    const r = timed(doc);
+    expect(r.clocked).toBeUndefined();
+    expect(r.combinations.length).toBeGreaterThan(0);
   });
 });

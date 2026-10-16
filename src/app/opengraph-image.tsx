@@ -79,7 +79,7 @@ export default function OpengraphImage() {
             display: "flex",
           }}
         >
-          K-map solver, Quine–McCluskey minimizer, and a 74xx TTL circuit simulator
+          K-map solver, block diagram builder, and a 74xx TTL circuit simulator
           that checks what you built against what you derived.
         </div>
 

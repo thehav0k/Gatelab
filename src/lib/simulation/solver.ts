@@ -8,7 +8,15 @@ import {
   type Driver,
   type Logic,
 } from "./logic";
-import type { SimNetlist } from "./elaborate";
+import type { SimFlop, SimNetlist } from "./elaborate";
+import {
+  asStored,
+  asyncOutputs,
+  clockedNext,
+  heldOutputs,
+  isEdge,
+  UNKNOWN,
+} from "./sequential";
 
 /**
  * Event-driven, double-buffered delta-cycle solver.
@@ -48,6 +56,80 @@ export interface SimState {
   readonly oscillating: readonly number[];
   /** 0 when settled. */
   readonly period: number;
+  /** What every flip-flop is storing now. Feed it back in for the next step. */
+  readonly state: SeqState;
+  /** How many flip-flops loaded during this evaluation. */
+  readonly edges: number;
+}
+
+/**
+ * Everything the circuit remembers between evaluations.
+ *
+ * `clk` is not an optimisation — it is the only place an EDGE can live. A
+ * fixpoint sees levels; by the time it has settled, the transition that caused
+ * the settle is over and unrecoverable. Keeping each flip-flop's view of its own
+ * clock from the end of the previous evaluation is what lets the next one say
+ * "that went from 0 to 1".
+ */
+export interface SeqState {
+  /** Per flip-flop, the stored Q. */
+  readonly q: Uint8Array;
+  /** Per flip-flop, its clock net's value at the end of the last evaluation. */
+  readonly clk: Uint8Array;
+}
+
+/**
+ * A circuit that has not been clocked yet.
+ *
+ * Q starts UNKNOWN, not 0. A real flip-flop powers up in whichever state the
+ * metastability fell into — which is the entire reason every counter ever built
+ * has a clear wired to it. Starting at 0 would make a missing reset invisible,
+ * which is the same mistake as reading a floating input as false.
+ */
+export const initialState = (nl: SimNetlist): SeqState => ({
+  q: new Uint8Array(nl.flops.length).fill(UNKNOWN),
+  clk: new Uint8Array(nl.flops.length).fill(LZ),
+});
+
+export const cloneState = (state: SeqState): SeqState => ({
+  q: new Uint8Array(state.q),
+  clk: new Uint8Array(state.clk),
+});
+
+/**
+ * The stored state, keyed by WHICH FLIP-FLOP rather than by array position.
+ *
+ * The netlist is rebuilt from the document on every simulation, so a flip-flop's
+ * index in `nl.flops` is only as stable as the document's node order — add a
+ * chip and every index after it shifts. Carrying the state across in an array
+ * would then hand flip-flop 3's bit to flip-flop 4, which is a memory circuit
+ * silently changing its mind about what it remembered. The identity of a
+ * flip-flop is its package and its slot, so that is the key.
+ *
+ * Plain JSON, so it survives `persist` and a page reload.
+ */
+export type StoredState = Readonly<Record<string, readonly [Logic, Logic]>>;
+
+const keyOf = (flop: SimFlop): string => `${flop.owner.node}/${flop.owner.slot}`;
+
+export function toSeqState(nl: SimNetlist, stored: StoredState | undefined): SeqState {
+  const state = initialState(nl);
+  if (!stored) return state;
+  for (const flop of nl.flops) {
+    const saved = stored[keyOf(flop)];
+    if (!saved) continue;
+    state.q[flop.id] = saved[0];
+    state.clk[flop.id] = saved[1];
+  }
+  return state;
+}
+
+export function fromSeqState(nl: SimNetlist, state: SeqState): StoredState {
+  const out: Record<string, readonly [Logic, Logic]> = {};
+  for (const flop of nl.flops) {
+    out[keyOf(flop)] = [state.q[flop.id] as Logic, state.clk[flop.id] as Logic];
+  }
+  return out;
 }
 
 export interface SimOptions {
@@ -68,6 +150,16 @@ export interface SimOptions {
    * test for "this thing has state", and that is exactly what verify() does.
    */
   readonly seed?: Logic;
+  /** What the flip-flops were storing. Omit to start from power-up. */
+  readonly state?: SeqState;
+  /**
+   * Override each clock's level, positionally against `netlist.clocks`.
+   *
+   * Without this, driving a clock would mean editing the document and
+   * re-elaborating — fine for a button press, hopeless for a timing sweep that
+   * moves it a thousand times.
+   */
+  readonly clocks?: readonly (0 | 1)[];
 }
 
 const DEFAULT_MAX_CYCLES = 256;
@@ -78,12 +170,112 @@ export type InputVector = readonly (0 | 1)[];
 /**
  * PURE. Fresh buffers, no mutation of the netlist, no reference to the document.
  * This is what the M6 verification sweep calls 2^n times.
+ *
+ * SETTLE, LOOK FOR EDGES, SETTLE AGAIN.
+ *
+ * With no flip-flops in the circuit this is exactly one settle and nothing
+ * else — the combinational path is untouched. With flip-flops it becomes a
+ * short outer loop, and the loop is not an implementation detail: it is what a
+ * RIPPLE counter is. Stage 0 toggles, and stage 0's own output is stage 1's
+ * clock, so the edge that advances stage 1 does not exist until stage 0 has
+ * already moved. One pass per stage, in order, is the delay you can see on a
+ * real ripple counter's scope trace.
+ *
+ * Inside any one settle a flip-flop is a CONSTANT — it drives what it is
+ * storing — so the fixpoint keeps being a pure function of the net vector and
+ * every property that rested on that still holds.
  */
 export function evaluate(
   nl: SimNetlist,
   inputs: InputVector,
   options: SimOptions = {},
 ): SimState {
+  const state = cloneState(options.state ?? initialState(nl));
+  if (nl.flops.length === 0) {
+    return { ...settle(nl, inputs, options, state), state, edges: 0 };
+  }
+
+  // One pass per flip-flop is enough for the longest possible ripple, plus one
+  // to confirm that nothing moved. More than that is a circuit clocking itself
+  // — a ring oscillator — and it is reported rather than looped on forever.
+  const maxPasses = nl.flops.length + 2;
+  let last = settle(nl, inputs, options, state);
+  let edges = 0;
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const moved = advance(nl, last.values, state);
+    edges += moved;
+    if (moved === 0) return { ...last, state, edges };
+    last = settle(nl, inputs, options, state);
+  }
+
+  return { ...last, settled: false, state, edges };
+}
+
+/**
+ * Apply one round of asynchronous overrides and clock edges to the stored state.
+ *
+ * Returns how many flip-flops actually loaded, which is the loop's termination
+ * condition above.
+ */
+function advance(nl: SimNetlist, values: Uint8Array, state: SeqState): number {
+  let moved = 0;
+
+  for (const flop of nl.flops) {
+    const clockNow = values[flop.clock] as Logic;
+    const wasClock = state.clk[flop.id] as Logic;
+    state.clk[flop.id] = clockNow;
+
+    if (flop.power && !isPowered(flop.power, values)) {
+      // An unpowered flip-flop is not holding anything. It has no supply to
+      // hold it with, and saying it still remembers the last value would be the
+      // same lie as an unpowered gate driving a clean 0.
+      state.q[flop.id] = UNKNOWN;
+      continue;
+    }
+
+    // Preset and clear are LEVEL-sensitive and outrank the clock, so they are
+    // applied first and they write the stored bit — otherwise releasing clear
+    // would reveal whatever was underneath it.
+    const async = asyncOutputs(asyncOf(flop, values));
+    if (async) {
+      const forced = asStored(async.q);
+      if (state.q[flop.id] !== forced) moved += 1;
+      state.q[flop.id] = forced;
+      continue;
+    }
+
+    if (!isEdge(flop.edge, wasClock, clockNow)) continue;
+
+    const before = state.q[flop.id] as Logic;
+    const after = asStored(
+      clockedNext(flop.kind, flop.data.map((n) => values[n] as Logic), before),
+    );
+    state.q[flop.id] = after;
+    if (after !== before) moved += 1;
+  }
+
+  return moved;
+}
+
+const asyncOf = (flop: SimFlop, values: Uint8Array) => ({
+  preset: flop.preset === null ? null : ((values[flop.preset] ?? LZ) as Logic),
+  clear: flop.clear === null ? null : ((values[flop.clear] ?? LZ) as Logic),
+});
+
+/** What a flip-flop is driving right now, given the levels on its async pins. */
+function flopOutputs(flop: SimFlop, values: Uint8Array, q: Logic) {
+  if (flop.power && !isPowered(flop.power, values)) return { q: LZ, qn: LZ };
+  return asyncOutputs(asyncOf(flop, values)) ?? heldOutputs(q);
+}
+
+/** One combinational settle, with every flip-flop held at its stored value. */
+function settle(
+  nl: SimNetlist,
+  inputs: InputVector,
+  options: SimOptions,
+  state: SeqState,
+): Omit<SimState, "state" | "edges"> {
   const maxCycles = options.maxDeltaCycles ?? DEFAULT_MAX_CYCLES;
   const seed = options.seed ?? LZ;
 
@@ -101,6 +293,13 @@ export function evaluate(
       strength: "strong",
     });
   });
+  nl.clocks.forEach((port, i) => {
+    const bit = options.clocks?.[i] ?? port.state;
+    (staticDrivers[port.net] as Driver[]).push({
+      value: bit === 1 ? L1 : L0,
+      strength: "strong",
+    });
+  });
 
   // A cell's current output, so a net can be resolved from all of its drivers
   // without re-evaluating any of them. THIS is what the seed initializes — see
@@ -109,6 +308,14 @@ export function evaluate(
   const cellOut = new Uint8Array(nl.cells.length).fill(seed);
 
   const shorted = new Set(nl.railShorts);
+
+  // Which flip-flop outputs land on which net. Built once per settle, because
+  // unlike a cell a flip-flop drives TWO nets and the pair is not always
+  // complementary — hold preset and clear together and both go high.
+  const flopDrivers = driverIndex(nl);
+  // A flip-flop's contribution, recomputed each delta cycle from `cur` because
+  // its async pins are level-sensitive.
+  let flopOut = flopDrive(nl, cur, state);
 
   const resolve = (net: number, outs: Uint8Array): Logic => {
     // A net shorting Vcc to GND has no honest value. Say X and let diagnostics
@@ -122,6 +329,9 @@ export function evaluate(
         strength: "strong",
       });
     }
+    for (const slot of flopDrivers[net] ?? []) {
+      drivers.push({ value: flopOut[slot] as Logic, strength: "strong" });
+    }
     return resolveNet(drivers);
   };
 
@@ -130,6 +340,7 @@ export function evaluate(
   for (let net = 0; net < nl.netCount; net++) {
     cur[net] = resolve(net, cellOut);
   }
+  flopOut = flopDrive(nl, cur, state);
 
   const seen = new Map<string, number>();
   let settled = false;
@@ -138,6 +349,7 @@ export function evaluate(
 
   for (cycles = 0; cycles < maxCycles; cycles++) {
     // --- 1. evaluate every cell against `cur` ONLY ------------------------
+    flopOut = flopDrive(nl, cur, state);
     const nextCellOut = new Uint8Array(cellOut);
     for (const cell of nl.cells) {
       let value: Logic;
@@ -311,6 +523,38 @@ function isPowered(
 ): boolean {
   if (power.vcc < 0 || power.gnd < 0) return false; // pin not on any net at all
   return values[power.vcc] === L1 && values[power.gnd] === L0;
+}
+
+/**
+ * Net -> the flip-flop output slots landing on it.
+ *
+ * Two slots per flip-flop, `2i` for Q and `2i+1` for Q-bar, so one flat array
+ * indexes both without a second structure. A package with no complementary
+ * output simply never registers its odd slot.
+ */
+function driverIndex(nl: SimNetlist): (number[] | undefined)[] {
+  const index: (number[] | undefined)[] = new Array(nl.netCount);
+  const put = (net: number, slot: number) => {
+    const list = index[net] ?? [];
+    list.push(slot);
+    index[net] = list;
+  };
+  for (const flop of nl.flops) {
+    put(flop.q, flop.id * 2);
+    if (flop.qn !== null) put(flop.qn, flop.id * 2 + 1);
+  }
+  return index;
+}
+
+/** Every flip-flop's two output values, against the current net vector. */
+function flopDrive(nl: SimNetlist, values: Uint8Array, state: SeqState): Uint8Array {
+  const out = new Uint8Array(nl.flops.length * 2);
+  for (const flop of nl.flops) {
+    const driven = flopOutputs(flop, values, state.q[flop.id] as Logic);
+    out[flop.id * 2] = driven.q;
+    out[flop.id * 2 + 1] = driven.qn;
+  }
+  return out;
 }
 
 /**

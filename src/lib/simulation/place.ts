@@ -40,9 +40,27 @@ export interface PlacementResult {
   readonly unplaced: readonly string[];
 }
 
-/** Rows a jumper may use, per half, in the order we prefer them. */
+/** The five rows of each half, in board order. */
 const LOWER_FREE: BoardRow[] = ["A", "B", "C", "D", "E"];
 const UPPER_FREE: BoardRow[] = ["J", "I", "H", "G", "F"];
+
+/**
+ * The free rows of a strip, NEAREST THE LEG FIRST.
+ *
+ * A fixed order put every jumper end in the lower half on row A, because A came
+ * first and A was always free — a dozen wires stacked along one line at the
+ * bottom of the board, crossing each other and everything else, when four other
+ * rows of the same strip sat empty. Taking the nearest free row instead spreads
+ * them over the strip and makes each jumper shorter, which is also what a person
+ * with a box of jumper wire does.
+ */
+function nearestRows(leg: BoardRow): BoardRow[] {
+  const half = (LOWER_FREE as readonly string[]).includes(leg) ? LOWER_FREE : UPPER_FREE;
+  const home = half.indexOf(leg);
+  return [...half]
+    .filter((row) => row !== leg)
+    .sort((a, b) => Math.abs(half.indexOf(a) - home) - Math.abs(half.indexOf(b) - home));
+}
 
 export function placeOnBreadboard(
   source: CircuitDocument,
@@ -66,7 +84,7 @@ export function placeOnBreadboard(
   const all = Object.values(source.nodes);
   const ics = all.filter((n) => n.kind === "ic");
   const rails = all.filter((n) => n.kind === "rail");
-  const switches = all.filter((n) => n.kind === "switch");
+  const switches = all.filter((n) => n.kind === "switch" || n.kind === "clock");
   const leds = all.filter((n) => n.kind === "led");
 
   // --- 1. chips, left to right across the channel ---------------------------
@@ -152,10 +170,7 @@ export function placeOnBreadboard(
       return null;
     }
 
-    const rows = (LOWER_FREE as readonly string[]).includes(hole.row)
-      ? LOWER_FREE
-      : UPPER_FREE;
-    for (const row of rows) {
+    for (const row of nearestRows(hole.row)) {
       const candidate: HoleRef = { col: hole.col, row };
       if (!isTaken(candidate)) return candidate;
     }
@@ -217,3 +232,79 @@ export const stripOfPin = (
   if (!node.boardRow) return null;
   return stripOf(doc.board, { col: Math.round(node.pos.x), row: node.boardRow });
 };
+
+
+// --- seating one new part ---------------------------------------------------
+
+/**
+ * Where a part added to a board that is ALREADY seated should go.
+ *
+ * `placeOnBreadboard` lays out a whole circuit at once. This is the other case,
+ * and it was missing entirely: clicking 7400 in the palette while the breadboard
+ * is on screen added the chip to the netlist with its SCHEMATIC coordinates
+ * still on it. `pos.x` was a pixel offset like 420, so the renderer drew the
+ * chip at column 420 of a 63-column board — off the sheet — and the camera,
+ * which sizes itself from the rightmost column in use, zoomed out to the full
+ * board to try to contain it. The part existed, raised faults, and could not be
+ * seen or reached. A part you cannot see is worse than one you cannot add.
+ *
+ * Returns `null` when the board has no room, which the caller must report:
+ * silently adding an unseatable part is exactly the bug this replaces.
+ */
+export function seatOnBoard(
+  doc: CircuitDocument,
+  node: CircuitNode,
+  spec: BreadboardSpec = DEFAULT_BOARD,
+): CircuitNode | null {
+  const seated = Object.values(doc.nodes);
+
+  /** Column spans the chips occupy, plus a column of gutter on each side. */
+  const chipSpans: [number, number][] = [];
+  for (const other of seated) {
+    if (other.kind !== "ic") continue;
+    const span = pinsOf(other).length / 2;
+    const start = Math.round(other.pos.x);
+    chipSpans.push([start - 1, start + span]);
+  }
+  const clearOfChips = (from: number, to: number): boolean =>
+    chipSpans.every(([a, b]) => to < a || from > b);
+
+  if (node.kind === "ic") {
+    const span = pinsOf(node).length / 2;
+    for (let col = 2; col + span - 1 <= spec.columns; col++) {
+      if (clearOfChips(col, col + span - 1)) return { ...node, pos: { x: col, y: 0 } };
+    }
+    return null;
+  }
+
+  // A rail tap goes on its own rail row, in the first hole nothing else is in.
+  if (node.kind === "rail") {
+    const row: BoardRow = node.rail === "vcc" ? "+top" : "-top";
+    const used = new Set(
+      seated
+        .filter((n) => n.boardRow === row)
+        .map((n) => Math.round(n.pos.x)),
+    );
+    for (let col = 1; col <= spec.columns; col++) {
+      if (!used.has(col)) return { ...node, pos: { x: col, y: 0 }, boardRow: row };
+    }
+    return null;
+  }
+
+  // Switches along the bottom, LEDs along the top — and never in a chip's own
+  // columns. Two parts in one column are on one strip, which means they are
+  // WIRED TOGETHER whether or not that was the intention; that is the whole
+  // hazard of a real board, and it belongs to the user's jumpers, not to us.
+  const row: BoardRow = node.kind === "switch" || node.kind === "clock" ? "A" : "J";
+  const half = row === "A" ? LOWER_FREE : UPPER_FREE;
+  const used = new Set(
+    seated
+      .filter((n) => n.boardRow !== undefined && (half as readonly string[]).includes(n.boardRow))
+      .map((n) => Math.round(n.pos.x)),
+  );
+  for (let col = 1; col <= spec.columns; col++) {
+    if (used.has(col) || !clearOfChips(col, col)) continue;
+    return { ...node, pos: { x: col, y: 0 }, boardRow: row };
+  }
+  return null;
+}

@@ -17,6 +17,10 @@ import { useSpecStore } from "@/stores/spec-store";
 import { PRESETS, buildPreset, type Preset } from "@/lib/simulation/presets";
 import { composePreset, type CompositeSpec } from "@/lib/simulation/compose";
 import { COMPOSITES } from "@/lib/simulation/composites";
+import {
+  SEQUENTIAL_PRESETS,
+  type SequentialPreset,
+} from "@/lib/simulation/sequential-presets";
 
 export function PresetMenu() {
   const load = useCircuitStore((s) => s.load);
@@ -30,6 +34,22 @@ export function PresetMenu() {
     toast.success(preset.name, {
       description: preset.note ?? preset.description,
       duration: preset.note ? 9000 : 4000,
+    });
+  };
+
+  /**
+   * A clocked circuit, built from the real flip-flop packages.
+   *
+   * Kept apart from the other two openers because it is a different kind of
+   * thing: those are functions the synthesizer generated, and this is a
+   * specific arrangement of specific parts, where the arrangement IS the point.
+   */
+  const openSequential = (preset: SequentialPreset) => {
+    load(preset.build());
+    clearSpec();
+    toast.success(preset.name, {
+      description: preset.note ?? preset.description,
+      duration: preset.note ? 10000 : 4500,
     });
   };
 
@@ -92,6 +112,17 @@ export function PresetMenu() {
             <DropdownMenuLabel>Large circuits</DropdownMenuLabel>
             {scaled.map((c) => (
               <Item key={c.id} name={c.name} desc={c.description} onClick={() => openComposite(c)} />
+            ))}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Clocked — flip-flops, counters, registers</DropdownMenuLabel>
+            {SEQUENTIAL_PRESETS.map((p) => (
+              <Item
+                key={p.id}
+                name={p.name}
+                desc={p.description}
+                onClick={() => openSequential(p)}
+              />
             ))}
 
             <DropdownMenuSeparator />

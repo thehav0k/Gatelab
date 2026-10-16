@@ -25,6 +25,7 @@ import {
   AUTO,
   useDiagramStore,
   useDiagramThemeName,
+  useDiscardedCount,
   useThemeIsCustomised,
 } from "@/stores/diagram-store";
 import { cn } from "@/lib/utils";
@@ -32,10 +33,14 @@ import { cn } from "@/lib/utils";
 /**
  * Every colour and stroke the renderer can emit, exposed.
  *
- * The panel writes a PATCH into the store, never a whole theme. So "start from
- * Blueprint but make the wires white" survives a switch to Print and back, and a
- * preset that is improved in a later release still reaches somebody who had
- * changed one colour in it.
+ * The panel writes a PATCH into the store, never a whole theme, so a preset
+ * improved in a later release still reaches somebody who had changed one colour
+ * in it — and so this panel can say exactly what has been changed.
+ *
+ * Choosing a preset APPLIES it, changes and all. It has to: a preset is a whole
+ * look, and one that leaves your old background in place changes the name in
+ * the box and nothing on the page, which is a control that appears broken. What
+ * it replaced is offered back on one click instead.
  *
  * Native `<input type="color">` on purpose. It is the OS colour picker — with
  * eyedropper, recent swatches and the palette the user already has — for zero
@@ -46,7 +51,9 @@ export function StylePanel({ theme }: { theme: DiagramTheme }) {
   const setThemeName = useDiagramStore((s) => s.setThemeName);
   const patch = useDiagramStore((s) => s.patchTheme);
   const reset = useDiagramStore((s) => s.resetTheme);
+  const restore = useDiagramStore((s) => s.restoreOverrides);
   const dirty = useThemeIsCustomised();
+  const discarded = useDiscardedCount();
 
   return (
     <div className="space-y-4">
@@ -87,6 +94,20 @@ export function StylePanel({ theme }: { theme: DiagramTheme }) {
           Reset
         </Button>
       </div>
+
+      {discarded > 0 && (
+        <p className="text-muted-foreground bg-muted/40 rounded-md border px-2.5 py-1.5 text-[11px] text-pretty">
+          {themeName === AUTO ? "Matching the app" : themeName} replaced{" "}
+          {discarded === 1 ? "one change" : `${discarded} changes`} of your own.{" "}
+          <button
+            type="button"
+            onClick={restore}
+            className="text-foreground underline underline-offset-2"
+          >
+            Put them back
+          </button>
+        </p>
+      )}
 
       <Separator />
 

@@ -348,7 +348,7 @@ export function BuilderCanvas({
       role="application"
       aria-label="Circuit canvas"
       className={cn(
-        "builder-canvas relative overflow-hidden outline-none",
+        "builder-canvas relative overflow-hidden outline-none touch-none select-none",
         theme.background === "none" && "bg-muted/20",
         gesture.kind === "pan" ? "cursor-grabbing" : "cursor-default",
         className,
@@ -424,7 +424,7 @@ function Overlay({
 
   return (
     <svg
-      className="pointer-events-none absolute inset-0"
+      className="pointer-events-none absolute inset-0 touch-none select-none"
       width={placed.width}
       height={placed.height}
       viewBox={`0 0 ${placed.width} ${placed.height}`}

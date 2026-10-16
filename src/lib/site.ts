@@ -19,7 +19,7 @@ export const SITE = {
   url: "https://gatelab-online.vercel.app",
   title: "Gatelab — Boolean minimizer, K-map solver & logic circuit simulator",
   description:
-    "Free online Boolean algebra simplifier, Karnaugh map solver and Quine–McCluskey calculator — with a 74xx TTL logic gate and breadboard simulator that verifies the circuit you built against the equation you derived. Runs entirely in your browser.",
+    "Free online Boolean algebra simplifier, Karnaugh map solver and Quine–McCluskey calculator, a drag-and-drop block diagram builder that exports SVG, PNG and LaTeX, and a 74xx TTL gate, flip-flop and breadboard simulator with clocked counters and registers that verifies the circuit you built against the equation you derived. Runs entirely in your browser.",
   locale: "en_US",
 } as const;
 
@@ -60,6 +60,26 @@ export const KEYWORDS = [
   "circuit diagram latex tikz",
   "logic gate tikz",
   "block diagram to latex",
+  "draw logic circuit online free",
+  "digital logic simulator online",
+  "four state logic simulator",
+  "floating input detection",
+  "gray code timing diagram",
+  "shannon expansion multiplexer",
+  "d flip flop simulator",
+  "jk flip flop simulator",
+  "7474 flip flop",
+  "74175 register",
+  "ripple counter simulator",
+  "synchronous counter simulator",
+  "shift register simulator",
+  "edge triggered flip flop",
+  "sequential circuit simulator online",
+  "counter design from state sequence",
+  "excitation table jk flip flop",
+  "state transition table generator",
+  "mod 5 counter design",
+  "self correcting counter",
 ] as const;
 
 /**
@@ -87,8 +107,15 @@ export const jsonLd = () => ({
     "NAND-only and NOR-only technology mapping",
     "Timing waveforms and static hazard detection",
     "Drag-and-drop block diagram builder for decoders, multiplexers, adders, counters, registers and memory",
+    "Build a block diagram from an equation, a minterm list or a truth table",
     "Group a selection into a reusable block and build hierarchical circuits",
     "Customisable diagram styling with SVG, PNG and LaTeX (TikZ) export",
     "Rotate blocks, place junctions, and snap wires straight",
+    "Edge-triggered D and J-K flip-flops, registers and shift registers from real 74xx packages",
+    "Clocked simulation with ripple and synchronous counters, and a clock-driven timing chart",
+    "Counter design from any state sequence: transition table, excitation table, don't cares and minimal equations",
+    "Printable lab report with the derivation and the verification",
   ],
+  inLanguage: "en",
+  author: { "@type": "Person", name: "thehav0k", url: "https://github.com/thehav0k" },
 });

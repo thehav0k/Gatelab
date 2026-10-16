@@ -20,9 +20,14 @@ import { cn } from "@/lib/utils";
 function pinTone(name: string): string {
   if (name === "VCC") return "text-logic-high";
   if (name === "GND") return "text-muted-foreground";
-  if (/Y$/.test(name)) return "text-logic-z"; // outputs
+  // Outputs: a gate's Y, and a flip-flop's Q or Q-bar.
+  if (/(Y|Q|QN)$/.test(name)) return "text-logic-z";
   return "text-foreground";
 }
+
+/** `1QN` is printed `1Q̄` on the package, and that is what a reader looks for. */
+const printedName = (name: string): string =>
+  name.endsWith("QN") ? `${name.slice(0, -2)}Q\u0305` : name;
 
 function Dip({ ic }: { ic: IcDoc }) {
   const half = ic.pinCount / 2;
@@ -35,7 +40,7 @@ function Dip({ ic }: { ic: IcDoc }) {
       <ul className="space-y-1 text-right">
         {left.map((p) => (
           <li key={p.pin} className="flex h-5 items-center justify-end gap-1.5">
-            <span className={cn("w-8", pinTone(p.name))}>{p.name}</span>
+            <span className={cn("w-8", pinTone(p.name))}>{printedName(p.name)}</span>
             <span className="text-muted-foreground w-4 tabular-nums">{p.pin}</span>
             <span className="bg-muted-foreground/50 h-px w-2.5" />
           </li>
@@ -59,7 +64,7 @@ function Dip({ ic }: { ic: IcDoc }) {
           <li key={p.pin} className="flex h-5 items-center gap-1.5">
             <span className="bg-muted-foreground/50 h-px w-2.5" />
             <span className="text-muted-foreground w-4 tabular-nums">{p.pin}</span>
-            <span className={cn("w-8", pinTone(p.name))}>{p.name}</span>
+            <span className={cn("w-8", pinTone(p.name))}>{printedName(p.name)}</span>
           </li>
         ))}
       </ul>
@@ -75,7 +80,7 @@ export function IcReference() {
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-mono text-base font-semibold">{ic.part}</h3>
             <Badge variant="secondary" className="text-[10px] font-normal">
-              {ic.gateCount} × {ic.inputsPerGate}-input {ic.op.toUpperCase()}
+              {ic.contains}
             </Badge>
             <span className="text-muted-foreground text-xs">DIP-{ic.pinCount}</span>
           </div>
@@ -94,11 +99,29 @@ export function IcReference() {
                 <span className="font-medium">pin {ic.gnd} → GND</span>
               </p>
               <p className="text-muted-foreground text-pretty">
-                Pin names follow the datasheet: <code>1A</code>, <code>1B</code> are
-                the inputs of gate 1 and <code>1Y</code> is its output. Numbering runs
-                anticlockwise from the notch — down the left side, then back up the
-                right.
+                {ic.sequential ? (
+                  <>
+                    Pin names follow the datasheet: the leading digit is which
+                    flip-flop, so <code>1CLK</code> clocks flip-flop 1 — and a name
+                    with <em>no</em> digit, like the &apos;175&apos;s{" "}
+                    <code>CLK</code>, is shared by all of them.
+                  </>
+                ) : (
+                  <>
+                    Pin names follow the datasheet: <code>1A</code>, <code>1B</code>{" "}
+                    are the inputs of gate 1 and <code>1Y</code> is its output.
+                  </>
+                )}{" "}
+                Numbering runs anticlockwise from the notch — down the left side, then
+                back up the right.
               </p>
+              {ic.part === "74LS76A" && (
+                <p className="text-logic-z text-pretty">
+                  Careful: the supply is on <strong>pin 5</strong> and{" "}
+                  <strong>pin 13</strong>, not the corners. Wire it like a 7474 and
+                  the chip simply never powers up.
+                </p>
+              )}
               {ic.part === "7402" && (
                 <p className="text-logic-z text-pretty">
                   Careful: the 7402 is <em>not</em> shaped like the 7400. Its gate 1

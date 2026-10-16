@@ -29,7 +29,13 @@ import { cn } from "@/lib/utils";
  * built-in ones — because to the person building a 16-bit adder out of four
  * 4-bit ones, their block IS a part.
  */
-export function PartPalette({ className }: { className?: string }) {
+export function PartPalette({
+  className,
+  onPlace,
+}: {
+  className?: string;
+  onPlace?: () => void;
+}) {
   const doc = useBuilderStore((s) => s.doc);
   const commit = useBuilderStore((s) => s.commit);
   const select = useBuilderStore((s) => s.select);
@@ -51,6 +57,7 @@ export function PartPalette({ className }: { className?: string }) {
     if (!added) return;
     commit(added.doc);
     select([added.id]);
+    onPlace?.();
   };
 
   const customs = Object.values(doc.customParts);

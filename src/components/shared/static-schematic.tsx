@@ -26,6 +26,7 @@ function nodeSize(node: CircuitNode): { w: number; h: number } {
     case "ic":
       return { w: dipWidth(pinsOf(node).length), h: dipHeight() };
     case "switch":
+    case "clock":
     case "rail":
       return { w: IO_W, h: IO_H };
     case "led":

@@ -12,6 +12,7 @@ import { LOGIC_NAMES, type Logic } from "@/lib/simulation/logic";
 import {
   ALL_ROWS,
   BOARD_PAD,
+  DEFAULT_BOARD,
   PITCH,
   boardHeight,
   boardWidth,
@@ -29,7 +30,14 @@ import { holeEnd, type CircuitNode, type Wire } from "@/lib/simulation/netlist";
 import { getIc } from "@/lib/simulation/ic-library";
 import { useViewBox } from "@/hooks/use-viewbox";
 import { Button } from "@/components/ui/button";
-import { Maximize2 } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CircuitBoard, Cpu, Layers, Maximize2, Sparkles } from "lucide-react";
+import { toast } from "sonner";
+import { useConstraint, useWorkspaceStore } from "@/stores/workspace-store";
+import { useSpecStore } from "@/stores/spec-store";
+import { rebuildUnder } from "@/lib/simulation/rebuild";
+import { PRESETS, buildPreset } from "@/lib/simulation/presets";
+import { describeDesign } from "@/lib/simulation/synth";
 
 /** How many pins a seated node has — an IC's package, or 1 for anything else. */
 const pinCount = (node: CircuitNode): number =>
@@ -51,12 +59,54 @@ const RAIL_ROWS: BoardRow[] = ["+top", "-top", "+bottom", "-bottom"];
  */
 export function BreadboardView() {
   const doc = useCircuitStore((s) => s.doc);
-  const spec = doc.board;
+  const spec = doc.board ?? DEFAULT_BOARD;
 
   const clickHole = useCircuitStore((s) => s.clickHole);
   const pendingHole = useCircuitStore((s) => s.pendingHole);
   const cancelWire = useCircuitStore((s) => s.cancelWire);
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
+  const toggleClock = useCircuitStore((s) => s.toggleClock);
+
+  const theorySource = useWorkspaceStore((s) => s.theorySource);
+  const constraint = useConstraint();
+  const setSpec = useSpecStore((s) => s.setSpec);
+  const clearSpec = useSpecStore((s) => s.clear);
+  const load = useCircuitStore((s) => s.load);
+  const toBreadboard = useCircuitStore((s) => s.toBreadboard);
+  const toSchematic = useCircuitStore((s) => s.toSchematic);
+  const clearCircuit = useCircuitStore((s) => s.clear);
+
+  const handleSynthesizeTheory = () => {
+    const src = theorySource?.trim() || "F(A,B,C) = A'B + BC";
+    const rebuilt = rebuildUnder(src, constraint);
+    if (!rebuilt.ok) {
+      toast.error("Could not synthesize expression", { description: rebuilt.reason });
+      return;
+    }
+    setSpec(src);
+    load(rebuilt.doc, src);
+    toBreadboard();
+    toast.success("Synthesized onto breadboard", {
+      description: describeDesign(rebuilt.design),
+    });
+  };
+
+  const handleLoadStarterPreset = () => {
+    const preset = PRESETS[0];
+    if (!preset) return;
+    load(buildPreset(preset));
+    clearSpec();
+    toBreadboard();
+    toast.success(`Loaded ${preset.name}`, {
+      description: preset.note ?? "Seated on breadboard",
+    });
+  };
+
+  const handleSwitchToSchematic = () => {
+    if (!toSchematic()) {
+      clearCircuit();
+    }
+  };
 
   const [hover, setHover] = useState<HoleRef | null>(null);
   const nodes = useMemo(() => Object.values(doc.nodes), [doc.nodes]);
@@ -74,15 +124,22 @@ export function BreadboardView() {
     const h = boardHeight();
     if (!spec) return { x: 0, y: 0, w: 800, h };
 
+    // Only things actually ON the board may move the camera. A node whose
+    // `pos.x` is still a schematic pixel offset would otherwise pull the frame
+    // out to the full 63 columns and shrink the real circuit to a smear.
     let maxCol = 10;
+    const onBoard = (col: number) => col >= 1 && col <= spec.columns;
     for (const node of nodes) {
       const col = Math.round(node.pos.x);
+      if (!onBoard(col)) continue;
       const span = node.kind === "ic" ? pinCount(node) / 2 : 1;
       maxCol = Math.max(maxCol, col + span);
     }
     for (const wire of Object.values(doc.wires)) {
       for (const end of [wire.a, wire.b]) {
-        if (end.kind === "hole") maxCol = Math.max(maxCol, end.ref.col);
+        if (end.kind === "hole" && onBoard(end.ref.col)) {
+          maxCol = Math.max(maxCol, end.ref.col);
+        }
       }
     }
     const cols = Math.min(spec.columns, maxCol + 3);
@@ -92,8 +149,6 @@ export function BreadboardView() {
   const svgRef = useRef<SVGSVGElement>(null);
   const cam = useViewBox(natural, svgRef);
 
-  if (!spec) return null;
-
   const w = boardWidth(spec);
   const h = boardHeight();
 
@@ -102,6 +157,21 @@ export function BreadboardView() {
     <svg
       ref={svgRef}
       viewBox={cam.viewBox}
+      /*
+       * LEFT-ALIGNED, not centred.
+       *
+       * The default `xMidYMid` centres the viewBox in the element, which for a
+       * container wider than the crop leaves an equal band of slack on each
+       * side. That is right when the drawing ends at the viewBox — and a board
+       * does not. It carries on to column 63, so the right-hand band filled
+       * with more breadboard while the left one stayed empty, and the whole
+       * board looked shoved to the right of its own canvas.
+       *
+       * Anchoring at `xMin` spends all the slack on the right, where there is
+       * board to show. It is also the honest framing: a breadboard is a
+       * physical thing that starts at column 1.
+       */
+      preserveAspectRatio="xMinYMid meet"
       className="bg-card h-full w-full touch-none rounded-md border"
       onWheel={cam.onWheel}
       onPointerDown={(e) => {
@@ -165,7 +235,9 @@ export function BreadboardView() {
           key={node.id}
           node={node}
           spec={spec}
-          onToggle={() => toggleSwitch(node.id)}
+          onToggle={() =>
+            node.kind === "clock" ? toggleClock(node.id) : toggleSwitch(node.id)
+          }
         />
       ))}
 
@@ -208,9 +280,52 @@ export function BreadboardView() {
         <Maximize2 className="size-3.5" />
       </Button>
     </div>
-    <p className="no-print text-muted-foreground pointer-events-none absolute bottom-2 left-3 text-[10px]">
-      scroll to zoom · shift-drag or right-drag to pan
-    </p>
+    {nodes.length === 0 && (
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
+        <Card className="pointer-events-auto w-full max-w-md border-dashed shadow-xl backdrop-blur-xs bg-card/95">
+          <CardHeader className="text-center pb-3">
+            <div className="mx-auto mb-2 flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <CircuitBoard className="size-5" />
+            </div>
+            <CardTitle className="text-base font-semibold">Breadboard is Empty</CardTitle>
+            <CardDescription className="text-xs">
+              No components or IC chips are seated on this board yet. Get started in one click:
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 pt-1">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleSynthesizeTheory}
+              className="justify-start gap-2 h-9"
+            >
+              <Sparkles className="size-4 shrink-0 text-amber-300" />
+              <span className="truncate">
+                Synthesize from Theory: <span className="font-mono text-xs opacity-90">{theorySource}</span>
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLoadStarterPreset}
+              className="justify-start gap-2 h-9"
+            >
+              <Cpu className="size-4 shrink-0" />
+              <span>Load Starter 74xx Preset ({PRESETS[0]?.name ?? "Half Adder"})</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSwitchToSchematic}
+              className="justify-start gap-2 h-9 text-muted-foreground hover:text-foreground"
+            >
+              <Layers className="size-4 shrink-0" />
+              <span>Switch to Schematic View</span>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )}
     </div>
   );
 }
@@ -420,6 +535,9 @@ function SeatedPart({
   if (node.kind === "switch") {
     return <SeatedSwitch node={node} hole={hole} onToggle={onToggle} />;
   }
+  if (node.kind === "clock") {
+    return <SeatedClock node={node} hole={hole} onToggle={onToggle} />;
+  }
   if (node.kind === "led") return <SeatedLed node={node} hole={hole} />;
   if (node.kind === "rail") return <SeatedRail node={node} hole={hole} />;
   return null; // a bare gate primitive has no physical package to seat
@@ -431,7 +549,9 @@ function SeatedIc({ node }: { node: Extract<CircuitNode, { kind: "ic" }> }) {
 
   const holes = dipHoles({ col: Math.round(node.pos.x) }, def.pins.length);
   const first = holes[0];
-  const last = holes[6];
+  // The last pin of the BOTTOM row, which is half the package — not pin 7.
+  // Hard-coding 7 drew every 16-pin part a column short of its own legs.
+  const last = holes[def.pins.length / 2 - 1];
   if (!first || !last) return null;
 
   const a = holePoint(first);
@@ -469,6 +589,20 @@ function SeatedIc({ node }: { node: Extract<CircuitNode, { kind: "ic" }> }) {
     </g>
   );
 }
+
+/**
+ * Which side of a part its label goes on: INWARD, towards the centre channel.
+ *
+ * Outward is where the printed furniture is — the column numbers above row J,
+ * the power rails below row A — and the LED label used to be a flat 12px above,
+ * which on row J is exactly where the column number is. "S" and "25" drawn on
+ * top of each other, both unreadable, on the one part whose label tells you what
+ * you are looking at. Inward there is nothing but empty holes.
+ */
+const labelDy = (row: BoardRow): number =>
+  (UPPER_BANK as readonly string[]).includes(row) ? 18 : -13;
+
+const UPPER_BANK: BoardRow[] = ["F", "G", "H", "I", "J"];
 
 function IcLeg({ hole }: { hole: HoleRef }) {
   const value = useEndpointValue(holeEnd(hole));
@@ -515,7 +649,53 @@ function SeatedSwitch({
       />
       <text
         x={p.x}
-        y={p.y + 20}
+        y={p.y + (labelDy(hole.row) > 0 ? 20 : -13)}
+        textAnchor="middle"
+        className="fill-foreground pointer-events-none font-mono text-[10px] font-semibold"
+      >
+        {node.label}
+      </text>
+    </g>
+  );
+}
+
+/** A seated clock: the same footprint as a switch, marked with its edge. */
+function SeatedClock({
+  node,
+  hole,
+  onToggle,
+}: {
+  node: Extract<CircuitNode, { kind: "clock" }>;
+  hole: HoleRef;
+  onToggle: () => void;
+}) {
+  const p = holePoint(hole);
+  const high = node.state === 1;
+  return (
+    <g
+      className="cursor-pointer"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+    >
+      <rect
+        x={p.x - 9}
+        y={p.y - 9}
+        width={18}
+        height={18}
+        rx={3}
+        className="fill-card stroke-foreground/70"
+      />
+      <path
+        d={`M${p.x - 6},${p.y + 4} H${p.x - 2} V${p.y - 4} H${p.x + 2} V${p.y + 4} H${p.x + 6}`}
+        fill="none"
+        style={{ stroke: high ? "var(--logic-high)" : "var(--logic-low)" }}
+        strokeWidth={1.6}
+      />
+      <text
+        x={p.x}
+        y={p.y + labelDy(hole.row)}
         textAnchor="middle"
         className="fill-foreground pointer-events-none font-mono text-[10px] font-semibold"
       >
@@ -549,7 +729,7 @@ function SeatedLed({
       />
       <text
         x={p.x}
-        y={p.y - 12}
+        y={p.y + labelDy(hole.row)}
         textAnchor="middle"
         className="fill-foreground font-mono text-[10px] font-semibold"
       >

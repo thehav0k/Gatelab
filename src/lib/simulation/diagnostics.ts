@@ -1,7 +1,7 @@
 import type { SimNetlist } from "./elaborate";
-import { LX, isDefinite, type Logic } from "./logic";
+import { L0, LX, LZ, isDefinite, type Logic } from "./logic";
 import { pinKey, type CircuitDocument, type NetIndex, type NodeId, type PinRef } from "./netlist";
-import { cellsOf, pinsOf, powerOf } from "./parts";
+import { cellsOf, flopsOf, pinsOf, powerOf } from "./parts";
 import type { SimState } from "./solver";
 
 /**
@@ -30,7 +30,10 @@ export type Diagnostic =
   | { code: "UNPOWERED_IC"; severity: "error"; message: string; node: NodeId; missing: ("vcc" | "gnd")[] }
   | { code: "DANGLING_OUTPUT"; severity: "info"; message: string; pins: PinRef[]; net: number }
   | { code: "UNUSED_GATE"; severity: "info"; message: string; node: NodeId; slots: number[] }
-  | { code: "OSCILLATION"; severity: "error"; message: string; nets: number[]; period: number };
+  | { code: "OSCILLATION"; severity: "error"; message: string; nets: number[]; period: number }
+  | { code: "FLOATING_CLOCK"; severity: "warning"; message: string; node: NodeId; slots: number[] }
+  | { code: "PRESET_AND_CLEAR"; severity: "warning"; message: string; node: NodeId; slots: number[] }
+  | { code: "UNINITIALISED_FLOP"; severity: "info"; message: string; node: NodeId; slots: number[] };
 
 export function diagnose(
   doc: CircuitDocument,
@@ -72,6 +75,50 @@ export function diagnose(
         unusedPins.add(pinKey({ node: node.id, pin: p }));
       }
       unusedSlots.set(node.id, [...(unusedSlots.get(node.id) ?? []), t.slot]);
+    }
+  }
+
+  /**
+   * The same rule for flip-flops, and one more besides.
+   *
+   * A '74 has two flip-flops and a divide-by-two uses one; the other has a
+   * floating clock, floating data and an unknown state — all true, and all
+   * noise around the one thing the reader needs to see. So a flip-flop whose
+   * outputs feed nothing is reported once as spare and its own pins stop
+   * complaining.
+   *
+   * AND AN UNUSED Q-BAR IS NOT A DANGLING OUTPUT. A flip-flop always drives
+   * both of its outputs; using only one is not an oversight, it is the normal
+   * case, and four "1QN is not connected to anything" notices buried the one
+   * message that mattered on a ripple counter.
+   */
+  const spareFlops = new Set<string>();
+  const spareSlots = new Map<NodeId, number[]>();
+
+  for (const node of Object.values(doc.nodes)) {
+    for (const t of flopsOf(node)) {
+      const used = (pin: string | null): boolean => {
+        if (pin === null) return false;
+        const netId = index.netOfPin.get(pinKey({ node: node.id, pin }));
+        const net = netId && index.nets.find((n) => n.id === netId);
+        return (net?.loads.length ?? 0) > 0;
+      };
+
+      const qUsed = used(t.qPin);
+      const qnUsed = used(t.qnPin);
+
+      if (!qUsed && !qnUsed) {
+        spareFlops.add(`${node.id}/${t.slot}`);
+        spareSlots.set(node.id, [...(spareSlots.get(node.id) ?? []), t.slot]);
+        for (const pin of [t.qPin, t.qnPin, t.clockPin, ...t.dataPins]) {
+          if (pin) unusedPins.add(pinKey({ node: node.id, pin }));
+        }
+        continue;
+      }
+
+      // In use — so the output nobody took is simply the one nobody needed.
+      if (!qUsed) unusedPins.add(pinKey({ node: node.id, pin: t.qPin }));
+      if (!qnUsed && t.qnPin) unusedPins.add(pinKey({ node: node.id, pin: t.qnPin }));
     }
   }
 
@@ -183,6 +230,101 @@ export function diagnose(
       }: gate${slots.length === 1 ? "" : "s"} ${slots.join(", ")} ${
         slots.length === 1 ? "is" : "are"
       } unused. On a real board you would tie their inputs to Vcc or GND rather than leave them floating.`,
+      node: nodeId,
+      slots,
+    });
+  }
+
+  // --- sequential parts -----------------------------------------------------
+  //
+  // Three things go wrong with a flip-flop that cannot go wrong with a gate, and
+  // all three present as "the circuit just sits there".
+  const floatingClock = new Map<NodeId, number[]>();
+  const bothAsync = new Map<NodeId, number[]>();
+  const unknownState = new Map<NodeId, number[]>();
+
+  for (const flop of nl.flops) {
+    if (spareFlops.has(`${flop.owner.node}/${flop.owner.slot}`)) continue;
+    const push = (into: Map<NodeId, number[]>) => {
+      const list = into.get(flop.owner.node) ?? [];
+      list.push(flop.owner.slot);
+      into.set(flop.owner.node, list);
+    };
+
+    const clock = state.values[flop.clock] as Logic;
+    if (clock === LZ) push(floatingClock);
+
+    const preset = flop.preset === null ? null : (state.values[flop.preset] as Logic);
+    const clear = flop.clear === null ? null : (state.values[flop.clear] as Logic);
+    if (preset === L0 && clear === L0) push(bothAsync);
+
+    if (state.state.q[flop.id] === LX && clock !== LZ) push(unknownState);
+  }
+
+  const list = (slots: number[]) => slots.join(", ");
+  const plural = (slots: number[], one: string, many: string) =>
+    slots.length === 1 ? one : many;
+
+  for (const [nodeId, slots] of spareSlots) {
+    const node = doc.nodes[nodeId];
+    if (!node) continue;
+    // Only worth saying when there is more than one in the package — a lone
+    // flip-flop you have not wired yet is a work in progress, not a spare.
+    if (nl.flops.filter((f) => f.owner.node === nodeId).length === slots.length) continue;
+    out.push({
+      code: "UNUSED_GATE",
+      severity: "info",
+      message: `${node.label}${
+        node.kind === "ic" ? ` (${node.part})` : ""
+      }: flip-flop${slots.length === 1 ? "" : "s"} ${slots.join(", ")} ${
+        slots.length === 1 ? "is" : "are"
+      } unused. Tie the spare clock and data pins off rather than leaving them floating.`,
+      node: nodeId,
+      slots,
+    });
+  }
+
+  for (const [nodeId, slots] of floatingClock) {
+    const node = doc.nodes[nodeId];
+    if (!node) continue;
+    out.push({
+      code: "FLOATING_CLOCK",
+      severity: "warning",
+      message: `${node.label}: the clock on flip-flop${plural(slots, "", "s")} ${list(
+        slots,
+      )} is not connected. Nothing will ever be loaded — a floating clock has no edges, and an edge is the only thing that moves a flip-flop.`,
+      node: nodeId,
+      slots,
+    });
+  }
+
+  for (const [nodeId, slots] of bothAsync) {
+    const node = doc.nodes[nodeId];
+    if (!node) continue;
+    out.push({
+      code: "PRESET_AND_CLEAR",
+      severity: "warning",
+      message: `${node.label}: preset and clear are both held low on flip-flop${plural(
+        slots,
+        "",
+        "s",
+      )} ${list(slots)}. Both outputs go high, which is not a state the chip can keep — release either one and where it lands is a race.`,
+      node: nodeId,
+      slots,
+    });
+  }
+
+  for (const [nodeId, slots] of unknownState) {
+    const node = doc.nodes[nodeId];
+    if (!node) continue;
+    out.push({
+      code: "UNINITIALISED_FLOP",
+      severity: "info",
+      message: `${node.label}: flip-flop${plural(slots, "", "s")} ${list(slots)} ${plural(
+        slots,
+        "has",
+        "have",
+      )} never been set or cleared, so ${plural(slots, "its", "their")} output is unknown. A real one powers up in whichever state it falls into — which is why every counter has a clear wired to it.`,
       node: nodeId,
       slots,
     });

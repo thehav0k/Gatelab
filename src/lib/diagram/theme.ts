@@ -299,3 +299,44 @@ export const TONE_LABELS: Readonly<Record<BlockTone, string>> = {
   bus: "Buses",
   note: "Annotations",
 };
+
+
+// --- choosing a preset ------------------------------------------------------
+
+/**
+ * A preset choice plus the changes made on top of it.
+ *
+ * Out here rather than in the store because the RULE is the interesting part
+ * and a rule inside a React store is a rule nothing can test. The store keeps
+ * this shape and calls these two functions; it holds no logic of its own.
+ */
+export interface ThemeChoice {
+  readonly themeName: string;
+  readonly overrides: DiagramThemePatch;
+  /** What the last preset switch replaced, for one click of undo. */
+  readonly discarded: DiagramThemePatch | null;
+}
+
+/**
+ * Choosing a preset APPLIES it, and puts what it replaced aside.
+ *
+ * Overrides used to survive the switch, on the theory that "start from
+ * Blueprint but make the wires white" ought to carry across. In practice: change
+ * the background once — the first thing anybody changes, and most of what a
+ * preset is — and from then on every preset you pick changes the name in the box
+ * and nothing on the page. A control that silently stops doing the one thing it
+ * promises is worse than one that occasionally discards a preference, especially
+ * when the preference is one click away.
+ */
+export const choosePreset = (current: ThemeChoice, themeName: string): ThemeChoice => ({
+  themeName,
+  overrides: {},
+  // Nothing to offer back when nothing was changed, which is the usual case.
+  discarded: Object.keys(current.overrides).length > 0 ? current.overrides : null,
+});
+
+/** Put the discarded changes back, on top of whichever preset is now chosen. */
+export const restorePreset = (current: ThemeChoice): ThemeChoice =>
+  current.discarded === null
+    ? current
+    : { themeName: current.themeName, overrides: current.discarded, discarded: null };

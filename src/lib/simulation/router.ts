@@ -93,6 +93,7 @@ export function footprint(node: CircuitNode): { x: number; y: number; w: number;
       return { x: node.pos.x, y: node.pos.y, w: dipWidth(pins), h: dipHeight() };
     }
     case "switch":
+    case "clock":
     case "led":
     case "rail":
       return { x: node.pos.x, y: node.pos.y, w: IO_W, h: IO_H };

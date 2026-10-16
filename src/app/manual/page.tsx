@@ -50,6 +50,40 @@ const NOTATION = [
   { write: "F(A,B,C) = ΠM(0,2)", means: "product of maxterms", note: "the rows where F = 0" },
 ] as const;
 
+/**
+ * The sequential packages, as a reader needs them: what it is, and the one
+ * thing about it that is not like the others.
+ */
+const FLIP_FLOPS = [
+  {
+    part: "7474",
+    what: "Dual D flip-flop, positive edge, with asynchronous preset and clear.",
+    watch: "The workhorse. Vcc on 14, GND on 7, like the gates.",
+  },
+  {
+    part: "74LS76A",
+    what: "Dual J-K flip-flop, negative edge, with preset and clear.",
+    watch:
+      "Vcc is pin 5 and GND is pin 13 — not the corners. Wire it like a 7474 and the chip never powers up. (The plain 7476 shares this pinout but is pulse-triggered rather than edge-triggered; the edge-triggered part is the one modelled, so it is the one named.)",
+  },
+  {
+    part: "74LS107A",
+    what: "Dual J-K flip-flop, negative edge, clear only — no preset.",
+    watch: "The usual ripple-counter part: tie J and K high and it toggles.",
+  },
+  {
+    part: "74175",
+    what: "Quad D flip-flop with one shared clock and one shared clear — a 4-bit register.",
+    watch:
+      "The shared clock is the point. Wire each Q to the next D and the same chip is a shift register.",
+  },
+  {
+    part: "74174",
+    what: "Hex D flip-flop, shared clock and clear. A 6-bit register.",
+    watch: "No complementary outputs — Q only.",
+  },
+] as const;
+
 const FAULTS = [
   {
     code: "UNPOWERED_IC",
@@ -127,12 +161,13 @@ const TOC = [
   { id: "writing", label: "Writing a function" },
   { id: "theory", label: "The theory workspace" },
   { id: "rules", label: "Gate rules" },
-  { id: "diagrams", label: "The builder" },
+  { id: "diagrams", label: "The diagram editor" },
   { id: "lab", label: "The lab" },
   { id: "blocks", label: "Presets & building blocks" },
   { id: "gates", label: "Logic gates" },
   { id: "chips", label: "74xx chips" },
   { id: "breadboard", label: "The breadboard" },
+  { id: "sequential", label: "Flip-flops & counters" },
   { id: "faults", label: "Faults" },
   { id: "verify", label: "Verification" },
   { id: "timing", label: "Timing and hazards" },
@@ -323,9 +358,9 @@ export default function ManualPage() {
             </p>
           </Section>
 
-          <Section id="diagrams" icon={Network} title="The circuit builder">
+          <Section id="diagrams" icon={Network} title="The diagram editor">
             <p>
-              <strong>Builder</strong> is a canvas. Drag a block out of the palette,
+              <strong>Diagram</strong> is a canvas. Drag a block out of the palette,
               drag from one of its pins to another block&apos;s pin to wire them, and
               drag the blocks around until it reads the way you want.
             </p>
@@ -459,8 +494,17 @@ F(A,B,C) = 01101001`}
               rather than leaving you to notice.
             </p>
             <p>
-              The <strong>Style</strong> tab changes the background (including fully
-              transparent, for dark slides), the grid, the wire colours and widths, the
+              The <strong>Preset</strong> at the top of the <strong>Style</strong> tab
+              is a whole look, and choosing one applies it — including over changes you
+              had made yourself, because a preset that left your old background in
+              place would change the name in the box and nothing on the page. It says
+              what it replaced and puts it back on one click if that is not what you
+              meant.
+            </p>
+            <p>
+              The rest of the <strong>Style</strong> tab changes the background
+              (including fully transparent, for dark slides), the grid, the wire colours
+              and widths, the
               corner radii, the type sizes, and the colour of each category of block.
               It applies to the canvas and to the export together — there is one
               renderer, and the canvas is showing you the same bytes the file will
@@ -637,10 +681,139 @@ F(A,B,C) = 01101001`}
                 costs people hours at a real bench.
               </li>
             </ul>
+            <p>
+              You can keep building once you are on the board: a chip you add from the
+              palette is <em>plugged in</em> — given real columns, clear of the chips
+              already there and clear of their strips, because two parts in one column
+              are wired together whether or not you meant it. If the board is full it
+              says so rather than adding a part with nowhere to be.
+            </p>
             <p className="text-muted-foreground">
               Seating a schematic is a realization, and a board has no schematic layout
               — so Gatelab keeps the original and hands it back when you switch view. A
               board built from scratch has nothing to go back to, and says so.
+            </p>
+          </Section>
+
+          <Section id="sequential" icon={CircuitBoard} title="Flip-flops, clocks and counters">
+            <p>
+              Everything above is <em>combinational</em>: the output is a function of
+              the inputs, and nothing else. A flip-flop is the first part here with a
+              yesterday — its output depends on what happened at the last clock{" "}
+              <strong>edge</strong>, which is why it needs a control the switches
+              cannot provide.
+            </p>
+
+            <h3 className="pt-1 text-sm font-medium">The parts</h3>
+            <p>
+              Five packages, with the pin names transcribed from the TI datasheets and
+              checked pin by pin in the test suite. They are much less alike than the
+              gates are, so read the tooltip before you wire one:
+            </p>
+            <div className="space-y-2">
+              {FLIP_FLOPS.map(({ part, what, watch }) => (
+                <div key={part} className="rounded-md border p-3">
+                  <code className="text-xs font-semibold">{part}</code>
+                  <p className="mt-1 text-sm">{what}</p>
+                  <p className="text-muted-foreground mt-1 text-xs text-pretty">{watch}</p>
+                </div>
+              ))}
+            </div>
+
+            <h3 className="pt-1 text-sm font-medium">The clock</h3>
+            <p>
+              Drop a <strong>Clock</strong> from the palette and wire it to CLK. It is
+              a switch the app can drive for you: click it on the canvas for one edge,
+              or use the panel under the canvas.
+            </p>
+            <ul className="ml-4 list-disc space-y-1.5 text-sm">
+              <li>
+                <strong>Pulse</strong> runs the level up and back down — one complete
+                pulse. It has to be both halves, because half these parts load on the
+                rising edge and half on the falling one, so a button that only raised
+                the clock would appear to do nothing at all on a ripple counter.
+              </li>
+              <li>
+                <strong>Run</strong> pulses it on a timer, from 1 to 10 Hz.
+              </li>
+              <li>
+                <strong>Power-cycle</strong> puts every flip-flop back to unknown. It is
+                not an edit and does not touch undo.
+              </li>
+            </ul>
+
+            <h3 className="pt-1 text-sm font-medium">Why it starts at X</h3>
+            <p>
+              A flip-flop you have just placed reads <code>X</code>, not 0, and its
+              LED is dark rather than off. That is not the simulator being unhelpful —
+              a real flip-flop powers up in whichever state the metastability fell
+              into, and that is the entire reason every counter you have ever seen has
+              a CLEAR wired to it.
+            </p>
+            <p className="text-muted-foreground">
+              Pull CLR low once and the count starts. Getting an <code>X</code> until
+              you do is the same rule as a floating input reading <code>Z</code>: the
+              tool will not invent a value it does not have.
+            </p>
+
+            <h3 className="pt-1 text-sm font-medium">Designing a counter from its sequence</h3>
+            <p>
+              Theory&apos;s <strong>Sequential circuits</strong> section has a{" "}
+              <strong>Custom sequence</strong> entry: type the states you want counted,
+              in the order you want them, and it runs the standard design procedure and
+              shows every step of it — because the marks are in the steps.
+            </p>
+            <ol className="ml-4 list-decimal space-y-1.5 text-sm">
+              <li>The sequence gives the transition table — each state&apos;s successor.</li>
+              <li>
+                The flip-flop&apos;s own excitation table turns each transition into the
+                inputs that produce it. Half the J-K table is don&apos;t-care, which is
+                why J-K designs come out smaller than D ones.
+              </li>
+              <li>
+                Each input is then a Boolean function of the present state, minimized by
+                the same Quine–McCluskey the rest of the app uses.
+              </li>
+              <li>
+                <strong>The states the counter never visits are don&apos;t cares.</strong>{" "}
+                This is the step people skip, and it typically halves the gate count.
+              </li>
+            </ol>
+            <p className="text-muted-foreground">
+              Any subset in any order works — <code>0, 3, 5, 6</code> is a counter, and
+              so is a Gray-code sequence or a down-count. A state that appears twice is
+              refused, because a state with two different successors is not a function of
+              the present state and no combinational logic can produce it.
+            </p>
+            <p className="text-muted-foreground">
+              It also says <strong>where the unused states actually go</strong>. The
+              minimizer was free to choose anything there and chose whatever made the
+              algebra smallest, so where that leaves a stray state is a real property of
+              the finished circuit that nobody decided on purpose — and it is the
+              difference between a counter that recovers from a power-up glitch and one
+              that sits in a trap forever.
+            </p>
+
+            <h3 className="pt-1 text-sm font-medium">Counters and registers</h3>
+            <p>
+              The <strong>Presets</strong> menu has a clocked section: a divide-by-two,
+              ripple counters, a synchronous counter, a register and a shift register,
+              all built from the real packages. Open one and press Pulse.
+            </p>
+            <p className="text-muted-foreground">
+              The pair worth opening together is the 2-bit ripple and the 2-bit
+              synchronous counter. They count the same and differ by one wire — where
+              the second flip-flop&apos;s clock comes from — which is the whole of the
+              lesson about ripple delay. Theory&apos;s{" "}
+              <strong>Sequential circuits</strong> section draws the same circuits as
+              block diagrams, with a link straight to the Lab preset.
+            </p>
+            <p className="text-muted-foreground">
+              The timing chart switches to <em>clock-driven</em> for these: it drives
+              the clock and plots the state, continuing from wherever the board
+              actually is. Clear the counter and you get the classic halving
+              waveform; do not, and you get a chart full of unknowns, which is the
+              truth about an uncleared counter.
             </p>
           </Section>
 
@@ -704,6 +877,14 @@ F(A,B,C) = 01101001`}
               <strong>minimal is not hazard-free</strong>. The redundant consensus term
               that Quine–McCluskey correctly discarded as non-minimal is exactly the term
               that removes the glitch. Add it back and watch the spike disappear.
+            </p>
+            <p className="text-muted-foreground">
+              The sweep covers circuits with up to seven inputs, and says so when a
+              circuit has more. Every term of the cost doubles per input — a 4-bit
+              adder&apos;s nine inputs is 512 combinations and a chart you would have to
+              scroll for a minute; the 16-bit adder&apos;s thirty-three is eight billion.
+              Everything else — the schematic, the faults, the verification — still works
+              on circuits that size.
             </p>
           </Section>
 

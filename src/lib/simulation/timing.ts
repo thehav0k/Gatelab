@@ -1,4 +1,5 @@
 import type { SimNetlist } from "./elaborate";
+import { evaluate, initialState, type SeqState } from "./solver";
 import { evalGate, resolveNet, L0, L1, LZ, type Driver, type Logic } from "./logic";
 
 /**
@@ -29,6 +30,18 @@ export interface TimedOptions {
   readonly delay?: number;
   /** Ticks to settle before the first input change, so t=0 is not a fake edge. */
   readonly settleTicks?: number;
+  /** Clock cycles to run, for a clocked circuit. Ignored by the input sweep. */
+  readonly cycles?: number;
+  /**
+   * Where the flip-flops are NOW.
+   *
+   * The chart answers "what happens over the next few cycles", and that
+   * question has no answer independent of where the circuit currently is. Left
+   * out, it starts from power-up — every stored bit unknown — which is exactly
+   * what an uncleared counter really does, and exactly what the chart should
+   * show when that is the truth.
+   */
+  readonly state?: SeqState;
 }
 
 export interface Waveform {
@@ -55,9 +68,45 @@ export interface TimedResult {
   readonly settleTicks: number;
   /** The input combination held during each step, for aligning the UI. */
   readonly combinations: readonly number[];
+  /**
+   * Set when the circuit has too many inputs to sweep, instead of a waveform.
+   *
+   * A COMPLETE sweep or none, and never a partial one presented as a whole.
+   * The two things this chart claims — "here is every input combination" and
+   * "no output glitches" — are both claims about the WHOLE input space, and a
+   * chart drawn from the first 128 combinations of 131,072 would be making both
+   * of them falsely.
+   */
+  readonly tooWide?: { readonly inputs: number; readonly combinations: number };
+  /**
+   * Set when the chart was driven by the CLOCK rather than by an input sweep.
+   *
+   * The two charts answer different questions and must not be confused for one
+   * another. A sweep says "here is the output for every input combination" —
+   * a statement about a function. A clocked chart says "here is what happened
+   * over these clock cycles" — a statement about a sequence, which is the only
+   * thing a circuit with memory has.
+   */
+  readonly clocked?: { readonly cycles: number };
 }
 
 const DEFAULT_DELAY = 1;
+
+/**
+ * The most inputs this will sweep. 2^7 combinations, forward and back, is 256
+ * held steps — already a chart you have to scroll.
+ *
+ * There was no limit at all, and every term of the cost is exponential: the
+ * 4-bit ripple adder's 9 inputs produced an 11,275-tick chart 79,000 pixels
+ * wide, which had no chance of being read and — because a wide child of a CSS
+ * grid track widens the track — pushed the schematic, the fault panel and half
+ * the page off the side of the window. Its 8-bit sibling asked for 262,144
+ * steps and never returned; the 16-bit one asked for 17 billion and threw.
+ *
+ * The presets that ask for those are legitimate circuits. It is the SWEEP that
+ * does not scale, so the sweep is what says no.
+ */
+export const MAX_SWEEP_INPUTS = 7;
 
 /**
  * Reflected binary (Gray) code. Successive values differ in exactly ONE bit.
@@ -98,16 +147,28 @@ export function simulateTimed(
   const delay = Math.max(1, options.delay ?? DEFAULT_DELAY);
   const n = nl.inputs.length;
 
-  if (n === 0 || nl.cells.length === 0) {
-    return {
-      ticks: 0,
-      waves: [],
-      glitches: [],
-      ticksPerCombination: 0,
-      steps: 0,
-      settleTicks: 0,
-      combinations: [],
-    };
+  const nothing: TimedResult = {
+    ticks: 0,
+    waves: [],
+    glitches: [],
+    ticksPerCombination: 0,
+    steps: 0,
+    settleTicks: 0,
+    combinations: [],
+  };
+
+  // A circuit with memory has no truth table to sweep, so the clock drives the
+  // chart instead. This is not a fallback — it is the right chart for the
+  // circuit, and the one a counter is always drawn with.
+  if (nl.flops.length > 0) return simulateClocked(nl, options);
+
+  if (n === 0 || nl.cells.length === 0) return nothing;
+
+  // Refuse before allocating anything. `2 ** 33` steps is not a slow sweep, it
+  // is an `Array.from` that throws — and the failure landed as an empty lab
+  // with no explanation of what had happened to the circuit.
+  if (n > MAX_SWEEP_INPUTS) {
+    return { ...nothing, tooWide: { inputs: n, combinations: 2 ** n } };
   }
 
   // Each input combination must be held long enough for the deepest path to
@@ -292,4 +353,91 @@ function longestPath(nl: SimNetlist): number {
 function isPowered(power: { vcc: number; gnd: number }, values: Uint8Array): boolean {
   if (power.vcc < 0 || power.gnd < 0) return false;
   return values[power.vcc] === L1 && values[power.gnd] === L0;
+}
+
+
+// ---------------------------------------------------------------------------
+// Clocked circuits
+// ---------------------------------------------------------------------------
+
+/** How many clock cycles a clocked chart runs for. Enough to see a 4-bit count. */
+const DEFAULT_CYCLES = 18;
+/** Ticks per half cycle. Only affects how wide the drawn pulses are. */
+const HALF = 3;
+
+/**
+ * The waveform of a clocked circuit: drive the clock, watch the state.
+ *
+ * SAMPLED SETTLED, ONCE PER TICK. The combinational chart above models a unit
+ * gate delay explicitly, because its whole purpose is to show a glitch — a
+ * transient that only exists between gate delays. This one has a different
+ * purpose and makes a different, weaker claim: each sample is the circuit after
+ * it has finished reacting. A ripple counter's stages really do settle at
+ * different moments and this chart does not show that, so it does not say it
+ * does; what it shows is the count, which is what a counter's timing diagram is
+ * for.
+ *
+ * The switches are held at whatever the document has them at. Sweeping them
+ * would be sweeping inputs of a circuit whose output is not a function of its
+ * inputs.
+ */
+function simulateClocked(nl: SimNetlist, options: TimedOptions): TimedResult {
+  const cycles = options.cycles ?? DEFAULT_CYCLES;
+  const ticks = cycles * HALF * 2;
+
+  // Held where the user left them. Zeroing them would assert every active-low
+  // clear on the board, and a counter that is permanently cleared counts zero.
+  const inputs = nl.inputs.map((port) => port.state ?? 0);
+  const samples: Logic[][] = Array.from({ length: nl.netCount }, () => []);
+
+  // Start from power-up and let the first tick establish the clock's resting
+  // level, exactly as the app does when a circuit is loaded.
+  let state = options.state ?? initialState(nl);
+
+  for (let t = 0; t < ticks; t++) {
+    const high = Math.floor(t / HALF) % 2 === 1;
+    const result = evaluate(nl, inputs, {
+      state,
+      clocks: nl.clocks.map(() => (high ? 1 : 0)),
+    });
+    state = result.state;
+    for (let net = 0; net < nl.netCount; net++) {
+      (samples[net] as Logic[]).push(result.values[net] as Logic);
+    }
+  }
+
+  const waves: Waveform[] = [
+    ...nl.clocks.map((port) => ({
+      label: port.label,
+      net: port.net,
+      samples: samples[port.net] as Logic[],
+      isInput: true,
+    })),
+    ...nl.inputs.map((port) => ({
+      label: port.label,
+      net: port.net,
+      samples: samples[port.net] as Logic[],
+      isInput: true,
+    })),
+    ...nl.outputs.map((port) => ({
+      label: port.label,
+      net: port.net,
+      samples: samples[port.net] as Logic[],
+      isInput: false,
+    })),
+  ];
+
+  return {
+    ticks,
+    waves,
+    // A glitch is a transient between gate delays, and this chart does not
+    // model gate delays. Reporting an empty list would be a claim; reporting
+    // nothing at all is the honest shape.
+    glitches: [],
+    ticksPerCombination: HALF * 2,
+    steps: cycles,
+    settleTicks: 0,
+    combinations: [],
+    clocked: { cycles },
+  };
 }

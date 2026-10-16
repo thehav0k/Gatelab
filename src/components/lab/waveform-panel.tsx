@@ -6,7 +6,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { useCircuitStore } from "@/stores/circuit-store";
 import { elaborate } from "@/lib/simulation/elaborate";
-import { simulateTimed, type Waveform } from "@/lib/simulation/timing";
+import { MAX_SWEEP_INPUTS, simulateTimed, type Waveform } from "@/lib/simulation/timing";
+import { toSeqState } from "@/lib/simulation/solver";
 import { L1, LX, LZ, type Logic } from "@/lib/simulation/logic";
 
 const ROW_H = 34;
@@ -28,10 +29,29 @@ export function WaveformPanel() {
   const doc = useCircuitStore((s) => s.doc);
   const [delay, setDelay] = useState(1);
 
-  const result = useMemo(
-    () => simulateTimed(elaborate(doc).netlist, { delay }),
-    [doc, delay],
-  );
+  // The clocked chart continues from where the board actually is, so a counter
+  // you have just cleared charts a count and one you have not charts unknowns —
+  // which is the truth about an uncleared counter, and the lesson.
+  const flopState = useCircuitStore((s) => s.flopState);
+  const result = useMemo(() => {
+    const netlist = elaborate(doc).netlist;
+    return simulateTimed(netlist, { delay, state: toSeqState(netlist, flopState) });
+  }, [doc, delay, flopState]);
+
+  // Too many inputs to sweep. Say which circuit and by how much, rather than
+  // fall through to the "add some switches" line — the user has just built
+  // something substantial and being told to add a switch reads as a bug.
+  if (result.tooWide) {
+    return (
+      <p className="text-muted-foreground p-3 text-sm text-pretty">
+        {result.tooWide.inputs} inputs is{" "}
+        {result.tooWide.combinations.toLocaleString()} combinations — too many to
+        sweep, and far too many to read. The timing diagram covers circuits with up
+        to {MAX_SWEEP_INPUTS} inputs; the schematic, the faults and the verification
+        all still work here.
+      </p>
+    );
+  }
 
   if (result.ticks === 0) {
     return (
@@ -78,7 +98,9 @@ export function WaveformPanel() {
           </Button>
         ))}
         <span className="text-muted-foreground ml-auto text-xs">
-          Gray-code sweep, forward then back
+          {result.clocked
+            ? `${result.clocked.cycles} clock cycles`
+            : "Gray-code sweep, forward then back"}
         </span>
       </div>
 

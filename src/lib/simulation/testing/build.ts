@@ -51,6 +51,18 @@ export class CircuitBuilder {
     return this;
   }
 
+  /** A clock source. Electrically a switch; the app drives it. */
+  clock(id: string, state: 0 | 1 = 0, pos = { x: 0, y: 0 }): this {
+    this.nodes[id] = {
+      kind: "clock",
+      id: asNodeId(id),
+      label: id,
+      state,
+      pos,
+    };
+    return this;
+  }
+
   led(id: string, pos = { x: 0, y: 0 }): this {
     this.nodes[id] = { kind: "led", id: asNodeId(id), label: id, pos };
     return this;
