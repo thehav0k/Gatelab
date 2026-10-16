@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Boxes, FileText, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
+import { Boxes, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
 
 import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { BreadboardView } from "@/components/lab/breadboard-view";
@@ -33,7 +33,6 @@ import {
 
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useExpected } from "@/stores/spec-store";
-import { useIsCompact } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 
 const WIRE_COLORS = [
@@ -73,13 +72,14 @@ export default function LabPage() {
     Object.keys(s.flopState).length > 0,
   );
 
-  const compact = useIsCompact();
   const [timingChoice, setTimingChoice] = useState<boolean | null>(null);
-  const showTiming = timingChoice ?? !compact;
+  const showTiming = timingChoice ?? false;
 
   const [partsOpen, setPartsOpen] = useState(false);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  const [isZenMode, setIsZenMode] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -87,7 +87,13 @@ export default function LabPage() {
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
 
       if (e.key === "Backspace" || e.key === "Delete") deleteSelected();
-      if (e.key === "Escape") useCircuitStore.getState().cancelWire();
+      if (e.key === "Escape") {
+        if (isZenMode) setIsZenMode(false);
+        else useCircuitStore.getState().cancelWire();
+      }
+      if (e.key === "f" || e.key === "F") {
+        setIsZenMode((v) => !v);
+      }
       if (e.key === "[" || e.key.toLowerCase() === "b") {
         setLeftSidebarOpen((v) => !v);
       }
@@ -102,7 +108,7 @@ export default function LabPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [deleteSelected, undo, redo]);
+  }, [deleteSelected, undo, redo, isZenMode]);
 
   const hint = pendingHole
     ? "Now click a second hole to lay the jumper — or press Escape."
@@ -209,20 +215,62 @@ export default function LabPage() {
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] w-full overflow-hidden flex-col px-2 py-2 sm:px-3 sm:py-2.5 bg-background">
+    <div
+      className={cn(
+        "flex w-full overflow-hidden flex-col bg-background transition-all",
+        isZenMode
+          ? "fixed inset-0 z-50 p-2 sm:p-3"
+          : "h-[calc(100dvh-3.5rem)] px-2 py-2 sm:px-3 sm:py-2.5",
+      )}
+    >
       {/* --- toolbar --------------------------------------------------------- */}
       <header className="mb-2 flex flex-wrap items-center gap-2 sm:gap-2.5">
-        <div className="min-w-0 flex-1 lg:flex-initial">
-          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
-            Practical Lab
-          </h1>
+        <div className={cn("min-w-0 flex-1 lg:flex-initial", headerCollapsed && "hidden")}>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
+              Practical Lab
+            </h1>
+            <button
+              type="button"
+              onClick={() => setHeaderCollapsed(true)}
+              title="Compact Toolbar (Hide Banner)"
+              className="text-[10px] text-muted-foreground hover:text-foreground hidden sm:inline-block cursor-pointer px-1 rounded border"
+            >
+              Compact
+            </button>
+          </div>
           {/* The hint is a whole sentence. On a phone it would eat the toolbar. */}
           <p className="text-muted-foreground mt-0.5 hidden truncate text-xs sm:block">
             {hint}
           </p>
         </div>
 
+        {headerCollapsed && (
+          <button
+            type="button"
+            onClick={() => setHeaderCollapsed(false)}
+            title="Expand Banner"
+            className="text-xs text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 rounded border flex items-center gap-1"
+          >
+            <span className="font-semibold text-foreground">Lab</span>
+            <span className="text-[10px]">▼</span>
+          </button>
+        )}
+
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:ml-auto">
+          {/* Zen Fullscreen Mode Toggle */}
+          <Button
+            variant={isZenMode ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setIsZenMode((v) => !v)}
+            title="Toggle Zen Fullscreen Mode (Hotkey F or Esc)"
+            className="h-8 gap-1.5 text-xs shadow-xs"
+          >
+            {isZenMode ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+            <span className="hidden xl:inline">{isZenMode ? "Exit Zen" : "Zen"}</span>
+            <kbd className="text-[10px] opacity-60 font-mono">F</kbd>
+          </Button>
+
           {/* Desktop Left Sidebar Toggle */}
           <Button
             variant={leftSidebarOpen ? "secondary" : "outline"}
@@ -383,20 +431,20 @@ export default function LabPage() {
             {onBoard ? <BreadboardView /> : <CircuitCanvas />}
           </div>
 
-          <ClockPanel />
+          {!onBoard && <ClockPanel />}
 
           <Card className="shrink-0 overflow-hidden py-0 shadow-xs">
             <button
               type="button"
               onClick={() => setTimingChoice(!showTiming)}
-              className="hover:bg-accent/50 flex w-full items-center gap-2 px-3 py-1.5 text-left cursor-pointer"
+              className="hover:bg-accent/50 flex w-full items-center gap-2 px-3 py-1.5 text-left cursor-pointer h-7"
             >
               <span className="text-xs font-medium">Timing</span>
               <span className="text-muted-foreground hidden text-[11px] sm:inline">
                 {hasFlops ? "clock-driven" : "unit-delay, Gray-code sweep"}
               </span>
               <span className="text-muted-foreground ml-auto text-[11px]">
-                {showTiming ? "hide" : "show"}
+                {showTiming ? "▲ Hide" : "▼ Show Timing Diagram"}
               </span>
             </button>
             {showTiming && (

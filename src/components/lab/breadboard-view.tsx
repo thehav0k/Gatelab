@@ -41,6 +41,13 @@ import {
   type WireId,
 } from "@/lib/simulation/netlist";
 import { getIc, type IcDefinition } from "@/lib/simulation/ic-library";
+import {
+  routeBreadboardWires,
+  type BoundingBox,
+  type BreadboardChannelConfig,
+  type RoutedWire,
+  type WireRouteInput,
+} from "@/lib/simulation/breadboard-router";
 import { useViewBox } from "@/hooks/use-viewbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -148,34 +155,96 @@ export function BreadboardView() {
     return () => clearInterval(interval);
   }, [autoHz]);
 
-  // Coordinates of all trainer sockets
+  // Exact coordinates of all Trainer Panel sockets
   const trainerPinMap = useMemo(() => {
     const map = new Map<string, Point>();
-    if (vccNode) map.set(`${vccNode.id}:VCC`, { x: 480, y: 62 });
-    if (gndNode) map.set(`${gndNode.id}:GND`, { x: 540, y: 62 });
-    if (clockNode) map.set(`${clockNode.id}:CLK`, { x: 850, y: 60 });
+    if (vccNode) map.set(`${vccNode.id}:VCC`, { x: 480, y: 60 });
+    if (gndNode) map.set(`${gndNode.id}:GND`, { x: 540, y: 60 });
+    if (clockNode) map.set(`${clockNode.id}:CLK`, { x: 850, y: 55 });
 
     switchNodes.forEach((sw, i) => {
       map.set(`${sw.id}:Q`, { x: 105 + i * 82, y: 668 });
     });
 
     ledNodes.forEach((led, i) => {
-      map.set(`${led.id}:A`, { x: 950 + i * 68, y: 72 });
-    });
-
-    nodes.forEach((n) => {
-      if (n.boardRow) {
-        const hp = holePoint({ col: Math.round(n.pos.x), row: n.boardRow });
-        const pWorld = { x: BOARD_OFFSET_X + hp.x, y: BOARD_OFFSET_Y + hp.y };
-        if (n.kind === "switch") map.set(`${n.id}:Q`, pWorld);
-        if (n.kind === "clock") map.set(`${n.id}:CLK`, pWorld);
-        if (n.kind === "led") map.set(`${n.id}:A`, pWorld);
-        if (n.kind === "rail") map.set(`${n.id}:${n.rail === "vcc" ? "VCC" : "GND"}`, pWorld);
-      }
+      map.set(`${led.id}:A`, { x: 945 + i * 66, y: 72 });
     });
 
     return map;
-  }, [vccNode, gndNode, clockNode, switchNodes, ledNodes, nodes]);
+  }, [vccNode, gndNode, clockNode, switchNodes, ledNodes]);
+
+  // Dedicated Manhattan routing channels
+  const channelConfig = useMemo<BreadboardChannelConfig>(
+    () => ({
+      topPanelGutterY: 105,
+      upperStripGutterY: 190,
+      centerRavineY: 346,
+      lowerStripGutterY: 502,
+      bottomPanelGutterY: 572,
+      laneSpacing: 5,
+      cornerRadius: 6,
+    }),
+    [],
+  );
+
+  // IC Obstacle Bounding Boxes for Obstacle Avoidance
+  const icObstacles = useMemo<BoundingBox[]>(() => {
+    return icNodes.map((ic) => {
+      const def = getIc(ic.part);
+      const pinTotal = def ? def.pins.length : 14;
+      const span = pinTotal / 2;
+      const col = Math.round(ic.pos.x);
+      const holes = dipHoles({ col }, pinTotal);
+      const first = holes[0];
+      const last = holes[span - 1];
+      if (!first || !last) return { id: ic.id, minX: 0, minY: 0, maxX: 0, maxY: 0 };
+      const a = holePoint(first);
+      const b = holePoint(last);
+      const top = holePoint({ col: first.col, row: "F" }).y;
+      const bottom = a.y;
+      return {
+        id: ic.id,
+        minX: BOARD_OFFSET_X + a.x - PITCH / 2 + 2,
+        maxX: BOARD_OFFSET_X + b.x + PITCH / 2 - 2,
+        minY: BOARD_OFFSET_Y + top - 3,
+        maxY: BOARD_OFFSET_Y + bottom + 3,
+      };
+    });
+  }, [icNodes]);
+
+  // Optional custom horizontal channel offset per wire (from dragging)
+  const [wireCustomY, setWireCustomY] = useState<Record<string, number>>({});
+
+  // Prepare WireRouteInput[] for all jumpers
+  const wireInputs = useMemo<WireRouteInput[]>(() => {
+    const list: WireRouteInput[] = [];
+    for (const wire of Object.values(doc.wires)) {
+      const a = resolveEndpointPoint(wire.a, trainerPinMap, doc.nodes);
+      const b = resolveEndpointPoint(wire.b, trainerPinMap, doc.nodes);
+      if (!a || !b) continue;
+      list.push({
+        id: wire.id,
+        from: a,
+        to: b,
+        color: wire.color || "#38bdf8",
+        customChannelY: wireCustomY[wire.id],
+      });
+    }
+    return list;
+  }, [doc.wires, trainerPinMap, doc.nodes, wireCustomY]);
+
+  // Compute clean, non-overlapping orthogonal routes
+  const routedWires = useMemo(() => {
+    return routeBreadboardWires(wireInputs, channelConfig, icObstacles);
+  }, [wireInputs, channelConfig, icObstacles]);
+
+  const routedWireMap = useMemo(() => {
+    const map = new Map<string, RoutedWire>();
+    for (const rw of routedWires) {
+      map.set(rw.id, rw);
+    }
+    return map;
+  }, [routedWires]);
 
   // Keyboard shortcuts: X (X-Ray), A (Airwires), Delete/Backspace (Delete wire or IC), Escape (Cancel)
   useEffect(() => {
@@ -361,12 +430,22 @@ export function BreadboardView() {
           <span>Airwires</span>
           <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[9px] font-mono">A</kbd>
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs gap-1 shadow-xs"
+          onClick={() => cam.reset()}
+          title="Fit Breadboard Trainer to Screen"
+        >
+          <Maximize2 className="size-3.5" />
+          <span>Fit</span>
+        </Button>
       </div>
 
       <svg
         ref={svgRef}
         viewBox={cam.viewBox}
-        preserveAspectRatio="xMinYMid meet"
+        preserveAspectRatio="xMidYMid meet"
         className="bg-card h-full w-full touch-none rounded-md border"
         onWheel={cam.onWheel}
         onPointerDown={(e) => {
@@ -576,20 +655,28 @@ export function BreadboardView() {
           ))}
 
           {/* Clock LED indicator */}
-          <circle
-            cx={788}
-            cy={55}
-            r={5.5}
-            fill={clockNode?.state === 1 ? "#f59e0b" : "#475569"}
-          />
-          <text
-            x={788}
-            y={70}
-            textAnchor="middle"
-            className="fill-muted-foreground font-mono text-[7.5px] font-semibold pointer-events-none"
+          <g
+            className="cursor-pointer"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (clockNode) toggleClock(clockNode.id);
+            }}
           >
-            {clockNode?.state === 1 ? "HIGH" : "LOW"}
-          </text>
+            <circle
+              cx={788}
+              cy={55}
+              r={5.5}
+              fill={clockNode?.state === 1 ? "#f59e0b" : "#475569"}
+            />
+            <text
+              x={788}
+              y={70}
+              textAnchor="middle"
+              className="fill-muted-foreground font-mono text-[7.5px] font-semibold pointer-events-none"
+            >
+              {clockNode?.state === 1 ? "HIGH" : "LOW"}
+            </text>
+          </g>
 
           {/* CLK Socket */}
           <TrainerSocket
@@ -667,9 +754,9 @@ export function BreadboardView() {
           {/* Airwires (Rat's Nest) Guide */}
           {showAirwires && <AirwiresGuide doc={doc} spec={spec} />}
 
-          {/* Seated Parts with Horizontal Drag and Action Pill */}
-          {nodes.map((node) => (
-            <SeatedPart
+          {/* Seated 74xx ICs with Horizontal Drag and Action Pill */}
+          {icNodes.map((node) => (
+            <SeatedIc
               key={node.id}
               node={node}
               spec={spec}
@@ -679,9 +766,6 @@ export function BreadboardView() {
               onSelect={() => select([node.id])}
               onDelete={() => deleteSelected()}
               onAutoPower={(nodeId) => autoWireIcPower(nodeId)}
-              onToggle={() =>
-                node.kind === "clock" ? toggleClock(node.id) : toggleSwitch(node.id)
-              }
               onMove={(newCol: number) => moveNode(node.id, { x: newCol, y: 0 })}
               camZoom={cam.zoom}
             />
@@ -763,6 +847,7 @@ export function BreadboardView() {
           <Jumper
             key={wire.id}
             wire={wire}
+            routedWire={routedWireMap.get(wire.id)}
             isSelected={selectedWireId === wire.id}
             onSelect={() => {
               select([]);
@@ -777,7 +862,9 @@ export function BreadboardView() {
               setWireColor(wire.id, color);
               toast.success("Wire color updated");
             }}
-            trainerPinMap={trainerPinMap}
+            onChannelDrag={(newY) => {
+              setWireCustomY((prev) => ({ ...prev, [wire.id]: newY }));
+            }}
           />
         ))}
 
@@ -1504,62 +1591,6 @@ function HoleCursor({
 // Parts & 74xx DIP Components
 // ---------------------------------------------------------------------------
 
-function SeatedPart({
-  node,
-  spec,
-  otherIcs,
-  isSelected,
-  showXRay,
-  onSelect,
-  onDelete,
-  onAutoPower,
-  onToggle,
-  onMove,
-  camZoom,
-}: {
-  node: CircuitNode;
-  spec: BreadboardSpec;
-  otherIcs: Extract<CircuitNode, { kind: "ic" }>[];
-  isSelected: boolean;
-  showXRay: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
-  onAutoPower: (nodeId: string) => void;
-  onToggle: () => void;
-  onMove: (newCol: number) => void;
-  camZoom: number;
-}) {
-  if (node.kind === "ic") {
-    return (
-      <SeatedIc
-        node={node}
-        spec={spec}
-        otherIcs={otherIcs}
-        isSelected={isSelected}
-        showXRay={showXRay}
-        onSelect={onSelect}
-        onDelete={onDelete}
-        onAutoPower={onAutoPower}
-        onMove={onMove}
-        camZoom={camZoom}
-      />
-    );
-  }
-  if (!node.boardRow) return null;
-
-  const hole = { col: Math.round(node.pos.x), row: node.boardRow };
-  if (hole.col < 1 || hole.col > spec.columns) return null;
-
-  if (node.kind === "switch") {
-    return <SeatedSwitch node={node} hole={hole} onToggle={onToggle} />;
-  }
-  if (node.kind === "clock") {
-    return <SeatedClock node={node} hole={hole} onToggle={onToggle} />;
-  }
-  if (node.kind === "led") return <SeatedLed node={node} hole={hole} />;
-  if (node.kind === "rail") return <SeatedRail node={node} hole={hole} />;
-  return null;
-}
 
 /** Authentic DIP-14 with Pin-1 notch, pinout numbers/names, NC indicators, X-Ray mode, and ravine dragging. */
 function SeatedIc({
@@ -2139,11 +2170,6 @@ function GateSymbol({
   );
 }
 
-const labelDy = (row: BoardRow): number =>
-  (UPPER_BANK as readonly string[]).includes(row) ? 18 : -13;
-
-const UPPER_BANK: BoardRow[] = ["F", "G", "H", "I", "J"];
-
 function IcLeg({ hole, isNc }: { hole: HoleRef; isNc?: boolean }) {
   const value = useEndpointValue(holeEnd(hole));
   const p = holePoint(hole);
@@ -2161,180 +2187,43 @@ function IcLeg({ hole, isNc }: { hole: HoleRef; isNc?: boolean }) {
   );
 }
 
-function SeatedSwitch({
-  node,
-  hole,
-  onToggle,
-}: {
-  node: Extract<CircuitNode, { kind: "switch" }>;
-  hole: HoleRef;
-  onToggle: () => void;
-}) {
-  const p = holePoint(hole);
-  const on = node.state === 1;
-  return (
-    <g
-      className="cursor-pointer"
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-    >
-      <rect
-        x={p.x - 9}
-        y={p.y - 9}
-        width={18}
-        height={18}
-        rx={3}
-        className="fill-card stroke-foreground/70"
-      />
-      <rect
-        x={p.x - 6}
-        y={on ? p.y - 6 : p.y}
-        width={12}
-        height={6}
-        rx={1.5}
-        style={{ fill: on ? "var(--logic-high)" : "var(--logic-low)" }}
-      />
-      <text
-        x={p.x}
-        y={p.y + (labelDy(hole.row) > 0 ? 20 : -13)}
-        textAnchor="middle"
-        className="fill-foreground pointer-events-none font-mono text-[10px] font-semibold"
-      >
-        {node.label}
-      </text>
-    </g>
-  );
-}
-
-function SeatedClock({
-  node,
-  hole,
-  onToggle,
-}: {
-  node: Extract<CircuitNode, { kind: "clock" }>;
-  hole: HoleRef;
-  onToggle: () => void;
-}) {
-  const p = holePoint(hole);
-  const high = node.state === 1;
-  return (
-    <g
-      className="cursor-pointer"
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-    >
-      <rect
-        x={p.x - 9}
-        y={p.y - 9}
-        width={18}
-        height={18}
-        rx={3}
-        className="fill-card stroke-foreground/70"
-      />
-      <path
-        d={`M${p.x - 6},${p.y + 4} H${p.x - 2} V${p.y - 4} H${p.x + 2} V${p.y + 4} H${p.x + 6}`}
-        fill="none"
-        style={{ stroke: high ? "var(--logic-high)" : "var(--logic-low)" }}
-        strokeWidth={1.6}
-      />
-      <text
-        x={p.x}
-        y={p.y + labelDy(hole.row)}
-        textAnchor="middle"
-        className="fill-foreground pointer-events-none font-mono text-[10px] font-semibold"
-      >
-        {node.label}
-      </text>
-    </g>
-  );
-}
-
-function SeatedLed({
-  node,
-  hole,
-}: {
-  node: Extract<CircuitNode, { kind: "led" }>;
-  hole: HoleRef;
-}) {
-  const value = useEndpointValue(holeEnd(hole));
-  const p = holePoint(hole);
-  const lit = value === 1;
-  const color = logicColor(value);
-
-  return (
-    <g className="pointer-events-none">
-      {lit && <circle cx={p.x} cy={p.y} r={12} fill={color} opacity={0.3} />}
-      <circle
-        cx={p.x}
-        cy={p.y}
-        r={7}
-        style={{ fill: lit ? color : "var(--card)", stroke: color }}
-        strokeWidth={1.5}
-      />
-      <text
-        x={p.x}
-        y={p.y + labelDy(hole.row)}
-        textAnchor="middle"
-        className="fill-foreground font-mono text-[10px] font-semibold"
-      >
-        {node.label}
-      </text>
-    </g>
-  );
-}
-
-function SeatedRail({
-  node,
-  hole,
-}: {
-  node: Extract<CircuitNode, { kind: "rail" }>;
-  hole: HoleRef;
-}) {
-  const p = holePoint(hole);
-  const vcc = node.rail === "vcc";
-  return (
-    <g className="pointer-events-none">
-      <circle
-        cx={p.x}
-        cy={p.y}
-        r={5}
-        style={{ fill: vcc ? "var(--logic-x)" : "var(--logic-low)" }}
-      />
-      <text
-        x={p.x + 8}
-        y={p.y + 3}
-        className="fill-foreground font-mono text-[9px] font-semibold"
-      >
-        {vcc ? "+5V" : "GND"}
-      </text>
-    </g>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// Jumper Wires & Safe Selection UX
+// Jumper Wires & Manhattan Orthogonal Routing
 // ---------------------------------------------------------------------------
 
 function resolveEndpointPoint(
   end: Endpoint,
   trainerPinMap: Map<string, Point>,
+  nodes: Record<string, CircuitNode>,
 ): Point | null {
+  if (end.kind === "pin") {
+    const key = pinKey(end.ref);
+    return trainerPinMap.get(key) ?? null;
+  }
   if (end.kind === "hole") {
+    // If a circuit was seated with proxy switches/leds/rails, redirect to the trainer panel socket
+    for (const node of Object.values(nodes)) {
+      if (node.boardRow && node.boardRow === end.ref.row && Math.round(node.pos.x) === end.ref.col) {
+        if (node.kind === "switch") {
+          const pt = trainerPinMap.get(`${node.id}:Q`);
+          if (pt) return pt;
+        } else if (node.kind === "clock") {
+          const pt = trainerPinMap.get(`${node.id}:CLK`);
+          if (pt) return pt;
+        } else if (node.kind === "led") {
+          const pt = trainerPinMap.get(`${node.id}:A`);
+          if (pt) return pt;
+        } else if (node.kind === "rail") {
+          const pt = trainerPinMap.get(`${node.id}:${node.rail === "vcc" ? "VCC" : "GND"}`);
+          if (pt) return pt;
+        }
+      }
+    }
     const hp = holePoint(end.ref);
     return {
       x: BOARD_OFFSET_X + hp.x,
       y: BOARD_OFFSET_Y + hp.y,
     };
-  }
-  if (end.kind === "pin") {
-    const key = pinKey(end.ref);
-    const p = trainerPinMap.get(key);
-    if (p) return p;
-    return null;
   }
   return null;
 }
@@ -2350,72 +2239,40 @@ const COLOR_SWATCHES = [
   { label: "Cyan", value: "#06b6d4" },
 ];
 
-/** Jumper wire with safe selection, floating color/delete pill, and Alt+Click instant removal. */
+/** Jumper wire with Manhattan orthogonal channel routing, crossing halos, safe selection, and drag handle. */
 function Jumper({
   wire,
+  routedWire,
   isSelected,
   onSelect,
   onDelete,
   onColorChange,
-  trainerPinMap,
+  onChannelDrag,
 }: {
   wire: Wire;
+  routedWire?: RoutedWire | undefined;
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onColorChange: (color?: string) => void;
-  trainerPinMap: Map<string, Point>;
+  onChannelDrag?: ((newY: number) => void) | undefined;
 }) {
   const value = useEndpointValue(wire.a);
   const ordinal = useNetOrdinal(wire.a);
 
-  const a = resolveEndpointPoint(wire.a, trainerPinMap);
-  const b = resolveEndpointPoint(wire.b, trainerPinMap);
-
-  if (!a || !b) return null;
+  if (!routedWire) return null;
 
   const paint = wirePaint(value, ordinal);
   const color = wire.color || paint.color;
-
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const dist = Math.hypot(dx, dy);
-  const sag = Math.min(36, Math.max(12, dist * 0.16));
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2 + sag;
-  const d = `M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`;
+  const d = routedWire.svgPath;
+  const points = routedWire.points;
+  const pStart = points[0]!;
+  const pEnd = points[points.length - 1]!;
+  const handlePoint = routedWire.handlePoint;
 
   return (
     <g className="group">
-      {/* Selection halo */}
-      {isSelected && (
-        <path
-          d={d}
-          fill="none"
-          stroke="var(--color-primary, #38bdf8)"
-          strokeWidth={8}
-          opacity={0.45}
-          strokeDasharray="6 4"
-        />
-      )}
-
-      {/* Logic HIGH glow */}
-      {paint.glow && !isSelected && (
-        <path d={d} fill="none" stroke={color} strokeWidth={8} opacity={0.25} />
-      )}
-
-      {/* Main wire core */}
-      <path
-        d={d}
-        fill="none"
-        stroke={color}
-        strokeWidth={isSelected ? 3.5 : 3}
-        strokeLinecap="round"
-        strokeDasharray={paint.dashed ? "6 4" : undefined}
-        opacity={paint.dim ? 0.75 : 1}
-      />
-
-      {/* Wide hit area for safe single-click select and Alt+Click delete */}
+      {/* 1. Wide invisible hit area for effortless clicking and Alt+Click deletion */}
       <path
         d={d}
         fill="none"
@@ -2434,8 +2291,47 @@ function Jumper({
         <title>Click to select jumper · Alt+Click to delete</title>
       </path>
 
-      {/* Plugged end holes / socket contacts */}
-      {[a, b].map((p, i) => (
+      {/* 2. Selection halo */}
+      {isSelected && (
+        <path
+          d={d}
+          fill="none"
+          stroke="var(--color-primary, #38bdf8)"
+          strokeWidth={8}
+          opacity={0.45}
+          strokeDasharray="6 4"
+        />
+      )}
+
+      {/* 3. Logic HIGH glow */}
+      {paint.glow && !isSelected && (
+        <path d={d} fill="none" stroke={color} strokeWidth={8} opacity={0.25} />
+      )}
+
+      {/* 4. Dark crossing halo (bridge overpass effect for intersecting jumpers) */}
+      <path
+        d={d}
+        fill="none"
+        stroke="#0b0f17"
+        strokeWidth={isSelected ? 6.5 : 5.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* 5. Colored wire insulation core */}
+      <path
+        d={d}
+        fill="none"
+        stroke={color}
+        strokeWidth={isSelected ? 3.5 : 2.75}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeDasharray={paint.dashed ? "6 4" : undefined}
+        opacity={paint.dim ? 0.75 : 1}
+      />
+
+      {/* 6. End contacts */}
+      {[pStart, pEnd].map((p, i) => (
         <g key={i}>
           {isSelected && (
             <circle
@@ -2451,10 +2347,40 @@ function Jumper({
         </g>
       ))}
 
-      {/* Floating Action Pill on Selected Wire */}
+      {/* 7. Draggable horizontal channel handle when selected */}
+      {isSelected && onChannelDrag && (
+        <circle
+          cx={handlePoint.x}
+          cy={handlePoint.y}
+          r={5.5}
+          fill="#ffffff"
+          stroke={color}
+          strokeWidth={2}
+          className="cursor-ns-resize hover:scale-125 transition-transform"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            const startY = e.clientY;
+            const startChannelY = handlePoint.y;
+            const onPointerMove = (ev: PointerEvent) => {
+              const dy = ev.clientY - startY;
+              onChannelDrag(Math.round((startChannelY + dy) / 2) * 2);
+            };
+            const onPointerUp = () => {
+              window.removeEventListener("pointermove", onPointerMove);
+              window.removeEventListener("pointerup", onPointerUp);
+            };
+            window.addEventListener("pointermove", onPointerMove);
+            window.addEventListener("pointerup", onPointerUp);
+          }}
+        >
+          <title>Drag up/down to adjust horizontal routing channel</title>
+        </circle>
+      )}
+
+      {/* 8. Floating Action Pill on Selected Wire */}
       {isSelected && (
         <g
-          transform={`translate(${mx - 85}, ${Math.max(10, my - 30)})`}
+          transform={`translate(${handlePoint.x - 85}, ${Math.max(10, handlePoint.y - 30)})`}
           className="cursor-default pointer-events-auto"
           onClick={(e) => e.stopPropagation()}
         >
@@ -2469,7 +2395,7 @@ function Jumper({
 
           <circle cx={11} cy={13} r={4} fill={logicColor(value)} />
           <text
-            x={19}
+            x={18}
             y={16.5}
             fill={logicColor(value)}
             className="font-mono text-[9px] font-bold"
@@ -2477,38 +2403,47 @@ function Jumper({
             {value === 1 ? "1" : value === 0 ? "0" : value === 2 ? "Z" : "X"}
           </text>
 
+          {/* 8-Color Swatches */}
           {COLOR_SWATCHES.map((swatch, idx) => (
             <circle
               key={swatch.value}
-              cx={38 + idx * 12}
+              cx={38 + idx * 13}
               cy={13}
-              r={4}
+              r={5}
               fill={swatch.value}
-              className="cursor-pointer hover:stroke-foreground hover:stroke-1"
-              onClick={() => onColorChange(swatch.value)}
+              className={cn(
+                "cursor-pointer hover:scale-125 transition-transform",
+                (wire.color || color) === swatch.value && "stroke-white stroke-[1.5]",
+              )}
+              onClick={(e) => {
+                e.stopPropagation();
+                onColorChange(swatch.value);
+              }}
             >
               <title>{swatch.label}</title>
             </circle>
           ))}
 
+          {/* Delete button */}
           <g
             className="cursor-pointer group/del"
-            onClick={onDelete}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            transform="translate(148, 4)"
           >
             <rect
-              x={145}
-              y={4}
               width={18}
               height={18}
               rx={3}
-              className="fill-destructive/80 group-hover/del:fill-destructive"
+              className="fill-destructive/20 hover:fill-destructive/40"
             />
             <text
-              x={154}
-              y={16.5}
+              x={9}
+              y={12.5}
               textAnchor="middle"
-              fill="#ffffff"
-              className="font-bold text-[11px] pointer-events-none"
+              className="fill-destructive font-mono text-[10px] font-bold pointer-events-none"
             >
               ×
             </text>
