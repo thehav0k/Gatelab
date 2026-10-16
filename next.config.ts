@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   /**
    * `/diagrams` was the worked-solutions catalogue before the builder took the
    * `/diagram` name. The old URL is already deployed and linked, so it forwards

@@ -94,4 +94,19 @@ describe("breadboard-router", () => {
     expect(path).toContain("Q 10.0 100.0");
     expect(path).toContain("L 100 100");
   });
+
+  it("detours collinear vertical wires around an IC obstacle", () => {
+    const wires: WireRouteInput[] = [
+      { id: "w1", from: { x: 100, y: 50 }, to: { x: 100, y: 350 }, color: "#ef4444" },
+    ];
+    const icObstacles = [{ id: "ic1", minX: 80, minY: 150, maxX: 120, maxY: 250 }];
+    const routed = routeBreadboardWires(wires, config, icObstacles);
+    expect(routed).toHaveLength(1);
+    expect(routed[0]!.channelId).toBe("vertical-detour");
+    expect(routed[0]!.points.length).toBeGreaterThan(2);
+    const insideIc = routed[0]!.points.some(
+      (p) => p.x > 82 && p.x < 118 && p.y > 152 && p.y < 248,
+    );
+    expect(insideIc).toBe(false);
+  });
 });

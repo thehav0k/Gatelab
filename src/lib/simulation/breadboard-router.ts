@@ -73,8 +73,53 @@ interface PendingSegment {
 }
 
 /**
+ * Detects if a vertical line segment at coordinate `x` between `y1` and `y2`
+ * cuts across any placed IC chip body.
+ */
+export function getIntersectedIc(
+  x: number,
+  y1: number,
+  y2: number,
+  icObstacles: readonly BoundingBox[],
+): BoundingBox | undefined {
+  const minY = Math.min(y1, y2);
+  const maxY = Math.max(y1, y2);
+  return icObstacles.find((ic) => {
+    // Only counts as intersecting if x is within the IC's horizontal span
+    // and the vertical travel crosses into the IC body
+    const xInSpan = x >= ic.minX + 2 && x <= ic.maxX - 2;
+    const yCrosses = !(maxY <= ic.minY + 4 || minY >= ic.maxY - 4);
+    return xInSpan && yCrosses;
+  });
+}
+
+/**
+ * Routes a vertical segment at `x` from `y1` to `y2` around an IC if it intersects one.
+ */
+export function routeAroundIcVertical(
+  from: Point,
+  to: Point,
+  ic: BoundingBox,
+): Point[] {
+  const goingDown = from.y < to.y;
+  const bypassX =
+    from.x <= (ic.minX + ic.maxX) / 2 ? ic.minX - 10 : ic.maxX + 10;
+  const yEntry = goingDown ? ic.minY - 6 : ic.maxY + 6;
+  const yExit = goingDown ? ic.maxY + 6 : ic.minY - 6;
+
+  return [
+    from,
+    { x: from.x, y: yEntry },
+    { x: bypassX, y: yEntry },
+    { x: bypassX, y: yExit },
+    { x: to.x, y: yExit },
+    to,
+  ];
+}
+
+/**
  * 1. Select the cleanest horizontal routing channel for a wire
- *    while avoiding DIP-14 IC bodies in the center ravine.
+ *    while avoiding DIP-14 IC bodies in the central ravine.
  */
 function selectBestChannel(
   wire: WireRouteInput,
@@ -96,24 +141,32 @@ function selectBestChannel(
   const minX = Math.min(wire.from.x, wire.to.x);
   const maxX = Math.max(wire.from.x, wire.to.x);
 
-  // Check if a horizontal run through the center ravine would slice across a placed 74xx IC
-  const hitsIcInRavine = icObstacles.some(
-    (ic) => maxX > ic.minX - 6 && minX < ic.maxX + 6,
-  );
+  // Check if a horizontal run through any channel would intersect an IC
+  const hitsIcInChannel = (y: number) =>
+    icObstacles.some(
+      (ic) =>
+        maxX > ic.minX - 4 &&
+        minX < ic.maxX + 4 &&
+        y >= ic.minY - 2 &&
+        y <= ic.maxY + 2,
+    );
 
   let bestChannel = channels[0]!;
   let bestCost = Infinity;
 
   for (const ch of channels) {
-    // Penalize center ravine if an IC sits between from.x and to.x
-    const obstaclePenalty =
-      ch.id === "centerRavine" && hitsIcInRavine ? 10000 : 0;
+    // If the horizontal line through this channel directly hits any IC body, heavily penalize it
+    const obstaclePenalty = hitsIcInChannel(ch.baseY) ? 20000 : 0;
+
+    // Also penalize channels that require vertical travel across an IC
+    const vHits1 = getIntersectedIc(wire.from.x, wire.from.y, ch.baseY, icObstacles) ? 5000 : 0;
+    const vHits2 = getIntersectedIc(wire.to.x, ch.baseY, wire.to.y, icObstacles) ? 5000 : 0;
 
     // Total vertical travel required to enter this channel and reach destination
     const verticalTravel =
       Math.abs(wire.from.y - ch.baseY) + Math.abs(wire.to.y - ch.baseY);
 
-    const totalCost = verticalTravel + obstaclePenalty;
+    const totalCost = verticalTravel + obstaclePenalty + vHits1 + vHits2;
     if (totalCost < bestCost) {
       bestCost = totalCost;
       bestChannel = ch;
@@ -315,6 +368,19 @@ export function routeBreadboardWires(
 
     // Case B: Vertical-only collinear connection (same column X)
     if (Math.abs(wire.from.x - wire.to.x) < 1) {
+      const hitIc = getIntersectedIc(wire.from.x, wire.from.y, wire.to.y, icObstacles);
+      if (hitIc) {
+        const pts = routeAroundIcVertical(wire.from, wire.to, hitIc);
+        return {
+          id: wire.id,
+          color: wire.color,
+          points: pts,
+          svgPath: buildRoundedOrthogonalSvgPath(pts, cornerRadius),
+          handlePoint: pts[Math.floor(pts.length / 2)]!,
+          channelId: "vertical-detour",
+          laneIndex: 0,
+        };
+      }
       const pts = [wire.from, wire.to];
       return {
         id: wire.id,
@@ -342,7 +408,23 @@ export function routeBreadboardWires(
     const p3 = { x: wire.to.x, y: assigned.y };
     const p4 = wire.to;
 
-    const points = [p1, p2, p3, p4];
+    const hitIc1 = getIntersectedIc(p1.x, p1.y, p2.y, icObstacles);
+    const hitIc2 = getIntersectedIc(p4.x, p3.y, p4.y, icObstacles);
+
+    const leg1 = hitIc1 ? routeAroundIcVertical(p1, p2, hitIc1) : [p1, p2];
+    const leg2 = hitIc2 ? routeAroundIcVertical(p3, p4, hitIc2) : [p3, p4];
+
+    const rawPoints = [...leg1, ...leg2];
+    const points: Point[] = [];
+    for (const pt of rawPoints) {
+      if (
+        points.length === 0 ||
+        Math.hypot(pt.x - points[points.length - 1]!.x, pt.y - points[points.length - 1]!.y) > 0.5
+      ) {
+        points.push(pt);
+      }
+    }
+
     const handlePoint = {
       x: (p2.x + p3.x) / 2,
       y: assigned.y,

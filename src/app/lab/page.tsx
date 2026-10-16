@@ -243,12 +243,30 @@ export default function LabPage() {
       className={cn(
         "flex w-full overflow-hidden flex-col bg-background transition-all",
         isZenMode
-          ? "fixed inset-0 z-50 p-2 sm:p-3"
+          ? "fixed inset-0 z-50 h-screen w-screen p-0 m-0"
           : "h-[calc(100dvh-3.5rem)] px-2 py-2 sm:px-3 sm:py-2.5",
       )}
     >
-      {/* --- toolbar --------------------------------------------------------- */}
-      <header className="mb-2 flex flex-wrap items-center gap-2 sm:gap-2.5">
+      {/* Floating Exit Zen Button in Top-Right Corner */}
+      {isZenMode && (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => setIsZenMode(false)}
+          title="Exit Zen Fullscreen Mode (Esc or F)"
+          className="fixed top-3 right-3 z-50 h-8 gap-1.5 bg-background/85 hover:bg-background backdrop-blur-md border shadow-lg text-xs transition-transform hover:scale-105"
+        >
+          <Minimize2 className="size-3.5 text-foreground" />
+          <span className="font-medium text-foreground">Exit Zen</span>
+          <kbd className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+            Esc
+          </kbd>
+        </Button>
+      )}
+
+      {/* --- toolbar (hidden in Zen mode) ------------------------------------ */}
+      {!isZenMode && (
+        <header className="mb-2 flex flex-wrap items-center gap-2 sm:gap-2.5">
         <div className={cn("min-w-0 flex-1 lg:flex-initial", headerCollapsed && "hidden")}>
           <div className="flex items-center gap-2">
             <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
@@ -291,8 +309,10 @@ export default function LabPage() {
             className="h-8 gap-1.5 text-xs shadow-xs"
           >
             {isZenMode ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-            <span className="hidden xl:inline">{isZenMode ? "Exit Zen" : "Zen"}</span>
-            <kbd className="text-[10px] opacity-60 font-mono">F</kbd>
+            <span className="hidden xl:inline">{isZenMode ? "Exit Zen" : "Zen Mode"}</span>
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+              F
+            </kbd>
           </Button>
 
           {/* Desktop Left Sidebar Toggle */}
@@ -305,7 +325,9 @@ export default function LabPage() {
           >
             <Boxes className="size-3.5" />
             <span className="hidden xl:inline">Parts</span>
-            <kbd className="text-[10px] opacity-60 font-mono">[</kbd>
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+              [
+            </kbd>
           </Button>
 
           {/* Wire Color Pre-Selection Swatches */}
@@ -392,7 +414,9 @@ export default function LabPage() {
                 {errorCount}
               </Badge>
             )}
-            <kbd className="text-[10px] opacity-60 font-mono">]</kbd>
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+              ]
+            </kbd>
           </Button>
 
           <ToggleGroup
@@ -453,10 +477,11 @@ export default function LabPage() {
           </Button>
         </div>
       </header>
+      )}
 
       {/* --- workspace: full-viewport with collapsible sidebars -------------------- */}
-      <div className="flex min-h-0 flex-1 gap-2.5 overflow-hidden">
-        {leftSidebarOpen && (
+      <div className={cn("flex min-h-0 flex-1 overflow-hidden", !isZenMode && "gap-2.5")}>
+        {leftSidebarOpen && !isZenMode && (
           <Card className="hidden min-h-0 w-[210px] shrink-0 overflow-hidden py-0 lg:block shadow-xs">
             <ScrollArea className="h-full">
               <Palette />
@@ -464,39 +489,44 @@ export default function LabPage() {
           </Card>
         )}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+        <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", !isZenMode && "gap-2")}>
           <div className="min-h-0 flex-1">
             {onBoard ? <BreadboardView /> : <CircuitCanvas />}
           </div>
 
-          {!onBoard && <ClockPanel />}
+          {!onBoard && !isZenMode && <ClockPanel />}
 
-          <Card className="shrink-0 overflow-hidden py-0 shadow-xs">
-            <button
-              type="button"
-              onClick={() => setTimingChoice(!showTiming)}
-              className="hover:bg-accent/50 flex w-full items-center gap-2 px-3 py-1.5 text-left cursor-pointer h-7"
-            >
-              <span className="text-xs font-medium">Timing</span>
-              <span className="text-muted-foreground hidden text-[11px] sm:inline">
-                {hasFlops ? "clock-driven" : "unit-delay, Gray-code sweep"}
-              </span>
-              <span className="text-muted-foreground ml-auto text-[11px]">
-                {showTiming ? "▲ Hide" : "▼ Show Timing Diagram"}
-              </span>
-            </button>
-            {showTiming && (
-              <>
-                <Separator />
-                <CardContent className="max-h-[160px] overflow-auto px-0 sm:max-h-[220px]">
-                  <WaveformPanel />
-                </CardContent>
-              </>
-            )}
-          </Card>
+          {!isZenMode && (
+            <Card className="shrink-0 overflow-hidden py-0 shadow-xs">
+              <button
+                type="button"
+                onClick={() => setTimingChoice(!showTiming)}
+                className="hover:bg-accent/50 flex w-full items-center gap-2.5 px-3.5 py-1.5 text-left cursor-pointer h-7 select-none"
+              >
+                <div className="flex items-center gap-1.5">
+                  <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-xs font-semibold text-foreground">Timing</span>
+                </div>
+                <span className="text-muted-foreground hidden text-[11px] sm:inline font-mono">
+                  Engine: {hasFlops ? "clock-driven" : "unit-delay, Gray-code sweep"}
+                </span>
+                <span className="text-muted-foreground ml-auto text-[11px] font-medium">
+                  {showTiming ? "▲ Hide" : "▼ Show Timing Diagram"}
+                </span>
+              </button>
+              {showTiming && (
+                <>
+                  <Separator />
+                  <CardContent className="max-h-[160px] overflow-auto px-0 sm:max-h-[220px]">
+                    <WaveformPanel />
+                  </CardContent>
+                </>
+              )}
+            </Card>
+          )}
         </div>
 
-        {rightSidebarOpen && (
+        {rightSidebarOpen && !isZenMode && (
           <Card className="hidden min-h-0 w-[340px] shrink-0 overflow-hidden py-0 lg:block shadow-xs">
             {inspector}
           </Card>

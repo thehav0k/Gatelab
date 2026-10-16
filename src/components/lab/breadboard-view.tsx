@@ -66,6 +66,17 @@ export const BOARD_OFFSET_Y = 110;
 
 const RAIL_ROWS: BoardRow[] = ["+top", "-top", "+bottom", "-bottom"];
 
+export const COLOR_SWATCHES = [
+  { label: "Red (+5V)", value: "#ef4444" },
+  { label: "Black (GND)", value: "#1f2937" },
+  { label: "Blue", value: "#3b82f6" },
+  { label: "Green", value: "#10b981" },
+  { label: "Amber", value: "#f59e0b" },
+  { label: "Orange", value: "#f97316" },
+  { label: "Purple", value: "#8b5cf6" },
+  { label: "Cyan", value: "#06b6d4" },
+];
+
 /**
  * The upgraded breadboard environment:
  * - Full-Screen Digital Logic Trainer Board chassis (+5V, GND, CLK Gen, Input Switches, LED Monitor)
@@ -111,6 +122,7 @@ export function BreadboardView() {
   const [cursorPos, setCursorPos] = useState<Point | null>(null);
   const hoverValue = useEndpointValue(hover ? holeEnd(hover) : null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
+  const selectedWire = selectedWireId ? doc.wires[selectedWireId as WireId] : null;
   const [showXRay, setShowXRay] = useState<boolean>(true);
   const [showAirwires, setShowAirwires] = useState<boolean>(false);
   const [autoHz, setAutoHz] = useState<number | null>(null);
@@ -168,12 +180,12 @@ export function BreadboardView() {
       map.set(`${pin.node}:${pin.pin}`, pt);
     };
 
-    if (vccNode) register({ node: vccNode.id, pin: "VCC" }, { x: 480, y: 60 });
-    if (gndNode) register({ node: gndNode.id, pin: "GND" }, { x: 540, y: 60 });
+    if (vccNode) register({ node: vccNode.id, pin: "VCC" }, { x: 430, y: 60 });
+    if (gndNode) register({ node: gndNode.id, pin: "GND" }, { x: 520, y: 60 });
     if (clockNode) register({ node: clockNode.id, pin: "Y" }, { x: 850, y: 55 });
 
     switchNodes.forEach((sw, i) => {
-      register({ node: sw.id, pin: "Y" }, { x: 105 + i * 82, y: 668 });
+      register({ node: sw.id, pin: "Y" }, { x: 105 + i * 82 + 18, y: 646 });
     });
 
     ledNodes.forEach((led, i) => {
@@ -186,11 +198,11 @@ export function BreadboardView() {
   // List of all Trainer Panel sockets for magnetic hovering and snapping
   const trainerSocketsList = useMemo(() => {
     const list: { point: Point; pin: PinRef; label: string; color: string }[] = [];
-    if (vccNode) list.push({ point: { x: 480, y: 60 }, pin: { node: vccNode.id, pin: "VCC" }, label: "+5V", color: "#ef4444" });
-    if (gndNode) list.push({ point: { x: 540, y: 60 }, pin: { node: gndNode.id, pin: "GND" }, label: "GND", color: "#3b82f6" });
+    if (vccNode) list.push({ point: { x: 430, y: 60 }, pin: { node: vccNode.id, pin: "VCC" }, label: "+5V", color: "#ef4444" });
+    if (gndNode) list.push({ point: { x: 520, y: 60 }, pin: { node: gndNode.id, pin: "GND" }, label: "GND", color: "#3b82f6" });
     if (clockNode) list.push({ point: { x: 850, y: 55 }, pin: { node: clockNode.id, pin: "Y" }, label: "CLK", color: "#f59e0b" });
     switchNodes.forEach((sw, i) => {
-      list.push({ point: { x: 105 + i * 82, y: 668 }, pin: { node: sw.id, pin: "Y" }, label: sw.label, color: "#38bdf8" });
+      list.push({ point: { x: 105 + i * 82 + 18, y: 646 }, pin: { node: sw.id, pin: "Y" }, label: sw.label, color: "#38bdf8" });
     });
     ledNodes.forEach((led, i) => {
       list.push({ point: { x: 945 + i * 66, y: 72 }, pin: { node: led.id, pin: "A" }, label: led.label, color: led.color ?? "#22c55e" });
@@ -602,8 +614,8 @@ export function BreadboardView() {
               width={7}
               height={7}
               rx={1.5}
-              className="fill-background/90 stroke-foreground/25"
-              strokeWidth={0.75}
+              className="dark:fill-slate-950 fill-white dark:stroke-zinc-600 stroke-slate-400"
+              strokeWidth={0.85}
             />
           </pattern>
         </defs>
@@ -649,7 +661,7 @@ export function BreadboardView() {
             <text
               x={24}
               y={50}
-              fill="#94a3b8"
+              fill="#cbd5e1"
               className="font-mono text-[9px] tracking-wide"
             >
               MODEL 74XX-TTL · 5V BENCH
@@ -659,49 +671,59 @@ export function BreadboardView() {
           {/* Top-Left: DC Power Supply Module */}
           <g>
             <rect
-              x={400}
+              x={375}
               y={14}
-              width={180}
+              width={205}
               height={82}
               rx={6}
               fill="#090d16"
               stroke="#1e293b"
               strokeWidth={1}
             />
+            {/* Header row */}
             <text
-              x={410}
-              y={28}
-              fill="#94a3b8"
-              className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
+              x={387}
+              y={29}
+              fill="#f8fafc"
+              className="font-mono text-[9px] font-bold pointer-events-none select-none"
             >
               DC POWER SUPPLY
             </text>
-            {/* Status Power LED */}
-            <circle cx={425} cy={60} r={4} fill="#10b981" />
+            {/* Status Power LED & ON Label in header */}
+            <circle cx={528} cy={26} r={3.5} fill="#10b981" />
+            <circle cx={528} cy={26} r={6} fill="#10b981" opacity={0.25} />
             <text
-              x={434}
-              y={63}
+              x={537}
+              y={29}
               fill="#34d399"
-              className="font-mono text-[8.5px] font-semibold pointer-events-none select-none"
+              className="font-mono text-[8px] font-bold pointer-events-none select-none"
             >
-              +5.0V ON
+              +5V ON
             </text>
-            {/* +5V Socket */}
+            <line
+              x1={375}
+              y1={36}
+              x2={580}
+              y2={36}
+              stroke="#1e293b"
+              strokeWidth={0.75}
+            />
+            {/* +5.0V VCC Red Socket */}
             <TrainerSocket
-              cx={480}
+              cx={430}
               cy={60}
-              label="+5V"
+              label="+5.0V"
               sublabel="VCC"
               color="#ef4444"
               isArmed={pendingPin !== null && pendingPin.node === vccNode?.id && pendingPin.pin === "VCC"}
               onClick={handleVccClick}
             />
-            {/* GND Socket */}
+            {/* 0.0V GND Blue Socket */}
             <TrainerSocket
-              cx={540}
+              cx={520}
               cy={60}
-              label="GND"
-              sublabel="0V"
+              label="0.0V"
+              sublabel="GND"
               color="#3b82f6"
               isArmed={pendingPin !== null && pendingPin.node === gndNode?.id && pendingPin.pin === "GND"}
               onClick={handleGndClick}
@@ -723,7 +745,7 @@ export function BreadboardView() {
             <text
               x={605}
               y={28}
-              fill="#94a3b8"
+              fill="#f8fafc"
               className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
             >
               PULSE / CLK GENERATOR
@@ -827,20 +849,52 @@ export function BreadboardView() {
               stroke="#1e293b"
               strokeWidth={1}
             />
+            {/* Header row */}
             <text
-              x={915}
-              y={28}
-              fill="#94a3b8"
-              className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
+              x={918}
+              y={29}
+              fill="#f8fafc"
+              className="font-mono text-[9px] font-bold pointer-events-none select-none"
             >
               LOGIC INDICATORS (OUTPUT MONITOR)
             </text>
+            {/* Dedicated + LED Button in Top-Right Header */}
+            <g
+              className="cursor-pointer group"
+              onClick={handleAddLed}
+              transform={`translate(${CHASSIS_W - 82}, 18)`}
+            >
+              <rect
+                width={54}
+                height={20}
+                rx={4}
+                className="fill-slate-800 hover:fill-slate-700 stroke-slate-700 transition-colors"
+                strokeWidth={1}
+              />
+              <text
+                x={27}
+                y={13.5}
+                textAnchor="middle"
+                fill="#f8fafc"
+                className="font-mono text-[8.5px] font-semibold pointer-events-none select-none"
+              >
+                + LED
+              </text>
+            </g>
+            <line
+              x1={905}
+              y1={36}
+              x2={CHASSIS_W - 20}
+              y2={36}
+              stroke="#1e293b"
+              strokeWidth={0.75}
+            />
             {ledNodes.map((led, i) => (
               <TrainerLed
                 key={led.id}
                 led={led}
                 cx={945 + i * 66}
-                cy={48}
+                cy={52}
                 isArmed={pendingPin !== null && pendingPin.node === led.id && pendingPin.pin === "A"}
                 onClick={(e: React.MouseEvent) => {
                   e.stopPropagation();
@@ -849,33 +903,11 @@ export function BreadboardView() {
                 onColorChange={(color) => setLedColor(led.id, color)}
               />
             ))}
-            <g
-              className="cursor-pointer group"
-              onClick={handleAddLed}
-              transform={`translate(${945 + ledNodes.length * 66 + 8}, 36)`}
-            >
-              <rect
-                width={56}
-                height={24}
-                rx={4}
-                className="fill-slate-800 hover:fill-slate-700 stroke-slate-700"
-                strokeWidth={1}
-              />
-              <text
-                x={28}
-                y={15}
-                textAnchor="middle"
-                fill="#cbd5e1"
-                className="font-mono text-[9px] font-semibold pointer-events-none select-none"
-              >
-                + LED
-              </text>
-            </g>
           </g>
 
           {/* Center: Solderless Breadboard Base & Body */}
           <g transform={`translate(${BOARD_OFFSET_X}, ${BOARD_OFFSET_Y})`}>
-            <rect width={w} height={h} rx={6} className="fill-muted stroke-border" />
+            <rect width={w} height={h} rx={6} className="dark:fill-zinc-900 fill-slate-100 dark:stroke-zinc-700 stroke-slate-300" strokeWidth={1} />
             <rect width={w} height={h} fill="transparent" />
             <BoardBody spec={spec} />
           </g>
@@ -892,14 +924,46 @@ export function BreadboardView() {
               stroke="#1e293b"
               strokeWidth={1}
             />
+            {/* Header row */}
             <text
-              x={75}
-              y={610}
-              fill="#94a3b8"
-              className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
+              x={78}
+              y={611}
+              fill="#f8fafc"
+              className="font-mono text-[9px] font-bold pointer-events-none select-none"
             >
               LOGIC INPUT SWITCHES (DATA LEVEL)
             </text>
+            {/* Dedicated + Input Button in Header */}
+            <g
+              className="cursor-pointer group"
+              onClick={handleAddSwitch}
+              transform={`translate(${w - 2}, 601)`}
+            >
+              <rect
+                width={56}
+                height={19}
+                rx={3.5}
+                className="fill-slate-800 hover:fill-slate-700 stroke-slate-700 transition-colors"
+                strokeWidth={1}
+              />
+              <text
+                x={28}
+                y={12.5}
+                textAnchor="middle"
+                fill="#f8fafc"
+                className="font-mono text-[8.5px] font-semibold pointer-events-none select-none"
+              >
+                + Input
+              </text>
+            </g>
+            <line
+              x1={65}
+              y1={618}
+              x2={65 + w}
+              y2={618}
+              stroke="#1e293b"
+              strokeWidth={0.75}
+            />
             {switchNodes.map((sw, i) => (
               <TrainerSwitch
                 key={sw.id}
@@ -914,28 +978,6 @@ export function BreadboardView() {
                 }}
               />
             ))}
-            <g
-              className="cursor-pointer group"
-              onClick={handleAddSwitch}
-              transform={`translate(${105 + switchNodes.length * 82 + 8}, 630)`}
-            >
-              <rect
-                width={62}
-                height={26}
-                rx={4}
-                className="fill-slate-800 hover:fill-slate-700 stroke-slate-700"
-                strokeWidth={1}
-              />
-              <text
-                x={31}
-                y={16.5}
-                textAnchor="middle"
-                fill="#cbd5e1"
-                className="font-mono text-[9px] font-semibold pointer-events-none select-none"
-              >
-                + Input
-              </text>
-            </g>
           </g>
         </g>
 
@@ -1104,6 +1146,59 @@ export function BreadboardView() {
           )}
         </g>
       </svg>
+
+      {/* Docked Selected Wire Action HUD (Off-board, non-obscuring) */}
+      {selectedWire && (
+        <div className="no-print absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 px-3.5 py-1.5 rounded-lg border border-border bg-card/95 shadow-xl backdrop-blur-md animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="flex items-center gap-1.5 font-mono text-xs">
+            <span className="text-muted-foreground font-medium">Wire:</span>
+            <span className="font-semibold text-foreground">{selectedWire.id}</span>
+          </div>
+          <div className="h-4 w-px bg-border" />
+          <div className="flex items-center gap-1">
+            <span className="text-[11px] text-muted-foreground mr-1">Color:</span>
+            {COLOR_SWATCHES.map((swatch) => (
+              <button
+                key={swatch.value}
+                type="button"
+                onClick={() => {
+                  setWireColor(selectedWire.id, swatch.value);
+                  toast.success(`Wire color set to ${swatch.label}`);
+                }}
+                style={{ backgroundColor: swatch.value }}
+                className={cn(
+                  "size-4 rounded-full border border-background/50 transition-all hover:scale-125 cursor-pointer",
+                  (selectedWire.color || "#38bdf8") === swatch.value &&
+                    "ring-2 ring-primary ring-offset-1 ring-offset-background scale-110",
+                )}
+                title={swatch.label}
+              />
+            ))}
+          </div>
+          <div className="h-4 w-px bg-border" />
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => {
+              deleteWire(selectedWire.id);
+              setSelectedWireId(null);
+              toast.info("Deleted jumper wire");
+            }}
+          >
+            Delete
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground cursor-pointer"
+            onClick={() => setSelectedWireId(null)}
+            title="Deselect (Esc)"
+          >
+            ✕
+          </Button>
+        </div>
+      )}
 
       {/* Bottom Camera Toolbar */}
       <div className="no-print absolute right-2 bottom-2 z-10 flex items-center gap-1">
@@ -1413,29 +1508,19 @@ function TrainerSwitch({
 
   return (
     <g transform={`translate(${cx}, ${cy})`}>
-      {/* Label */}
+      {/* Switch Label */}
       <text
         x={0}
         y={-14}
         textAnchor="middle"
-        className="fill-foreground font-mono text-[10px] font-bold pointer-events-none"
+        className="fill-foreground font-mono text-[10px] font-bold pointer-events-none select-none"
       >
         {sw.label}
       </text>
 
-      {/* Mini status LED */}
-      <circle
-        cx={-18}
-        cy={0}
-        r={3.5}
-        fill={on ? "#10b981" : "#334155"}
-        stroke={on ? "#34d399" : "#1e293b"}
-        strokeWidth={0.75}
-      />
-
-      {/* Toggle switch body */}
+      {/* LEFT ZONE: Physical Toggle Switch (centered at x = -18) */}
       <g
-        className="cursor-pointer"
+        className="cursor-pointer group"
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
@@ -1443,18 +1528,18 @@ function TrainerSwitch({
       >
         {/* Toggle switch plate / slot */}
         <rect
-          x={-10}
-          y={-11}
+          x={-28}
+          y={-10}
           width={20}
           height={22}
           rx={3}
-          className="fill-slate-800 stroke-slate-700"
+          className="fill-slate-800 stroke-slate-700 group-hover:stroke-slate-500 transition-colors"
           strokeWidth={1}
         />
         {/* Switch bat/lever */}
         <rect
-          x={-7}
-          y={on ? -9 : 1}
+          x={-25}
+          y={on ? -8 : 2}
           width={14}
           height={9}
           rx={2}
@@ -1462,20 +1547,38 @@ function TrainerSwitch({
           stroke={on ? "#34d399" : "#64748b"}
           strokeWidth={0.5}
         />
+        {/* Mini status LED */}
+        <circle
+          cx={-18}
+          cy={-15}
+          r={2.5}
+          fill={on ? "#10b981" : "#334155"}
+          stroke={on ? "#34d399" : "#1e293b"}
+          strokeWidth={0.5}
+        />
+        {/* Logic state text badge (1 / 0) */}
+        <text
+          x={-18}
+          y={20}
+          textAnchor="middle"
+          fill={on ? "#10b981" : "#94a3b8"}
+          className="font-mono text-[8px] font-bold pointer-events-none select-none"
+        >
+          {on ? "1" : "0"}
+        </text>
       </g>
 
-      {/* Logic state text */}
-      <text
-        x={18}
-        y={3}
-        fill={on ? "#10b981" : "#94a3b8"}
-        className="font-mono text-[8px] font-bold pointer-events-none select-none"
-      >
-        {on ? "1" : "0"}
-      </text>
-
-      {/* Output banana socket */}
-      <g transform="translate(0, 26)">
+      {/* RIGHT ZONE: Banana Wire Output Socket (centered at x = +18) */}
+      <g transform="translate(18, 4)">
+        <text
+          x={0}
+          y={-14}
+          textAnchor="middle"
+          fill="#94a3b8"
+          className="font-mono text-[7px] font-semibold pointer-events-none select-none"
+        >
+          OUT
+        </text>
         <TrainerSocket
           cx={0}
           cy={0}
@@ -1513,8 +1616,8 @@ function BoardBody({ spec }: { spec: BreadboardSpec }) {
         y={channelY}
         width={w}
         height={channelH}
-        className="fill-background/80 stroke-border"
-        strokeWidth={0.5}
+        className="dark:fill-zinc-950/80 fill-slate-200/90 dark:stroke-zinc-800 stroke-slate-300"
+        strokeWidth={0.75}
       />
 
       {/* Power rails: a hole field, plus the coloured stripe printed beside it. */}
@@ -1543,8 +1646,15 @@ function BoardBody({ spec }: { spec: BreadboardSpec }) {
             />
             <text
               x={6}
-              y={y + 3}
-              className="fill-foreground/80 pointer-events-none font-mono text-[10px] font-semibold"
+              y={y + 3.5}
+              className="dark:fill-slate-100 fill-slate-900 pointer-events-none font-mono text-[11px] font-bold"
+            >
+              {positive ? "+" : "−"}
+            </text>
+            <text
+              x={w - 14}
+              y={y + 3.5}
+              className="dark:fill-slate-100 fill-slate-900 pointer-events-none font-mono text-[11px] font-bold"
             >
               {positive ? "+" : "−"}
             </text>
@@ -1576,30 +1686,56 @@ function BoardBody({ spec }: { spec: BreadboardSpec }) {
         );
       })}
 
-      {/* Row letters and column numbers */}
-      {ALL_ROWS.map((row) => (
-        <text
-          key={row}
-          x={8}
-          y={holePoint({ col: 1, row }).y + 3}
-          className="fill-foreground/70 pointer-events-none font-mono text-[9px] font-medium"
-        >
-          {row}
-        </text>
-      ))}
+      {/* Row letters on both ends for effortless strip identification */}
+      {ALL_ROWS.map((row) => {
+        const y = holePoint({ col: 1, row }).y + 3.5;
+        return (
+          <g key={row} className="pointer-events-none select-none">
+            <text
+              x={8}
+              y={y}
+              className="dark:fill-slate-100 fill-slate-900 font-mono text-[9.5px] font-bold"
+            >
+              {row}
+            </text>
+            <text
+              x={w - 14}
+              y={y}
+              className="dark:fill-slate-100 fill-slate-900 font-mono text-[9.5px] font-bold"
+            >
+              {row}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* Column numbers at top and bottom */}
       {Array.from({ length: spec.columns }, (_, i) => i + 1)
         .filter((c) => c % 5 === 0 || c === 1)
-        .map((col) => (
-          <text
-            key={col}
-            x={holePoint({ col, row: "J" }).x}
-            y={holePoint({ col, row: "J" }).y - PITCH / 2 - 3}
-            textAnchor="middle"
-            className="fill-foreground/70 pointer-events-none font-mono text-[9px] font-medium"
-          >
-            {col}
-          </text>
-        ))}
+        .map((col) => {
+          const ptTop = holePoint({ col, row: "J" });
+          const ptBot = holePoint({ col, row: "A" });
+          return (
+            <g key={col} className="pointer-events-none select-none">
+              <text
+                x={ptTop.x}
+                y={ptTop.y - PITCH / 2 - 3}
+                textAnchor="middle"
+                className="dark:fill-slate-100 fill-slate-900 font-mono text-[9px] font-bold"
+              >
+                {col}
+              </text>
+              <text
+                x={ptBot.x}
+                y={ptBot.y + PITCH / 2 + 10}
+                textAnchor="middle"
+                className="dark:fill-slate-100 fill-slate-900 font-mono text-[9px] font-bold"
+              >
+                {col}
+              </text>
+            </g>
+          );
+        })}
     </g>
   );
 }
@@ -2668,17 +2804,6 @@ function resolveEndpointPoint(
   return null;
 }
 
-const COLOR_SWATCHES = [
-  { label: "Red (+5V)", value: "#ef4444" },
-  { label: "Dark Gray (GND)", value: "#1f2937" },
-  { label: "Blue", value: "#3b82f6" },
-  { label: "Green", value: "#10b981" },
-  { label: "Amber", value: "#f59e0b" },
-  { label: "Orange", value: "#f97316" },
-  { label: "Purple", value: "#8b5cf6" },
-  { label: "Cyan", value: "#06b6d4" },
-];
-
 /** Jumper wire with Manhattan orthogonal channel routing, crossing halos, safe selection, and drag handle. */
 function Jumper({
   wire,
@@ -2686,7 +2811,6 @@ function Jumper({
   isSelected,
   onSelect,
   onDelete,
-  onColorChange,
   onChannelDrag,
   toView,
 }: {
@@ -2712,6 +2836,14 @@ function Jumper({
   const pEnd = points[points.length - 1]!;
   const handlePoint = routedWire.handlePoint;
 
+  const isDarkWire =
+    color === "#000000" ||
+    color === "#1f2937" ||
+    color === "#111827" ||
+    color === "#0f172a" ||
+    color === "#1e293b" ||
+    color === "#0b0f17";
+
   return (
     <g className="group">
       {/* 1. Wide invisible hit area for effortless clicking and Alt+Click deletion */}
@@ -2733,16 +2865,29 @@ function Jumper({
         <title>Click to select jumper · Alt+Click to delete</title>
       </path>
 
-      {/* 2. Selection halo */}
+      {/* 2. Enhanced multi-layer selection halo for instant visual clarity */}
       {isSelected && (
-        <path
-          d={d}
-          fill="none"
-          stroke="var(--color-primary, #38bdf8)"
-          strokeWidth={8}
-          opacity={0.45}
-          strokeDasharray="6 4"
-        />
+        <>
+          <path
+            d={d}
+            fill="none"
+            stroke="#38bdf8"
+            strokeWidth={11}
+            opacity={0.35}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d={d}
+            fill="none"
+            stroke="#38bdf8"
+            strokeWidth={6.5}
+            opacity={0.85}
+            strokeDasharray="6 4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </>
       )}
 
       {/* 3. Logic HIGH glow */}
@@ -2754,21 +2899,26 @@ function Jumper({
       <path
         d={d}
         fill="none"
-        stroke={
-          color === "#000000" ||
-          color === "#1f2937" ||
-          color === "#0f172a" ||
-          color === "#1e293b" ||
-          color === "#0b0f17"
-            ? "#475569"
-            : "#0b0f17"
-        }
+        stroke={isDarkWire ? "#475569" : "#0b0f17"}
         strokeWidth={isSelected ? 6.5 : 5.5}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
 
-      {/* 5. Colored wire insulation core */}
+      {/* 5. High-contrast outline for black/dark wires in Dark Mode */}
+      {isDarkWire && (
+        <path
+          d={d}
+          fill="none"
+          className="dark:stroke-slate-300 stroke-slate-500"
+          strokeWidth={isSelected ? 5.5 : 4.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity={0.85}
+        />
+      )}
+
+      {/* 6. Colored wire insulation core */}
       <path
         d={d}
         fill="none"
@@ -2780,7 +2930,7 @@ function Jumper({
         opacity={paint.dim ? 0.75 : 1}
       />
 
-      {/* 6. End contacts */}
+      {/* 7. End contacts */}
       {[pStart, pEnd].map((p, i) => (
         <g key={i}>
           {isSelected && (
@@ -2797,7 +2947,7 @@ function Jumper({
         </g>
       ))}
 
-      {/* 7. Draggable horizontal channel handle when selected */}
+      {/* 8. Draggable horizontal channel handle when selected */}
       {isSelected && onChannelDrag && (
         <circle
           cx={handlePoint.x}
@@ -2812,7 +2962,9 @@ function Jumper({
             const onPointerMove = (ev: PointerEvent) => {
               if (toView) {
                 const pt = toView(ev.clientX, ev.clientY);
-                onChannelDrag(Math.round(pt.y / 2) * 2);
+                // Snap wire bend channel to breadboard 12px grid
+                const snappedY = Math.round((pt.y - BOARD_OFFSET_Y) / 12) * 12 + BOARD_OFFSET_Y;
+                onChannelDrag(snappedY);
               }
             };
             const onPointerUp = () => {
@@ -2823,82 +2975,8 @@ function Jumper({
             window.addEventListener("pointerup", onPointerUp);
           }}
         >
-          <title>Drag up/down to adjust horizontal routing channel</title>
+          <title>Drag up/down to adjust wire bend (snaps to grid)</title>
         </circle>
-      )}
-
-      {/* 8. Floating Action Pill on Selected Wire */}
-      {isSelected && (
-        <g
-          transform={`translate(${handlePoint.x - 85}, ${Math.max(10, handlePoint.y - 30)})`}
-          className="cursor-default pointer-events-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <rect
-            width={170}
-            height={26}
-            rx={5}
-            className="fill-card/95 stroke-border"
-            strokeWidth={1}
-            style={{ filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.35))" }}
-          />
-
-          <circle cx={11} cy={13} r={4} fill={logicColor(value)} />
-          <text
-            x={18}
-            y={16.5}
-            fill={logicColor(value)}
-            className="font-mono text-[9px] font-bold"
-          >
-            {value === 1 ? "1" : value === 0 ? "0" : value === 2 ? "Z" : "X"}
-          </text>
-
-          {/* 8-Color Swatches */}
-          {COLOR_SWATCHES.map((swatch, idx) => (
-            <circle
-              key={swatch.value}
-              cx={38 + idx * 13}
-              cy={13}
-              r={5}
-              fill={swatch.value}
-              className={cn(
-                "cursor-pointer hover:scale-125 [transform-box:fill-box] origin-center transition-transform",
-                (wire.color || color) === swatch.value && "stroke-white stroke-[1.5]",
-              )}
-              onClick={(e) => {
-                e.stopPropagation();
-                onColorChange(swatch.value);
-              }}
-            >
-              <title>{swatch.label}</title>
-            </circle>
-          ))}
-
-          {/* Delete button */}
-          <g
-            className="cursor-pointer group/del"
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-            transform="translate(148, 4)"
-          >
-            <rect
-              width={18}
-              height={18}
-              rx={3}
-              className="fill-destructive/20 hover:fill-destructive/40"
-            />
-            <text
-              x={9}
-              y={12.5}
-              textAnchor="middle"
-              className="fill-destructive font-mono text-[10px] font-bold pointer-events-none"
-            >
-              ×
-            </text>
-          </g>
-        </g>
       )}
     </g>
   );
