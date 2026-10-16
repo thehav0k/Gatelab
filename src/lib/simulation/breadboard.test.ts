@@ -320,4 +320,147 @@ describe("nets on a breadboard", () => {
     const { atHole } = run(doc);
     expect(atHole(20, "C")).toBe(LZ);
   });
+
+  it("routes signal from hole A to an IC pin at E on the same column strip", () => {
+    const doc = circuit()
+      .board()
+      .ic("U1", "7408")
+      .seat("U1", 10, "E")
+      .rail("V1", "vcc")
+      .seat("V1", 1, "+top")
+      .rail("G0", "gnd")
+      .seat("G0", 1, "-top")
+      .jumper(2, "+top", 10, "F") // VCC to pin 14
+      .jumper(2, "-top", 16, "E") // GND to pin 7
+      .switch("A", 1)
+      .seat("A", 3, "A")
+      .jumper(3, "B", 10, "A") // Jumper from switch to 10A (not 10E)
+      .build();
+
+    const { atPin } = run(doc, [1]);
+    expect(atPin("U1", "1A")).toBe(L1);
+  });
+
+  it("evaluates 7400 NAND correctly on breadboard", () => {
+    const doc = circuit()
+      .board()
+      .ic("U1", "7400")
+      .seat("U1", 10, "E")
+      .rail("V1", "vcc")
+      .seat("V1", 1, "+top")
+      .rail("G0", "gnd")
+      .seat("G0", 1, "-top")
+      .jumper(2, "+top", 10, "F")
+      .jumper(2, "-top", 16, "E")
+      .switch("A")
+      .seat("A", 3, "A")
+      .switch("B")
+      .seat("B", 5, "A")
+      .jumper(3, "B", 10, "B")
+      .jumper(5, "B", 11, "B")
+      .build();
+
+    expect(run(doc, [0, 0]).atPin("U1", "1Y")).toBe(L1);
+    expect(run(doc, [0, 1]).atPin("U1", "1Y")).toBe(L1);
+    expect(run(doc, [1, 0]).atPin("U1", "1Y")).toBe(L1);
+    expect(run(doc, [1, 1]).atPin("U1", "1Y")).toBe(L0);
+  });
+
+  it("evaluates 7402 NOR with reversed pinout correctly on breadboard", () => {
+    const doc = circuit()
+      .board()
+      .ic("U1", "7402")
+      .seat("U1", 10, "E")
+      .rail("V1", "vcc")
+      .seat("V1", 1, "+top")
+      .rail("G0", "gnd")
+      .seat("G0", 1, "-top")
+      .jumper(2, "+top", 10, "F")
+      .jumper(2, "-top", 16, "E")
+      .switch("A")
+      .seat("A", 3, "A")
+      .switch("B")
+      .seat("B", 5, "A")
+      .jumper(3, "B", 11, "B") // switch A -> Pin 2 (1A)
+      .jumper(5, "B", 12, "B") // switch B -> Pin 3 (1B)
+      .build();
+
+    expect(run(doc, [0, 0]).atPin("U1", "1Y")).toBe(L1);
+    expect(run(doc, [0, 1]).atPin("U1", "1Y")).toBe(L0);
+    expect(run(doc, [1, 0]).atPin("U1", "1Y")).toBe(L0);
+    expect(run(doc, [1, 1]).atPin("U1", "1Y")).toBe(L0);
+  });
+
+  it("evaluates 7404 NOT correctly on breadboard", () => {
+    const doc = circuit()
+      .board()
+      .ic("U1", "7404")
+      .seat("U1", 10, "E")
+      .rail("V1", "vcc")
+      .seat("V1", 1, "+top")
+      .rail("G0", "gnd")
+      .seat("G0", 1, "-top")
+      .jumper(2, "+top", 10, "F")
+      .jumper(2, "-top", 16, "E")
+      .switch("A")
+      .seat("A", 3, "A")
+      .jumper(3, "B", 10, "B") // switch A -> Pin 1 (1A)
+      .build();
+
+    expect(run(doc, [0]).atPin("U1", "1Y")).toBe(L1);
+    expect(run(doc, [1]).atPin("U1", "1Y")).toBe(L0);
+  });
+
+  it("evaluates 7420 4-input NAND with NC pins correctly on breadboard", () => {
+    const doc = circuit()
+      .board()
+      .ic("U1", "7420")
+      .seat("U1", 10, "E")
+      .rail("V1", "vcc")
+      .seat("V1", 1, "+top")
+      .rail("G0", "gnd")
+      .seat("G0", 1, "-top")
+      .jumper(2, "+top", 10, "F")
+      .jumper(2, "-top", 16, "E")
+      .switch("A")
+      .seat("A", 2, "A")
+      .switch("B")
+      .seat("B", 4, "A")
+      .switch("C")
+      .seat("C", 6, "A")
+      .switch("D")
+      .seat("D", 8, "A")
+      .jumper(2, "B", 10, "C") // A -> Pin 1 (10E)
+      .jumper(4, "B", 11, "C") // B -> Pin 2 (11E)
+      .jumper(6, "B", 13, "C") // C -> Pin 4 (13E) [Pin 3 at 12E is NC]
+      .jumper(8, "B", 14, "C") // D -> Pin 5 (14E)
+      .build();
+
+    expect(run(doc, [1, 1, 1, 1]).atPin("U1", "1Y")).toBe(L0);
+    expect(run(doc, [1, 1, 1, 0]).atPin("U1", "1Y")).toBe(L1);
+  });
+
+  it("evaluates 7430 8-input NAND with NC pins correctly on breadboard", () => {
+    const doc = circuit()
+      .board()
+      .ic("U1", "7430")
+      .seat("U1", 10, "E")
+      .rail("V1", "vcc")
+      .seat("V1", 1, "+top")
+      .rail("G0", "gnd")
+      .seat("G0", 1, "-top")
+      .jumper(2, "+top", 10, "F") // VCC to pin 14
+      .jumper(2, "-top", 16, "E") // GND to pin 7
+      .jumper(10, "+top", 10, "D") // Pin 1 (10E)
+      .jumper(11, "+top", 11, "D") // Pin 2 (11E)
+      .jumper(12, "+top", 12, "D") // Pin 3 (12E)
+      .jumper(13, "+top", 13, "D") // Pin 4 (13E)
+      .jumper(14, "+top", 14, "D") // Pin 5 (14E)
+      .jumper(15, "+top", 15, "D") // Pin 6 (15E)
+      .jumper(13, "+top", 13, "G") // Pin 11 (13F)
+      .jumper(12, "+top", 12, "G") // Pin 12 (12F)
+      .build();
+
+    expect(run(doc).atPin("U1", "1Y")).toBe(L0);
+  });
 });

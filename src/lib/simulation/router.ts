@@ -1,7 +1,6 @@
 import { pinKey, type CircuitDocument, type CircuitNode, type Endpoint, type Point, type Wire } from "./netlist";
 import { holePoint } from "./breadboard";
-import { pinsOf, GATE_H, GATE_W, IO_H, IO_W } from "./parts";
-import { dipHeight, dipWidth, getIc } from "./ic-library";
+import { pinsOf, nodeDimensions, getPinWorldPosition } from "./parts";
 
 /**
  * Orthogonal wire routing.
@@ -84,25 +83,16 @@ export interface RouteResult {
 
 /** The bounding box a node's body occupies, in canvas units. */
 export function footprint(node: CircuitNode): { x: number; y: number; w: number; h: number } {
-  switch (node.kind) {
-    case "gate":
-      return { x: node.pos.x, y: node.pos.y, w: GATE_W, h: GATE_H };
-    case "ic": {
-      const def = getIc(node.part);
-      const pins = def?.pins.length ?? 14;
-      return { x: node.pos.x, y: node.pos.y, w: dipWidth(pins), h: dipHeight() };
-    }
-    case "switch":
-    case "clock":
-    case "led":
-    case "rail":
-      return { x: node.pos.x, y: node.pos.y, w: IO_W, h: IO_H };
-  }
+  const dims = nodeDimensions(node);
+  const rot = node.rotation ?? 0;
+  const isPerp = rot === 90 || rot === 270;
+  const w = isPerp ? dims.h : dims.w;
+  const h = isPerp ? dims.w : dims.h;
+  return { x: node.pos.x, y: node.pos.y, w, h };
 }
 
 export const pinPoint = (node: CircuitNode, pin: string): Point | null => {
-  const spec = pinsOf(node).find((p) => p.name === pin);
-  return spec ? { x: node.pos.x + spec.offset.x, y: node.pos.y + spec.offset.y } : null;
+  return getPinWorldPosition(node, pin);
 };
 
 const toCell = (v: number): number => Math.round(v / CELL);

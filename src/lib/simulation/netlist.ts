@@ -111,6 +111,12 @@ interface NodeBase {
   readonly pos: Point;
   /** Breadboard only: the row a single-pin part is seated in. ICs straddle E/F. */
   readonly boardRow?: BoardRow;
+  /** Clockwise rotation in degrees: 0, 90, 180, 270. */
+  readonly rotation?: 0 | 90 | 180 | 270 | undefined;
+  /** Horizontal flip (mirror along X). */
+  readonly flipX?: boolean | undefined;
+  /** Vertical flip (mirror along Y). */
+  readonly flipY?: boolean | undefined;
 }
 
 /** A schematic gate primitive: AND, OR, NOT… Ideal, so no power pins. */
@@ -191,6 +197,8 @@ export interface Wire {
    * still merged; the UI just draws it as a straight air-wire.
    */
   readonly path?: readonly Point[];
+  /** Optional custom wire color (e.g. for user override or power rail auto-assign). */
+  readonly color?: string | undefined;
 }
 
 export interface CircuitDocument {

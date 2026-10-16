@@ -231,3 +231,65 @@ let icRegistry: IcRegistry = {
 export function registerIcLibrary(registry: IcRegistry): void {
   icRegistry = registry;
 }
+
+/** Component dimensions (w, h) in canvas units before rotation. */
+export function nodeDimensions(node: CircuitNode): { w: number; h: number } {
+  switch (node.kind) {
+    case "gate":
+      return { w: GATE_W, h: GATE_H };
+    case "ic": {
+      const pins = pinsOf(node).length;
+      return { w: (pins / 2 - 1) * 24 + 24, h: 72 };
+    }
+    case "switch":
+    case "clock":
+    case "led":
+    case "rail":
+      return { w: IO_W, h: IO_H };
+  }
+}
+
+/** World canvas coordinates of a component pin after rotation and flip. */
+export function getPinWorldPosition(node: CircuitNode, pin: string): Point {
+  const spec = pinsOf(node).find((p) => p.name === pin);
+  if (!spec) return node.pos;
+  const dims = nodeDimensions(node);
+  const rot = node.rotation ?? 0;
+  const fx = node.flipX ?? false;
+  const fy = node.flipY ?? false;
+
+  if (rot === 0 && !fx && !fy) {
+    return { x: node.pos.x + spec.offset.x, y: node.pos.y + spec.offset.y };
+  }
+
+  let dx = spec.offset.x - dims.w / 2;
+  let dy = spec.offset.y - dims.h / 2;
+
+  if (fx) dx = -dx;
+  if (fy) dy = -dy;
+
+  let rdx = dx;
+  let rdy = dy;
+  let wRot = dims.w;
+  let hRot = dims.h;
+
+  if (rot === 90) {
+    rdx = -dy;
+    rdy = dx;
+    wRot = dims.h;
+    hRot = dims.w;
+  } else if (rot === 180) {
+    rdx = -dx;
+    rdy = -dy;
+  } else if (rot === 270) {
+    rdx = dy;
+    rdy = -dx;
+    wRot = dims.h;
+    hRot = dims.w;
+  }
+
+  return {
+    x: node.pos.x + rdx + wRot / 2,
+    y: node.pos.y + rdy + hRot / 2,
+  };
+}

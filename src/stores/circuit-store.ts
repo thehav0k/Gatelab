@@ -33,10 +33,12 @@ import { routeAll, type Route } from "@/lib/simulation/router";
 import { placeOnBreadboard, seatOnBoard } from "@/lib/simulation/place";
 import {
   holeKey,
+  isPositiveRail,
   stripOf,
   type BreadboardSpec,
   type HoleRef,
 } from "@/lib/simulation/breadboard";
+import { getIc } from "@/lib/simulation/ic-library";
 import { simStore } from "./sim-store";
 
 /**
@@ -115,6 +117,12 @@ interface CircuitState {
   pendingHole: HoleRef | null;
   cancelWire: () => void;
   deleteWire: (id: WireId) => void;
+  setWireColor: (id: WireId, color?: string) => void;
+  activeWireColor: string | null;
+  setActiveWireColor: (color: string | null) => void;
+  rotateNode: (id: NodeId, delta?: 90 | -90) => void;
+  flipNode: (id: NodeId, axis: "x" | "y") => void;
+  autoWireIcPower: (nodeId: string) => void;
   /**
    * The SCHEMATIC this board was seated from, kept so the view can switch back.
    *
@@ -285,6 +293,7 @@ export const useCircuitStore = create<CircuitState>()(
     schematic: null,
     origin: null,
     gateInputs: 2,
+    activeWireColor: null,
     past: [],
     future: [],
 
@@ -413,7 +422,21 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     clickPin: (ref) => {
-      const { pendingPin, doc } = get();
+      const { pendingPin, pendingHole, doc } = get();
+
+      if (pendingHole) {
+        const id = asWireId(nextId("w"));
+        const wireColor = get().activeWireColor ?? undefined;
+        set({ pendingHole: null, pendingPin: null });
+        commit({
+          ...doc,
+          wires: {
+            ...doc.wires,
+            [id]: { id, a: holeEnd(pendingHole), b: pinEnd(ref), ...(wireColor ? { color: wireColor } : {}) },
+          },
+        });
+        return;
+      }
 
       if (!pendingPin) {
         set({ pendingPin: ref });
@@ -427,15 +450,38 @@ export const useCircuitStore = create<CircuitState>()(
       }
 
       const id = asWireId(nextId("w"));
+      const wireColor = get().activeWireColor ?? undefined;
       set({ pendingPin: null });
       commit({
         ...doc,
-        wires: { ...doc.wires, [id]: { id, a: pinEnd(pendingPin), b: pinEnd(ref) } },
+        wires: {
+          ...doc.wires,
+          [id]: { id, a: pinEnd(pendingPin), b: pinEnd(ref), ...(wireColor ? { color: wireColor } : {}) },
+        },
       });
     },
 
     clickHole: (hole) => {
-      const { pendingHole, doc } = get();
+      const { pendingPin, pendingHole, doc } = get();
+
+      if (pendingPin) {
+        const id = asWireId(nextId("w"));
+        let color: string | undefined = get().activeWireColor ?? undefined;
+        if (isPositiveRail(hole.row)) {
+          color = "#ef4444";
+        } else if (hole.row === "-top" || hole.row === "-bottom") {
+          color = "#3b82f6";
+        }
+        set({ pendingPin: null, pendingHole: null });
+        commit({
+          ...doc,
+          wires: {
+            ...doc.wires,
+            [id]: { id, a: pinEnd(pendingPin), b: holeEnd(hole), ...(color ? { color } : {}) },
+          },
+        });
+        return;
+      }
 
       if (!pendingHole) {
         set({ pendingHole: hole });
@@ -453,11 +499,26 @@ export const useCircuitStore = create<CircuitState>()(
         return;
       }
 
+      let color: string | undefined = get().activeWireColor ?? undefined;
+      if (isPositiveRail(pendingHole.row) || isPositiveRail(hole.row)) {
+        color = "#ef4444";
+      } else if (
+        pendingHole.row === "-top" ||
+        pendingHole.row === "-bottom" ||
+        hole.row === "-top" ||
+        hole.row === "-bottom"
+      ) {
+        color = "#3b82f6";
+      }
+
       const id = asWireId(nextId("w"));
       set({ pendingHole: null });
       commit({
         ...doc,
-        wires: { ...doc.wires, [id]: { id, a: holeEnd(pendingHole), b: holeEnd(hole) } },
+        wires: {
+          ...doc.wires,
+          [id]: { id, a: holeEnd(pendingHole), b: holeEnd(hole), ...(color ? { color } : {}) },
+        },
       });
     },
 
@@ -516,6 +577,82 @@ export const useCircuitStore = create<CircuitState>()(
       const wires = { ...doc.wires };
       delete wires[id];
       commit({ ...doc, wires });
+    },
+
+    setWireColor: (id, color) => {
+      const { doc } = get();
+      const wire = doc.wires[id];
+      if (!wire) return;
+      commit({
+        ...doc,
+        wires: {
+          ...doc.wires,
+          [id]: { ...wire, color },
+        },
+      });
+    },
+
+    setActiveWireColor: (color) => set({ activeWireColor: color }),
+
+    rotateNode: (id, delta = 90) => {
+      const { doc } = get();
+      const node = doc.nodes[id];
+      if (!node) return;
+      const current = node.rotation ?? 0;
+      const next = ((((current + delta) % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+      commit({
+        ...doc,
+        nodes: {
+          ...doc.nodes,
+          [id]: { ...node, rotation: next },
+        },
+      });
+    },
+
+    flipNode: (id, axis) => {
+      const { doc } = get();
+      const node = doc.nodes[id];
+      if (!node) return;
+      const updated =
+        axis === "x"
+          ? { ...node, flipX: !node.flipX }
+          : { ...node, flipY: !node.flipY };
+      commit({
+        ...doc,
+        nodes: {
+          ...doc.nodes,
+          [id]: updated,
+        },
+      });
+    },
+
+    autoWireIcPower: (nodeId) => {
+      const { doc } = get();
+      const node = doc.nodes[nodeId];
+      if (!node || node.kind !== "ic" || !doc.board) return;
+      const def = getIc(node.part);
+      const pinCount = def?.pins.length ?? 14;
+      const col = Math.round(node.pos.x);
+      const span = pinCount / 2;
+
+      // Pin 14 (VCC) is in row F at col. Free row on that strip is row J. Nearest positive rail is +top.
+      // Pin 7 (GND) is in row E at col + span - 1. Free row on that strip is row A. Nearest ground rail is -bottom.
+      const vccHole: HoleRef = { col, row: "J" };
+      const vccRail: HoleRef = { col, row: "+top" };
+      const gndHole: HoleRef = { col: col + span - 1, row: "A" };
+      const gndRail: HoleRef = { col: col + span - 1, row: "-bottom" };
+
+      const w1 = asWireId(nextId("w"));
+      const w2 = asWireId(nextId("w"));
+
+      commit({
+        ...doc,
+        wires: {
+          ...doc.wires,
+          [w1]: { id: w1, a: holeEnd(vccHole), b: holeEnd(vccRail), color: "#ef4444" },
+          [w2]: { id: w2, a: holeEnd(gndHole), b: holeEnd(gndRail), color: "#3b82f6" },
+        },
+      });
     },
 
     load: (doc, origin = null) => {

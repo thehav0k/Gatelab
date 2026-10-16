@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCircuitStore } from "@/stores/circuit-store";
 import {
   logicColor,
@@ -11,7 +11,14 @@ import {
 } from "@/stores/sim-store";
 import { LOGIC_NAMES } from "@/lib/simulation/logic";
 import { GateSymbol } from "./gate-symbol";
-import { GATE_W, IO_H, IO_W, GATE_LABELS, pinsOf } from "@/lib/simulation/parts";
+import {
+  IO_H,
+  IO_W,
+  GATE_LABELS,
+  pinsOf,
+  nodeDimensions,
+  getPinWorldPosition,
+} from "@/lib/simulation/parts";
 import { dipHeight, dipWidth, getIc } from "@/lib/simulation/ic-library";
 import type {
   CircuitNode,
@@ -19,6 +26,7 @@ import type {
   PinRef,
   Point,
   Wire,
+  WireId,
 } from "@/lib/simulation/netlist";
 import { pinKey } from "@/lib/simulation/netlist";
 import { holePoint } from "@/lib/simulation/breadboard";
@@ -31,11 +39,20 @@ import { Maximize2 } from "lucide-react";
 const GRID = 8;
 const snap = (v: number): number => Math.round(v / GRID) * GRID;
 
-/** Absolute canvas position of a pin. */
+const COLOR_SWATCHES = [
+  { label: "Red (+5V)", value: "#ef4444" },
+  { label: "Black (GND)", value: "#1f2937" },
+  { label: "Blue", value: "#3b82f6" },
+  { label: "Green", value: "#10b981" },
+  { label: "Amber", value: "#f59e0b" },
+  { label: "Orange", value: "#f97316" },
+  { label: "Purple", value: "#8b5cf6" },
+  { label: "Cyan", value: "#06b6d4" },
+];
+
+/** Absolute canvas position of a pin taking into account rotation and flip transforms. */
 function pinPos(node: CircuitNode, pin: string): Point {
-  const spec = pinsOf(node).find((p) => p.name === pin);
-  if (!spec) return node.pos;
-  return { x: node.pos.x + spec.offset.x, y: node.pos.y + spec.offset.y };
+  return getPinWorldPosition(node, pin) ?? node.pos;
 }
 
 export function CircuitCanvas() {
@@ -48,15 +65,51 @@ export function CircuitCanvas() {
   const moveNode = useCircuitStore((s) => s.moveNode);
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
   const toggleClock = useCircuitStore((s) => s.toggleClock);
+  const rotateNode = useCircuitStore((s) => s.rotateNode);
+  const flipNode = useCircuitStore((s) => s.flipNode);
+  const deleteSelected = useCircuitStore((s) => s.deleteSelected);
+  const deleteWire = useCircuitStore((s) => s.deleteWire);
+  const setWireColor = useCircuitStore((s) => s.setWireColor);
 
   const [cursor, setCursor] = useState<Point | null>(null);
+  const [selectedWireId, setSelectedWireId] = useState<WireId | null>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+
+      if (selection.length > 0) {
+        const selId = selection[0]!;
+        if (e.key === "r" || e.key === "R") {
+          e.preventDefault();
+          rotateNode(selId, e.shiftKey ? -90 : 90);
+        } else if (e.key === "h" || e.key === "H") {
+          e.preventDefault();
+          flipNode(selId, "x");
+        } else if (e.key === "v" || e.key === "V") {
+          e.preventDefault();
+          flipNode(selId, "y");
+        }
+      }
+      if (selectedWireId && (e.key === "Delete" || e.key === "Backspace")) {
+        deleteWire(selectedWireId);
+        setSelectedWireId(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selection, selectedWireId, rotateNode, flipNode, deleteWire]);
 
   /** Fit the camera to whatever is actually on the canvas. */
   const bounds = useMemo(() => {
     const nodes = Object.values(doc.nodes);
     if (nodes.length === 0) return { x: 0, y: 0, w: 900, h: 560 };
 
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
     for (const n of nodes) {
       const f = footprint(n);
       x0 = Math.min(x0, f.x);
@@ -75,9 +128,7 @@ export function CircuitCanvas() {
 
   /**
    * Drag state lives in a REF, and the node's transform is written straight to
-   * the DOM during the gesture. Writing x/y into the store on every mousemove
-   * would re-render the whole canvas 60 times a second; the store only hears
-   * about it on mouseup.
+   * the DOM during the gesture.
    */
   const drag = useRef<{
     id: NodeId;
@@ -130,86 +181,104 @@ export function CircuitCanvas() {
 
   return (
     <div className="relative h-full w-full">
-    <svg
-      ref={svgRef}
-      viewBox={cam.viewBox}
-      className="bg-card h-full w-full touch-none rounded-md border"
-      onWheel={cam.onWheel}
-      onPointerDown={(e) => {
-        // Dragging empty background pans the camera. Anything else is an edit.
-        if (e.target === svgRef.current || (e.target as Element).id === "grid-bg") {
-          cam.startPan(e.clientX, e.clientY);
-        }
-      }}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerUp}
-      onClick={(e) => {
-        if (e.target === svgRef.current || (e.target as Element).id === "grid-bg") {
-          select([]);
-          cancelWire();
-        }
-      }}
-    >
-      <defs>
-        <pattern id="grid" width={GRID * 4} height={GRID * 4} patternUnits="userSpaceOnUse">
-          <circle cx={0.5} cy={0.5} r={0.5} className="fill-muted-foreground/25" />
-        </pattern>
-      </defs>
-      <rect id="grid-bg" x={-4000} y={-4000} width={9000} height={9000} fill="url(#grid)" />
-
-      {/* Wires first, so nodes sit on top of them. */}
-      {Object.values(doc.wires).map((wire) => (
-        <WireLine key={wire.id} wire={wire} />
-      ))}
-
-      {/* The wire being drawn. */}
-      {pendingPin && cursor && <PendingWire from={pendingPin} to={cursor} />}
-
-      {/* Stable insertion order, deliberately.
-          It is tempting to sort the selected node last so it paints on top (SVG
-          has no z-index). Do NOT: React would then REORDER THE DOM on
-          pointerdown, which breaks the pointerdown -> click sequence, and every
-          switch silently stops toggling. Overlap is handled by spacing new drops
-          apart (palette.tsx) and by letting the user drag nodes. */}
-      {Object.values(doc.nodes).map((node) => (
-        <NodeView
-          key={node.id}
-          node={node}
-          selected={selection.includes(node.id)}
-          pendingPin={pendingPin}
-          onPinClick={clickPin}
-          onSelect={() => select([node.id])}
-          onToggle={() =>
-            node.kind === "clock" ? toggleClock(node.id) : toggleSwitch(node.id)
+      <svg
+        ref={svgRef}
+        viewBox={cam.viewBox}
+        className="bg-card h-full w-full touch-none rounded-md border"
+        onWheel={cam.onWheel}
+        onPointerDown={(e) => {
+          if (e.target === svgRef.current || (e.target as Element).id === "grid-bg") {
+            cam.startPan(e.clientX, e.clientY);
           }
-          onDragStart={(el, e) => {
-            drag.current = {
-              id: node.id,
-              el,
-              start: toCanvas(e),
-              origin: node.pos,
-              moved: false,
-            };
-          }}
-        />
-      ))}
-    </svg>
-
-    <div className="no-print absolute right-2 bottom-2 flex items-center gap-1">
-      <span className="text-muted-foreground bg-card/80 rounded px-1.5 py-0.5 font-mono text-[10px]">
-        {Math.round(cam.zoom * 100)}%
-      </span>
-      <Button
-        variant="outline"
-        size="icon"
-        className="size-7"
-        onClick={cam.reset}
-        title="Fit to circuit"
+        }}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerLeave={onPointerUp}
+        onClick={(e) => {
+          if (e.target === svgRef.current || (e.target as Element).id === "grid-bg") {
+            select([]);
+            setSelectedWireId(null);
+            cancelWire();
+          }
+        }}
       >
-        <Maximize2 className="size-3.5" />
-      </Button>
-    </div>
+        <defs>
+          <pattern id="grid" width={GRID * 4} height={GRID * 4} patternUnits="userSpaceOnUse">
+            <circle cx={0.5} cy={0.5} r={0.5} className="fill-muted-foreground/25" />
+          </pattern>
+        </defs>
+        <rect id="grid-bg" x={-4000} y={-4000} width={9000} height={9000} fill="url(#grid)" />
+
+        {/* Wires first, so nodes sit on top of them. */}
+        {Object.values(doc.wires).map((wire) => (
+          <WireLine
+            key={wire.id}
+            wire={wire}
+            isSelected={selectedWireId === wire.id}
+            onSelect={() => {
+              select([]);
+              setSelectedWireId((curr) => (curr === wire.id ? null : wire.id));
+            }}
+            onDelete={() => {
+              deleteWire(wire.id);
+              setSelectedWireId(null);
+            }}
+            onColorChange={(color) => {
+              setWireColor(wire.id, color);
+            }}
+          />
+        ))}
+
+        {/* The wire being drawn. */}
+        {pendingPin && cursor && <PendingWire from={pendingPin} to={cursor} />}
+
+        {/* Transformed Nodes with Action Pill on Selection */}
+        {Object.values(doc.nodes).map((node) => (
+          <NodeView
+            key={node.id}
+            node={node}
+            selected={selection.includes(node.id)}
+            pendingPin={pendingPin}
+            onPinClick={clickPin}
+            onSelect={() => {
+              setSelectedWireId(null);
+              select([node.id]);
+            }}
+            onToggle={() =>
+              node.kind === "clock" ? toggleClock(node.id) : toggleSwitch(node.id)
+            }
+            onRotateCw={() => rotateNode(node.id, 90)}
+            onRotateCcw={() => rotateNode(node.id, -90)}
+            onFlipH={() => flipNode(node.id, "x")}
+            onFlipV={() => flipNode(node.id, "y")}
+            onDelete={() => deleteSelected()}
+            onDragStart={(el, e) => {
+              drag.current = {
+                id: node.id,
+                el,
+                start: toCanvas(e),
+                origin: node.pos,
+                moved: false,
+              };
+            }}
+          />
+        ))}
+      </svg>
+
+      <div className="no-print absolute right-2 bottom-2 flex items-center gap-1">
+        <span className="text-muted-foreground bg-card/80 rounded px-1.5 py-0.5 font-mono text-[10px]">
+          {Math.round(cam.zoom * 100)}%
+        </span>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-7"
+          onClick={cam.reset}
+          title="Fit to circuit"
+        >
+          <Maximize2 className="size-3.5" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -252,12 +321,21 @@ function orthPath(points: readonly Point[]): string {
   return `${d} L ${last.x} ${last.y}`;
 }
 
-function WireLine({ wire }: { wire: Wire }) {
+function WireLine({
+  wire,
+  isSelected,
+  onSelect,
+  onDelete,
+  onColorChange,
+}: {
+  wire: Wire;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onColorChange: (color?: string) => void;
+}) {
   const doc = useCircuitStore((s) => s.doc);
-  const deleteWire = useCircuitStore((s) => s.deleteWire);
   const route = useCircuitStore((s) => s.routes.get(wire.id));
-  // Subscribes to THIS wire's net only. A switch flip re-renders just the wires
-  // whose own value changed, not all of them.
   const value = useEndpointValue(wire.a);
   const ordinal = useNetOrdinal(wire.a);
 
@@ -271,28 +349,37 @@ function WireLine({ wire }: { wire: Wire }) {
   const b = endpointPos(wire.b);
   if (!a || !b) return null;
 
-  // A route is cosmetic (see router.ts). When there is none, the wire still
-  // exists and still conducts — we just draw it as a dashed straight air-wire and
-  // say so, rather than pretending it isn't there.
   const unrouted = !route;
   const d = route ? orthPath(route) : `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
 
-  // Colour by NET, not by logic level — see wirePaint(). A LOW wire used to be
-  // dark slate on a dark canvas and simply disappeared.
   const paint = wirePaint(value, ordinal);
+  const color = wire.color || paint.color;
+
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
 
   return (
     <g className="group">
-      {/* The glow is a thick translucent halo UNDER a bright core — not an SVG
-          filter. Sixty simultaneous feGaussianBlurs would tank the frame rate. */}
-      {paint.glow && !unrouted && (
-        <path d={d} fill="none" stroke={paint.color} strokeWidth={7} opacity={0.28} />
+      {/* Selection halo */}
+      {isSelected && (
+        <path
+          d={d}
+          fill="none"
+          stroke="var(--color-primary, #38bdf8)"
+          strokeWidth={7}
+          opacity={0.4}
+          strokeDasharray="6 4"
+        />
+      )}
+
+      {paint.glow && !unrouted && !isSelected && (
+        <path d={d} fill="none" stroke={color} strokeWidth={7} opacity={0.28} />
       )}
       <path
         d={d}
         fill="none"
-        stroke={paint.color}
-        strokeWidth={paint.glow ? 2.4 : 2}
+        stroke={color}
+        strokeWidth={isSelected ? 3 : paint.glow ? 2.4 : 2}
         strokeLinejoin="round"
         strokeLinecap="round"
         strokeDasharray={unrouted ? "5 4" : paint.dashed ? "6 3" : undefined}
@@ -303,19 +390,81 @@ function WireLine({ wire }: { wire: Wire }) {
         d={d}
         fill="none"
         stroke="transparent"
-        strokeWidth={12}
+        strokeWidth={14}
         className="cursor-pointer"
         onClick={(e) => {
           e.stopPropagation();
-          deleteWire(wire.id);
+          if (e.altKey) {
+            onDelete();
+          } else {
+            onSelect();
+          }
         }}
       >
-        <title>
-          {unrouted
-            ? "No clean route — connected, but drawn straight. Click to delete."
-            : "Click to delete this wire"}
-        </title>
+        <title>Click to select wire · Alt+Click to delete</title>
       </path>
+
+      {/* Floating Action Pill on Selected Wire */}
+      {isSelected && (
+        <g
+          transform={`translate(${mx - 74}, ${Math.max(10, my - 28)})`}
+          className="cursor-default pointer-events-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <rect
+            width={148}
+            height={26}
+            rx={5}
+            className="fill-card/95 stroke-border"
+            strokeWidth={1}
+            filter="drop-shadow(0 4px 6px rgba(0,0,0,0.35))"
+          />
+
+          <circle cx={11} cy={13} r={4} fill={logicColor(value)} />
+          <text
+            x={19}
+            y={16.5}
+            fill={logicColor(value)}
+            className="font-mono text-[9px] font-bold"
+          >
+            {value === 1 ? "1" : value === 0 ? "0" : value === 2 ? "Z" : "X"}
+          </text>
+
+          {COLOR_SWATCHES.map((swatch, idx) => (
+            <circle
+              key={swatch.value}
+              cx={40 + idx * 11}
+              cy={13}
+              r={4}
+              fill={swatch.value}
+              className="cursor-pointer hover:stroke-foreground hover:stroke-1"
+              onClick={() => onColorChange(swatch.value)}
+            >
+              <title>{swatch.label}</title>
+            </circle>
+          ))}
+
+          <g className="cursor-pointer group/del" onClick={onDelete}>
+            <rect
+              x={125}
+              y={4}
+              width={18}
+              height={18}
+              rx={3}
+              className="fill-destructive/80 group-hover/del:fill-destructive"
+            />
+            <text
+              x={134}
+              y={16.5}
+              textAnchor="middle"
+              fill="#ffffff"
+              className="font-bold text-[11px] pointer-events-none"
+            >
+              ×
+            </text>
+          </g>
+        </g>
+      )}
     </g>
   );
 }
@@ -342,6 +491,140 @@ function PendingWire({ from, to }: { from: PinRef; to: Point }) {
 // Nodes
 // ---------------------------------------------------------------------------
 
+function NodeActionPill({
+  wRot,
+  onRotateCw,
+  onRotateCcw,
+  onFlipH,
+  onFlipV,
+  onDelete,
+}: {
+  wRot: number;
+  onRotateCw: () => void;
+  onRotateCcw: () => void;
+  onFlipH: () => void;
+  onFlipV: () => void;
+  onDelete: () => void;
+}) {
+  const pillW = 120;
+  const pillH = 26;
+  const pillX = wRot / 2 - pillW / 2;
+  const pillY = -34;
+
+  return (
+    <g
+      transform={`translate(${pillX}, ${pillY})`}
+      className="cursor-default pointer-events-auto"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <rect
+        width={pillW}
+        height={pillH}
+        rx={5}
+        className="fill-card/95 stroke-border"
+        strokeWidth={1}
+        filter="drop-shadow(0 3px 5px rgba(0,0,0,0.3))"
+      />
+      {/* Rotate CW */}
+      <g
+        className="cursor-pointer hover:opacity-80"
+        onClick={onRotateCw}
+        transform="translate(8, 5)"
+      >
+        <rect width={16} height={16} rx={3} fill="transparent" />
+        <path
+          d="M 12 3 A 5 5 0 1 0 13 8 M 13 3 L 13 6 L 10 6"
+          fill="none"
+          stroke="var(--color-primary, #38bdf8)"
+          strokeWidth={1.4}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <title>Rotate 90° CW (R)</title>
+      </g>
+
+      {/* Rotate CCW */}
+      <g
+        className="cursor-pointer hover:opacity-80"
+        onClick={onRotateCcw}
+        transform="translate(32, 5)"
+      >
+        <rect width={16} height={16} rx={3} fill="transparent" />
+        <path
+          d="M 4 3 A 5 5 0 1 1 3 8 M 3 3 L 3 6 L 6 6"
+          fill="none"
+          stroke="var(--color-primary, #38bdf8)"
+          strokeWidth={1.4}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <title>Rotate 90° CCW (Shift+R)</title>
+      </g>
+
+      {/* Flip H */}
+      <g
+        className="cursor-pointer hover:opacity-80"
+        onClick={onFlipH}
+        transform="translate(56, 5)"
+      >
+        <rect width={16} height={16} rx={3} fill="transparent" />
+        <path
+          d="M 8 2 L 8 14 M 2 8 L 6 5 L 6 11 Z M 14 8 L 10 5 L 10 11 Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <title>Flip Horizontal (H)</title>
+      </g>
+
+      {/* Flip V */}
+      <g
+        className="cursor-pointer hover:opacity-80"
+        onClick={onFlipV}
+        transform="translate(78, 5)"
+      >
+        <rect width={16} height={16} rx={3} fill="transparent" />
+        <path
+          d="M 2 8 L 14 8 M 8 2 L 5 6 L 11 6 Z M 8 14 L 5 10 L 11 10 Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <title>Flip Vertical (V)</title>
+      </g>
+
+      {/* Delete */}
+      <g
+        className="cursor-pointer group/del"
+        onClick={onDelete}
+        transform="translate(100, 4)"
+      >
+        <rect
+          width={18}
+          height={18}
+          rx={3}
+          className="fill-destructive/80 group-hover/del:fill-destructive"
+        />
+        <text
+          x={9}
+          y={13}
+          textAnchor="middle"
+          fill="#ffffff"
+          className="font-bold text-[11px] pointer-events-none"
+        >
+          ×
+        </text>
+        <title>Delete component (Del)</title>
+      </g>
+    </g>
+  );
+}
+
 interface NodeViewProps {
   node: CircuitNode;
   selected: boolean;
@@ -349,6 +632,11 @@ interface NodeViewProps {
   onPinClick: (ref: PinRef) => void;
   onSelect: () => void;
   onToggle: () => void;
+  onRotateCw: () => void;
+  onRotateCcw: () => void;
+  onFlipH: () => void;
+  onFlipV: () => void;
+  onDelete: () => void;
   onDragStart: (el: SVGGElement, e: React.PointerEvent) => void;
 }
 
@@ -359,10 +647,28 @@ function NodeView({
   onPinClick,
   onSelect,
   onToggle,
+  onRotateCw,
+  onRotateCcw,
+  onFlipH,
+  onFlipV,
+  onDelete,
   onDragStart,
 }: NodeViewProps) {
   const ref = useRef<SVGGElement>(null);
   const pins = pinsOf(node);
+
+  const dims = nodeDimensions(node);
+  const rot = node.rotation ?? 0;
+  const fx = node.flipX ?? false;
+  const fy = node.flipY ?? false;
+  const isPerp = rot === 90 || rot === 270;
+  const wRot = isPerp ? dims.h : dims.w;
+  const hRot = isPerp ? dims.w : dims.h;
+
+  const bodyTransform =
+    rot === 0 && !fx && !fy
+      ? undefined
+      : `translate(${wRot / 2} ${hRot / 2}) rotate(${rot}) scale(${fx ? -1 : 1} ${fy ? -1 : 1}) translate(${-dims.w / 2} ${-dims.h / 2})`;
 
   return (
     <g
@@ -377,26 +683,61 @@ function NodeView({
         if (ref.current) onDragStart(ref.current, e);
       }}
     >
-      {node.kind === "gate" && (
-        <GateSymbol
-          op={node.op}
-          className={cn(
-            "fill-card stroke-foreground/70",
-            selected && "stroke-ring stroke-2",
-          )}
+      {/* Selection Border */}
+      {selected && (
+        <rect
+          x={-4}
+          y={-4}
+          width={wRot + 8}
+          height={hRot + 8}
+          rx={6}
+          fill="none"
+          stroke="var(--color-primary, #38bdf8)"
+          strokeWidth={1.5}
+          strokeDasharray="4 3"
+          className="pointer-events-none"
         />
       )}
 
-      {node.kind === "switch" && <SwitchBody node={node} selected={selected} onToggle={onToggle} />}
-      {node.kind === "clock" && <ClockBody node={node} selected={selected} onToggle={onToggle} />}
-      {node.kind === "led" && <LedBody node={node} selected={selected} />}
-      {node.kind === "rail" && <RailBody node={node} selected={selected} />}
-      {node.kind === "ic" && <IcBody node={node} selected={selected} />}
+      {/* Floating Action Pill */}
+      {selected && (
+        <NodeActionPill
+          wRot={wRot}
+          onRotateCw={onRotateCw}
+          onRotateCcw={onRotateCcw}
+          onFlipH={onFlipH}
+          onFlipV={onFlipV}
+          onDelete={onDelete}
+        />
+      )}
 
-      {/* Label */}
+      {/* Rotated & Flipped Component Body */}
+      <g transform={bodyTransform}>
+        {node.kind === "gate" && (
+          <GateSymbol
+            op={node.op}
+            className={cn(
+              "fill-card stroke-foreground/70",
+              selected && "stroke-ring stroke-2",
+            )}
+          />
+        )}
+
+        {node.kind === "switch" && (
+          <SwitchBody node={node} selected={selected} onToggle={onToggle} />
+        )}
+        {node.kind === "clock" && (
+          <ClockBody node={node} selected={selected} onToggle={onToggle} />
+        )}
+        {node.kind === "led" && <LedBody node={node} selected={selected} />}
+        {node.kind === "rail" && <RailBody node={node} selected={selected} />}
+        {node.kind === "ic" && <IcBody node={node} selected={selected} />}
+      </g>
+
+      {/* Upright Label */}
       {node.kind === "gate" && (
         <text
-          x={GATE_W / 2}
+          x={wRot / 2}
           y={-6}
           textAnchor="middle"
           className="fill-muted-foreground pointer-events-none font-mono text-[10px]"
@@ -405,20 +746,31 @@ function NodeView({
         </text>
       )}
 
-      {pins.map((spec) => (
-        <Pin
-          key={spec.name}
-          node={node}
-          name={spec.name}
-          at={spec.offset}
-          armed={pendingPin !== null}
-          isPending={
-            pendingPin !== null &&
-            pinKey(pendingPin) === pinKey({ node: node.id, pin: spec.name })
-          }
-          onClick={() => onPinClick({ node: node.id, pin: spec.name })}
-        />
-      ))}
+      {/* Transformed Pins with Pin-Accurate World Coordinates */}
+      {pins.map((spec) => {
+        const pinWorld = getPinWorldPosition(node, spec.name) ?? {
+          x: node.pos.x + spec.offset.x,
+          y: node.pos.y + spec.offset.y,
+        };
+        const localAt = {
+          x: pinWorld.x - node.pos.x,
+          y: pinWorld.y - node.pos.y,
+        };
+        return (
+          <Pin
+            key={spec.name}
+            node={node}
+            name={spec.name}
+            at={localAt}
+            armed={pendingPin !== null}
+            isPending={
+              pendingPin !== null &&
+              pinKey(pendingPin) === pinKey({ node: node.id, pin: spec.name })
+            }
+            onClick={() => onPinClick({ node: node.id, pin: spec.name })}
+          />
+        );
+      })}
     </g>
   );
 }

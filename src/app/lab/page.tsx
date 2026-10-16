@@ -34,6 +34,18 @@ import {
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useExpected } from "@/stores/spec-store";
 import { useIsCompact } from "@/hooks/use-media-query";
+import { cn } from "@/lib/utils";
+
+const WIRE_COLORS = [
+  { label: "Red (+5V)", value: "#ef4444" },
+  { label: "Black (GND)", value: "#1f2937" },
+  { label: "Blue", value: "#3b82f6" },
+  { label: "Green", value: "#10b981" },
+  { label: "Amber", value: "#f59e0b" },
+  { label: "Orange", value: "#f97316" },
+  { label: "Purple", value: "#8b5cf6" },
+  { label: "Cyan", value: "#06b6d4" },
+];
 
 export default function LabPage() {
   const undo = useCircuitStore((s) => s.undo);
@@ -44,6 +56,8 @@ export default function LabPage() {
   const canRedo = useCircuitStore((s) => s.future.length > 0);
   const pendingPin = useCircuitStore((s) => s.pendingPin);
   const pendingHole = useCircuitStore((s) => s.pendingHole);
+  const activeWireColor = useCircuitStore((s) => s.activeWireColor);
+  const setActiveWireColor = useCircuitStore((s) => s.setActiveWireColor);
   const errorCount = useCircuitStore(
     (s) => s.diagnostics.filter((d) => d.severity === "error").length,
   );
@@ -54,26 +68,18 @@ export default function LabPage() {
   const toSchematic = useCircuitStore((s) => s.toSchematic);
   const hasSchematic = useCircuitStore((s) => s.schematic !== null);
   const hasNodes = useCircuitStore((s) => Object.keys(s.doc.nodes).length > 0);
-  // A clocked circuit gets a different chart, so the label has to say so —
-  // "Gray-code sweep" over a counter's waveform would be describing the wrong
-  // thing entirely.
   const hasFlops = useCircuitStore((s) =>
     Object.values(s.doc.nodes).some((n) => n.kind === "clock") ||
     Object.keys(s.flopState).length > 0,
   );
 
   const compact = useIsCompact();
-  /**
-   * `null` means "nobody has chosen yet", which is NOT the same as "closed" —
-   * the default differs by screen. On a phone the waveform would eat a third of
-   * the canvas, and the canvas is the only thing that actually needs the room.
-   * Once the user touches it, their choice wins on both.
-   */
   const [timingChoice, setTimingChoice] = useState<boolean | null>(null);
   const showTiming = timingChoice ?? !compact;
 
-  // The mobile Parts sheet is controlled so it can close itself after a placement.
   const [partsOpen, setPartsOpen] = useState(false);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -82,6 +88,12 @@ export default function LabPage() {
 
       if (e.key === "Backspace" || e.key === "Delete") deleteSelected();
       if (e.key === "Escape") useCircuitStore.getState().cancelWire();
+      if (e.key === "[" || e.key.toLowerCase() === "b") {
+        setLeftSidebarOpen((v) => !v);
+      }
+      if (e.key === "]") {
+        setRightSidebarOpen((v) => !v);
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -97,7 +109,7 @@ export default function LabPage() {
     : pendingPin
       ? "Now click a second pin to complete the wire — or press Escape."
       : onBoard
-        ? "Click a hole, then another, to lay a jumper. Hover any hole to see the whole strip it shorts to."
+        ? "Click a hole, then another, to lay a jumper. Click a wire to select it (Alt+Click or Del to delete). Hover any hole to probe."
         : "Click a pin, then another, to wire them. Click a switch to toggle it; click a wire to delete it.";
 
   /**
@@ -197,9 +209,9 @@ export default function LabPage() {
   );
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-[1800px] flex-col px-3 py-3 sm:px-4 sm:py-4">
+    <div className="flex h-[calc(100dvh-3.5rem)] w-full overflow-hidden flex-col px-2 py-2 sm:px-3 sm:py-2.5 bg-background">
       {/* --- toolbar --------------------------------------------------------- */}
-      <header className="mb-3 flex flex-wrap items-center gap-2 sm:gap-3">
+      <header className="mb-2 flex flex-wrap items-center gap-2 sm:gap-2.5">
         <div className="min-w-0 flex-1 lg:flex-initial">
           <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
             Practical Lab
@@ -211,6 +223,51 @@ export default function LabPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 lg:ml-auto">
+          {/* Desktop Left Sidebar Toggle */}
+          <Button
+            variant={leftSidebarOpen ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setLeftSidebarOpen((v) => !v)}
+            title="Toggle Parts Sidebar (B or [)"
+            className="hidden lg:flex gap-1.5 h-8 text-xs"
+          >
+            <Boxes className="size-3.5" />
+            <span className="hidden xl:inline">Parts</span>
+            <kbd className="text-[10px] opacity-60 font-mono">[</kbd>
+          </Button>
+
+          {/* Wire Color Pre-Selection Swatches */}
+          <div className="hidden xl:flex items-center gap-1 px-2 py-1 rounded-md border bg-card/60 shadow-xs h-8">
+            <span className="text-[11px] text-muted-foreground mr-0.5 font-medium">Wire:</span>
+            <button
+              type="button"
+              onClick={() => setActiveWireColor(null)}
+              title="Automatic Wire Color"
+              className={cn(
+                "px-1.5 py-0.5 text-[10px] rounded font-mono font-medium transition-colors",
+                activeWireColor === null
+                  ? "bg-primary text-primary-foreground font-semibold"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Auto
+            </button>
+            {WIRE_COLORS.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                onClick={() => setActiveWireColor(c.value)}
+                title={c.label}
+                style={{ backgroundColor: c.value }}
+                className={cn(
+                  "size-3.5 rounded-full transition-all border border-background/50 hover:scale-125 cursor-pointer",
+                  activeWireColor === c.value &&
+                    "ring-2 ring-foreground ring-offset-1 ring-offset-background scale-110",
+                )}
+              />
+            ))}
+          </div>
+
           {/* --- the two side panels, as sheets, below lg --- */}
           <Sheet open={partsOpen} onOpenChange={setPartsOpen}>
             <SheetTrigger asChild>
@@ -223,9 +280,6 @@ export default function LabPage() {
                 <SheetTitle>Parts</SheetTitle>
               </SheetHeader>
               <ScrollArea className="h-full">
-                {/* On a phone the sheet covers the canvas, so drop it the instant a
-                    part is placed — otherwise you tap a gate and cannot see where it
-                    landed. On desktop the palette is a column and never closes. */}
                 <Palette onPlace={() => setPartsOpen(false)} />
               </ScrollArea>
             </SheetContent>
@@ -251,6 +305,24 @@ export default function LabPage() {
             </SheetContent>
           </Sheet>
 
+          {/* Desktop Right Inspector Toggle */}
+          <Button
+            variant={rightSidebarOpen ? "secondary" : "outline"}
+            size="sm"
+            onClick={() => setRightSidebarOpen((v) => !v)}
+            title="Toggle Faults & Verification Inspector (])"
+            className="hidden lg:flex gap-1.5 h-8 text-xs"
+          >
+            <Stethoscope className="size-3.5" />
+            <span className="hidden xl:inline">Inspect</span>
+            {errorCount > 0 && (
+              <Badge variant="destructive" className="ml-0.5 px-1.5 text-[10px]">
+                {errorCount}
+              </Badge>
+            )}
+            <kbd className="text-[10px] opacity-60 font-mono">]</kbd>
+          </Button>
+
           <ToggleGroup
             type="single"
             size="sm"
@@ -258,10 +330,16 @@ export default function LabPage() {
             value={onBoard ? "board" : "schematic"}
             onValueChange={switchView}
           >
-            <ToggleGroupItem value="schematic" disabled={onBoard && !hasSchematic}>
+            <ToggleGroupItem
+              id="toggle-schematic"
+              value="schematic"
+              disabled={onBoard && !hasSchematic}
+            >
               Schematic
             </ToggleGroupItem>
-            <ToggleGroupItem value="board">Breadboard</ToggleGroupItem>
+            <ToggleGroupItem id="toggle-breadboard" value="board">
+              Breadboard
+            </ToggleGroupItem>
           </ToggleGroup>
 
           <ConstraintMenu />
@@ -290,54 +368,41 @@ export default function LabPage() {
         </div>
       </header>
 
-      {/* --- workspace: fills the viewport, no page scroll -------------------- */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[180px_1fr_340px]">
-        <Card className="hidden min-h-0 overflow-hidden py-0 lg:block">
-          <ScrollArea className="h-full">
-            <Palette />
-          </ScrollArea>
-        </Card>
+      {/* --- workspace: full-viewport with collapsible sidebars -------------------- */}
+      <div className="flex min-h-0 flex-1 gap-2.5 overflow-hidden">
+        {leftSidebarOpen && (
+          <Card className="hidden min-h-0 w-[210px] shrink-0 overflow-hidden py-0 lg:block shadow-xs">
+            <ScrollArea className="h-full">
+              <Palette />
+            </ScrollArea>
+          </Card>
+        )}
 
-        {/*
-          `min-w-0` is load-bearing, not tidiness. A grid track's automatic
-          minimum is its content's minimum, so ONE wide child — a 79,000px
-          waveform for a nine-input adder — widened the whole `1fr` track, threw
-          the fault panel off the side of the window and stretched the schematic
-          until its contents were somewhere off-screen. With it, a child that
-          overflows scrolls inside its own box, which is what its
-          `overflow-x-auto` was always for.
-        */}
-        <div className="flex min-h-0 min-w-0 flex-col gap-3">
-          {/* The canvas takes ALL the room left over. It used to be pinned to a
-              fixed min-height, which meant a big board was squeezed into a letterbox
-              while the page grew a scrollbar underneath it. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
           <div className="min-h-0 flex-1">
             {onBoard ? <BreadboardView /> : <CircuitCanvas />}
           </div>
 
-          {/* Renders nothing at all unless the circuit has something clocked
-              in it — a row of clock controls above a board of AND gates is a
-              control panel for a thing that is not there. */}
           <ClockPanel />
 
-          <Card className="shrink-0 overflow-hidden py-0">
+          <Card className="shrink-0 overflow-hidden py-0 shadow-xs">
             <button
               type="button"
               onClick={() => setTimingChoice(!showTiming)}
-              className="hover:bg-accent/50 flex w-full items-center gap-2 px-4 py-2 text-left"
+              className="hover:bg-accent/50 flex w-full items-center gap-2 px-3 py-1.5 text-left cursor-pointer"
             >
-              <span className="text-sm font-medium">Timing</span>
-              <span className="text-muted-foreground hidden text-xs sm:inline">
+              <span className="text-xs font-medium">Timing</span>
+              <span className="text-muted-foreground hidden text-[11px] sm:inline">
                 {hasFlops ? "clock-driven" : "unit-delay, Gray-code sweep"}
               </span>
-              <span className="text-muted-foreground ml-auto text-xs">
+              <span className="text-muted-foreground ml-auto text-[11px]">
                 {showTiming ? "hide" : "show"}
               </span>
             </button>
             {showTiming && (
               <>
                 <Separator />
-                <CardContent className="max-h-[180px] overflow-auto px-0 sm:max-h-[260px]">
+                <CardContent className="max-h-[160px] overflow-auto px-0 sm:max-h-[220px]">
                   <WaveformPanel />
                 </CardContent>
               </>
@@ -345,7 +410,11 @@ export default function LabPage() {
           </Card>
         </div>
 
-        <Card className="hidden min-h-0 overflow-hidden py-0 lg:block">{inspector}</Card>
+        {rightSidebarOpen && (
+          <Card className="hidden min-h-0 w-[340px] shrink-0 overflow-hidden py-0 lg:block shadow-xs">
+            {inspector}
+          </Card>
+        )}
       </div>
     </div>
   );

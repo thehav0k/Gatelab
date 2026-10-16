@@ -12,7 +12,7 @@ import {
   type OccupancyGrid,
 } from "./router";
 import { elaborate } from "./elaborate";
-import { buildNetIndex, endpointKey, type CircuitDocument, type Point, type Wire } from "./netlist";
+import { buildNetIndex, endpointKey, type CircuitDocument, type NodeId, type Point, type Wire } from "./netlist";
 import { pinsOf } from "./parts";
 import { circuit } from "./testing/build";
 import { realize, synthesize, technologyMap } from "./synth";
@@ -280,5 +280,37 @@ describe("routeAll — on real boards", () => {
     // Either it routes or it does not — but the wire must appear in the map
     // either way, so the UI can fall back to an air-wire.
     expect(result.paths.has("w1")).toBe(true);
+  });
+
+  it("swaps footprint dimensions on 90 and 270 degree rotations", () => {
+    const unrotated = { id: "g1" as NodeId, kind: "gate" as const, op: "and" as const, label: "AND", pos: { x: 100, y: 100 }, inputs: ["A", "B"], arity: 2 };
+    const fp0 = footprint(unrotated);
+    expect(fp0.w).toBe(64);
+    expect(fp0.h).toBe(48);
+
+    const rot90 = { ...unrotated, rotation: 90 as const };
+    const fp90 = footprint(rot90);
+    expect(fp90.w).toBe(48);
+    expect(fp90.h).toBe(64);
+
+    const rot180 = { ...unrotated, rotation: 180 as const };
+    const fp180 = footprint(rot180);
+    expect(fp180.w).toBe(64);
+    expect(fp180.h).toBe(48);
+
+    const rot270 = { ...unrotated, rotation: 270 as const };
+    const fp270 = footprint(rot270);
+    expect(fp270.w).toBe(48);
+    expect(fp270.h).toBe(64);
+  });
+
+  it("calculates transformed pin world positions correctly", () => {
+    const node = { id: "g1" as NodeId, kind: "gate" as const, op: "and" as const, label: "AND", pos: { x: 100, y: 100 }, inputs: ["A", "B"], arity: 2 };
+    const p0 = pinPoint(node, "Y");
+    expect(p0).toEqual({ x: 164, y: 124 });
+
+    const rot180 = { ...node, rotation: 180 as const };
+    const p180 = pinPoint(rot180, "Y");
+    expect(p180).toEqual({ x: 100, y: 124 });
   });
 });
