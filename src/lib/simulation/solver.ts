@@ -422,6 +422,8 @@ function settle(
     cellOut,
     shorted,
     Math.max(1, period),
+    flopDrivers,
+    flopOut,
   );
 
   return {
@@ -445,12 +447,17 @@ function collapseOscillation(
   cellOut: Uint8Array,
   shorted: ReadonlySet<number>,
   period: number,
+  flopDrivers: readonly (readonly number[] | undefined)[] = [],
+  flopOut: Uint8Array = new Uint8Array(),
 ): { values: Uint8Array; oscillating: number[] } {
   const resolve = (net: number, outs: Uint8Array): Logic => {
     if (shorted.has(net)) return LX;
     const drivers: Driver[] = [...(staticDrivers[net] as Driver[])];
     for (const cellId of cellsDriving(nl, net)) {
       drivers.push({ value: outs[cellId] as Logic, strength: "strong" });
+    }
+    for (const slot of flopDrivers[net] ?? []) {
+      drivers.push({ value: flopOut[slot] as Logic, strength: "strong" });
     }
     return resolveNet(drivers);
   };

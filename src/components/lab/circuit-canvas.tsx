@@ -716,6 +716,7 @@ function NodeView({
         {node.kind === "gate" && (
           <GateSymbol
             op={node.op}
+            arity={node.arity}
             className={cn(
               "fill-card stroke-foreground/70",
               selected && "stroke-ring stroke-2",

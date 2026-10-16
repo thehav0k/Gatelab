@@ -152,10 +152,89 @@ export function useViewBox(
     [svgRef],
   );
 
+  const zoomBy = useCallback(
+    (factor: number) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const current = nw / view.w;
+      const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, current * factor));
+      if (next === current) return;
+
+      const w = nw / next;
+      const h = nh / next;
+      const cx = view.x + view.w / 2;
+      const cy = view.y + view.h / 2;
+
+      touched.current = true;
+      setView({ x: cx - w / 2, y: cy - h / 2, w, h });
+    },
+    [nw, nh, view, svgRef],
+  );
+
+  const zoomIn = useCallback(() => zoomBy(1.25), [zoomBy]);
+  const zoomOut = useCallback(() => zoomBy(1 / 1.25), [zoomBy]);
+
+  const activePointers = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchStartDist = useRef<number | null>(null);
+  const pinchStartView = useRef<ViewBox | null>(null);
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (activePointers.current.size === 2) {
+        const pts = Array.from(activePointers.current.values());
+        pinchStartDist.current = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
+        pinchStartView.current = { ...view };
+      }
+    },
+    [view],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent): boolean => {
+      if (!activePointers.current.has(e.pointerId)) return false;
+      activePointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (activePointers.current.size === 2 && pinchStartDist.current && pinchStartView.current) {
+        const pts = Array.from(activePointers.current.values());
+        const currentDist = Math.hypot(pts[0]!.x - pts[1]!.x, pts[0]!.y - pts[1]!.y);
+        if (currentDist > 0 && pinchStartDist.current > 0) {
+          const ratio = currentDist / pinchStartDist.current;
+          const currentZoom = nw / pinchStartView.current.w;
+          const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, currentZoom * ratio));
+          const w = nw / nextZoom;
+          const h = nh / nextZoom;
+          const cx = (pts[0]!.x + pts[1]!.x) / 2;
+          const cy = (pts[0]!.y + pts[1]!.y) / 2;
+          const p = toView(cx, cy);
+          const svg = svgRef.current;
+          if (svg) {
+            const r = svg.getBoundingClientRect();
+            const fx = (cx - r.left) / r.width;
+            const fy = (cy - r.top) / r.height;
+            touched.current = true;
+            setView({ x: p.x - fx * w, y: p.y - fy * h, w, h });
+            return true;
+          }
+        }
+      }
+      return false;
+    },
+    [nw, nh, toView, svgRef],
+  );
+
   const endPan = useCallback((): boolean => {
     const was = pan.current !== null;
     pan.current = null;
     return was;
+  }, []);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    activePointers.current.delete(e.pointerId);
+    if (activePointers.current.size < 2) {
+      pinchStartDist.current = null;
+      pinchStartView.current = null;
+    }
   }, []);
 
   return {
@@ -167,6 +246,11 @@ export function useViewBox(
     startPan,
     movePan,
     endPan,
+    zoomIn,
+    zoomOut,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
     isPanning: () => pan.current !== null,
   };
 }

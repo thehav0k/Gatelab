@@ -21,10 +21,14 @@ const BUBBLE_R = 5;
 
 interface Props {
   op: GateOp;
+  arity?: number;
   className?: string;
+  cx?: number;
+  cy?: number;
+  outColor?: string;
 }
 
-export function GateSymbol({ op, className }: Props) {
+export function GateSymbol({ op, arity, className }: Props) {
   const inverted = op === "nand" || op === "nor" || op === "xnor" || op === "not";
   const shape =
     op === "and" || op === "nand"
@@ -36,6 +40,8 @@ export function GateSymbol({ op, className }: Props) {
   const bubbleX =
     shape === "and" ? GATE_W : shape === "or" ? GATE_W : GATE_W * 0.72;
 
+  const arityCount = arity && arity >= 2 ? arity : 2;
+
   return (
     <g className={className}>
       {shape === "and" && <path d={AND_BODY} />}
@@ -43,6 +49,27 @@ export function GateSymbol({ op, className }: Props) {
       {shape === "not" && <path d={NOT_BODY} />}
 
       {(op === "xor" || op === "xnor") && <path d={XOR_ARC} fill="none" />}
+
+      {/* Input lead stubs for curved-back gates (OR, NOR, XOR, XNOR) so wires meet the body */}
+      {shape === "or" &&
+        Array.from({ length: arityCount }, (_, i) => {
+          const y = (GATE_H / (arityCount + 1)) * (i + 1);
+          const u = y / GATE_H;
+          const xEnd = 2 * u * (1 - u) * (GATE_W * 0.28);
+          const xStart = op === "xor" || op === "xnor" ? -8 : 0;
+          return (
+            <line
+              key={i}
+              x1={xStart}
+              y1={y}
+              x2={xEnd}
+              y2={y}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            />
+          );
+        })}
 
       {inverted && (
         <circle cx={bubbleX + BUBBLE_R} cy={GATE_H / 2} r={BUBBLE_R} />

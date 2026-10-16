@@ -217,12 +217,19 @@ export default function ManualPage() {
             <ol className="ml-4 list-decimal space-y-1.5">
               <li>
                 In <Link href="/theory" className="underline underline-offset-4">Theory</Link>,
-                write a function — say <code>F(A,B,C) = A&apos;B + BC</code>. It is
-                minimized as you type.
+                write a function — say{" "}
+                <code>F(A,B,C) = A&apos;B + BC</code>. It is minimized as you type.
               </li>
               <li>
-                Open the <strong>Build it</strong> tab and press{" "}
-                <em>Build this circuit in the lab</em>. Real 74xx chips appear, wired,
+                Open the{" "}
+                <Link href="/theory?tab=build" className="underline underline-offset-4">
+                  <strong>Build it</strong>
+                </Link>{" "}
+                tab in Theory (or navigate to{" "}
+                <Link href="/build" className="underline underline-offset-4 font-mono text-xs">
+                  /build
+                </Link>
+                ) and press <em>Build this circuit in the lab</em>. Real 74xx chips appear, wired,
                 with the power rails already connected.
               </li>
               <li>
@@ -317,7 +324,10 @@ export default function ManualPage() {
                 the simulator uses, so it cannot disagree with it.
               </li>
               <li>
-                <strong>Build it</strong> — drops the whole circuit onto the lab bench.
+                <Link href="/theory?tab=build" className="underline underline-offset-4">
+                  <strong>Build it</strong>
+                </Link>{" "}
+                — drops the whole circuit onto the lab bench.
               </li>
             </ul>
             <p className="text-muted-foreground">
@@ -538,7 +548,7 @@ F(A,B,C) = 01101001`}
             <p>
               Drag parts from the palette. Click one pin, then another, to wire them —
               the wire routes itself around obstacles. Click a switch to toggle it;
-              click a wire to delete it.
+              select a wire to recolor or reroute it (Alt+Click or Backspace/Delete to remove it).
             </p>
             <p>
               <strong>Logic is four-state: 0, 1, Z and X.</strong> Z is a floating,

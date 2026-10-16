@@ -102,6 +102,10 @@ export function placeOnBreadboard(
   const rails = all.filter((n) => n.kind === "rail");
   const switches = all.filter((n) => n.kind === "switch" || n.kind === "clock");
   const leds = all.filter((n) => n.kind === "led");
+  const gates = all.filter((n) => n.kind === "gate");
+  for (const g of gates) {
+    unplaced.push(g.id);
+  }
 
   // --- 1. chips, left to right across the channel ---------------------------
   let col = 2;
@@ -201,24 +205,30 @@ export function placeOnBreadboard(
       }
     }
 
-    // Auto-power every seated IC (Pin 14 to +top, Pin 7 to -bottom)
+    // Auto-power every seated IC based on actual VCC and GND pins (LAB-02)
     for (const ic of ics) {
       if (unplaced.includes(ic.id)) continue;
       const def = getIc(ic.part);
-      const pinTotal = def ? def.pins.length : 14;
-      const span = pinTotal / 2;
+      if (!def) continue;
       const icCol = Math.round(nodes[ic.id]!.pos.x);
+      const holes = dipHoles({ col: icCol }, def.pins.length);
+      const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
+      const gndIdx = def.pins.findIndex((p) => p.dir === "gnd");
+      if (vccIdx === -1 || gndIdx === -1) continue;
 
-      // Pin 14 is in row F at icCol. Find free hole on icCol upper strip (row J).
-      const vccHole = freeHoleOn({ col: icCol, row: "F" });
-      const vccRail = freeHoleOn({ col: icCol, row: "+top" });
+      const vccLeg = holes[vccIdx]!;
+      const gndLeg = holes[gndIdx]!;
+
+      const vccHole = freeHoleOn({ col: vccLeg.col, row: vccLeg.row });
+      const vccRail = freeHoleOn({ col: vccLeg.col, row: vccLeg.row === "F" ? "+top" : "+bottom" });
       if (vccHole && vccRail) {
         jumper(vccHole, vccRail, "#ef4444");
       }
 
-      // Pin 7 is in row E at icCol + span - 1. Find free hole on lower strip (row A).
-      const gndHole = freeHoleOn({ col: icCol + span - 1, row: "E" });
-      const gndRail = freeHoleOn({ col: icCol + span - 1, row: "-bottom" }) ?? freeHoleOn({ col: icCol + span - 1, row: "-top" });
+      const gndHole = freeHoleOn({ col: gndLeg.col, row: gndLeg.row });
+      const gndRail =
+        freeHoleOn({ col: gndLeg.col, row: gndLeg.row === "E" ? "-bottom" : "-top" }) ??
+        freeHoleOn({ col: gndLeg.col, row: gndLeg.row === "E" ? "-top" : "-bottom" });
       if (gndHole && gndRail) {
         jumper(gndHole, gndRail, "#3b82f6");
       }
@@ -271,6 +281,28 @@ export function placeOnBreadboard(
         const sourceHole = freeHoleOn(sourceLeg);
         if (!sourceHole) { unplaced.push(wire.id); continue; }
         wirePinToHole(pinB, sourceHole, wire.color || "#10b981");
+        continue;
+      }
+
+      // In panelMode, skip wires to rails or IC power pins (VCC/GND) since power is auto-wired (LAB-05)
+      const isRailA = pinA !== null && rails.some((r) => r.id === pinA.node);
+      const isRailB = pinB !== null && rails.some((r) => r.id === pinB.node);
+      if (isRailA || isRailB) {
+        continue;
+      }
+
+      const isPowerPin = (pin: PinRef | null): boolean => {
+        if (!pin) return false;
+        const n = nodes[pin.node] ?? source.nodes[pin.node];
+        if (n?.kind === "ic") {
+          const def = getIc(n.part);
+          const p = def?.pins.find((sp) => sp.name === pin.pin);
+          return p?.dir === "pwr" || p?.dir === "gnd";
+        }
+        return false;
+      };
+
+      if (isPowerPin(pinA) || isPowerPin(pinB)) {
         continue;
       }
 
@@ -418,34 +450,8 @@ export function seatOnBoard(
     return null;
   }
 
-  // A rail tap goes on its own rail row, in the first hole nothing else is in.
-  if (node.kind === "rail") {
-    const row: BoardRow = node.rail === "vcc" ? "+top" : "-top";
-    const used = new Set(
-      seated
-        .filter((n) => n.boardRow === row)
-        .map((n) => Math.round(n.pos.x)),
-    );
-    for (let col = 1; col <= spec.columns; col++) {
-      if (!used.has(col)) return { ...node, pos: { x: col, y: 0 }, boardRow: row };
-    }
-    return null;
-  }
-
-  // Switches along the bottom, LEDs along the top — and never in a chip's own
-  // columns. Two parts in one column are on one strip, which means they are
-  // WIRED TOGETHER whether or not that was the intention; that is the whole
-  // hazard of a real board, and it belongs to the user's jumpers, not to us.
-  const row: BoardRow = node.kind === "switch" || node.kind === "clock" ? "A" : "J";
-  const half = row === "A" ? LOWER_FREE : UPPER_FREE;
-  const used = new Set(
-    seated
-      .filter((n) => n.boardRow !== undefined && (half as readonly string[]).includes(n.boardRow))
-      .map((n) => Math.round(n.pos.x)),
-  );
-  for (let col = 1; col <= spec.columns; col++) {
-    if (used.has(col) || !clearOfChips(col, col)) continue;
-    return { ...node, pos: { x: col, y: 0 }, boardRow: row };
-  }
-  return null;
+  // Switches, clocks, LEDs, and rails reside in the trainer panels and are not seated onto breadboard strips (LAB-03)
+  const next = { ...node, pos: { x: 0, y: 0 } };
+  delete (next as { boardRow?: unknown }).boardRow;
+  return next;
 }

@@ -163,7 +163,7 @@ export function buildOccupancy(doc: CircuitDocument): OccupancyGrid {
   // sits ON its body's edge, so it would otherwise be sealed inside the obstacle.
   for (const node of nodes) {
     for (const spec of pinsOf(node)) {
-      const p = { x: node.pos.x + spec.offset.x, y: node.pos.y + spec.offset.y };
+      const p = getPinWorldPosition(node, spec.name);
       const i = index(grid, toCell(p.x), toCell(p.y));
       if (i >= 0) {
         cells[i] = 0;

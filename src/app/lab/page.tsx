@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Boxes, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
@@ -46,7 +46,22 @@ const WIRE_COLORS = [
   { label: "Cyan", value: "#06b6d4" },
 ];
 
+function useIsDesktop(): boolean {
+  return useSyncExternalStore(
+    (notify) => {
+      if (typeof window === "undefined") return () => {};
+      const mql = window.matchMedia("(min-width: 1280px)");
+      mql.addEventListener("change", notify);
+      return () => mql.removeEventListener("change", notify);
+    },
+    () => (typeof window !== "undefined" ? window.matchMedia("(min-width: 1280px)").matches : false),
+    () => false,
+  );
+}
+
 export default function LabPage() {
+  const isDesktop = useIsDesktop();
+  const expected = useExpected();
   const undo = useCircuitStore((s) => s.undo);
   const redo = useCircuitStore((s) => s.redo);
   const clear = useCircuitStore((s) => s.clear);
@@ -61,7 +76,6 @@ export default function LabPage() {
     (s) => s.diagnostics.filter((d) => d.severity === "error").length,
   );
 
-  const expected = useExpected();
   const onBoard = useCircuitStore((s) => !!s.doc.board);
   const toBreadboard = useCircuitStore((s) => s.toBreadboard);
   const toSchematic = useCircuitStore((s) => s.toSchematic);
@@ -77,7 +91,17 @@ export default function LabPage() {
 
   const [partsOpen, setPartsOpen] = useState(false);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
+  const [rightSidebarUserChoice, setRightSidebarUserChoice] = useState<boolean | null>(null);
+  const rightSidebarOpen = rightSidebarUserChoice ?? (isDesktop || Boolean(expected));
+  const setRightSidebarOpen = useCallback(
+    (action: boolean | ((prev: boolean) => boolean)) => {
+      setRightSidebarUserChoice((prev) => {
+        const current = prev ?? (isDesktop || Boolean(expected));
+        return typeof action === "function" ? action(current) : action;
+      });
+    },
+    [isDesktop, expected],
+  );
   const [headerCollapsed, setHeaderCollapsed] = useState(false);
   const [isZenMode, setIsZenMode] = useState(false);
 
@@ -108,7 +132,7 @@ export default function LabPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [deleteSelected, undo, redo, isZenMode]);
+  }, [deleteSelected, undo, redo, isZenMode, setRightSidebarOpen, setLeftSidebarOpen]);
 
   const hint = pendingHole
     ? "Now click a second hole to lay the jumper — or press Escape."
@@ -116,7 +140,7 @@ export default function LabPage() {
       ? "Now click a second pin to complete the wire — or press Escape."
       : onBoard
         ? "Click a hole, then another, to lay a jumper. Click a wire to select it (Alt+Click or Del to delete). Hover any hole to probe."
-        : "Click a pin, then another, to wire them. Click a switch to toggle it; click a wire to delete it.";
+        : "Click a pin, then another, to wire them. Click a switch to toggle it; Alt+Click or Del to delete a wire.";
 
   /**
    * The view switch is BIDIRECTIONAL now.
@@ -404,7 +428,21 @@ export default function LabPage() {
             <Redo2 />
             <span className="sr-only">Redo</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={clear}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (!hasNodes) return;
+              clear();
+              toast("Circuit cleared", {
+                action: {
+                  label: "Undo",
+                  onClick: () => undo(),
+                },
+              });
+            }}
+            title="Clear circuit (Undoable with Ctrl+Z)"
+          >
             <Trash2 />
             <span className="sr-only">Clear</span>
           </Button>

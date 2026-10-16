@@ -61,8 +61,8 @@ export const PRESETS: readonly Preset[] = [
     id: "mux4",
     name: "4-to-1 multiplexer",
     description: "One of four data lines, chosen by two select bits.",
-    variables: ["S1", "S0", "D0", "D1"],
-    outputs: [{ label: "Y", expr: "S1'*S0'*D0 + S1'*S0*D1" }],
+    variables: ["S1", "S0", "D0", "D1", "D2", "D3"],
+    outputs: [{ label: "Y", expr: "S1'*S0'*D0 + S1'*S0*D1 + S1*S0'*D2 + S1*S0*D3" }],
   },
   {
     id: "decoder",

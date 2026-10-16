@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { FeedbackDialog } from "@/components/shared/feedback-dialog";
 import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
 import {
   Sheet,
   SheetContent,
@@ -44,7 +45,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {NAV.map(({ href, label }) => (
+          {NAV.slice(0, 4).map(({ href, label }) => (
             <Link
               key={href}
               href={href}
@@ -59,6 +60,19 @@ export function SiteHeader() {
               {label}
             </Link>
           ))}
+          <Separator orientation="vertical" className="mx-1 h-4" />
+          <Link
+            href="/manual"
+            aria-current={isActive("/manual") ? "page" : undefined}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm transition-colors",
+              isActive("/manual")
+                ? "bg-secondary text-secondary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Manual
+          </Link>
         </nav>
 
         <div className="ml-auto flex items-center gap-1">

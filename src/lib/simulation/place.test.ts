@@ -253,30 +253,14 @@ describe("seating a part onto a board that is already built", () => {
     expect(b[1]! < a[0]! || b[0]! > a[1]!).toBe(true);
   });
 
-  it("puts a switch on the bottom bank and an LED on the top", () => {
+  it("keeps switches and LEDs off the breadboard strips (in trainer panel)", () => {
     const doc = seated();
-    expect(seatOnBoard(doc, node({ kind: "switch", state: 0 }), DEFAULT_BOARD)!.boardRow).toBe("A");
-    expect(seatOnBoard(doc, node({ kind: "led" }), DEFAULT_BOARD)!.boardRow).toBe("J");
-  });
-
-  it("never puts a part in a chip's own column, because that is one strip", () => {
-    // Two parts in one column are WIRED TOGETHER by the metal, whether or not
-    // that was intended. Sharing a column with a chip's leg would drive its pin
-    // the moment the part was placed.
-    const doc = seated();
-    const chip = Object.values(doc.nodes).find((n) => n.kind === "ic")!;
-    const span = pinsOf(chip).length / 2;
     const sw = seatOnBoard(doc, node({ kind: "switch", state: 0 }), DEFAULT_BOARD)!;
-    const inChip = sw.pos.x >= chip.pos.x && sw.pos.x <= chip.pos.x + span - 1;
-    expect(inChip).toBe(false);
-  });
-
-  it("keeps two new single parts off each other's strip", () => {
-    let doc = seated();
-    const first = seatOnBoard(doc, node({ kind: "switch", state: 0 }), DEFAULT_BOARD)!;
-    doc = { ...doc, nodes: { ...doc.nodes, a: { ...first, id: "a" } as CircuitNode } };
-    const second = seatOnBoard(doc, node({ kind: "switch", state: 0 }), DEFAULT_BOARD)!;
-    expect(second.pos.x).not.toBe(first.pos.x);
+    const led = seatOnBoard(doc, node({ kind: "led" }), DEFAULT_BOARD)!;
+    expect(sw.boardRow).toBeUndefined();
+    expect(led.boardRow).toBeUndefined();
+    expect(sw.pos).toEqual({ x: 0, y: 0 });
+    expect(led.pos).toEqual({ x: 0, y: 0 });
   });
 
   it("refuses rather than putting a chip off the end of the board", () => {

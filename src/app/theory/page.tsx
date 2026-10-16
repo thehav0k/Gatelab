@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ExpressionInput } from "@/components/theory/expression-input";
 import { TruthTableEditor } from "@/components/theory/truth-table-editor";
 import { FunctionSummary } from "@/components/theory/function-summary";
@@ -37,7 +38,33 @@ import type { Form } from "@/lib/core-engine/minimizer";
  * It used to be one long scroll with everything on it at once, which made it
  * impossible to see which part mattered.
  */
-export default function TheoryPage() {
+const VALID_TABS = [
+  "derivation",
+  "table",
+  "kmap",
+  "tabular",
+  "circuit",
+  "diagram",
+  "build",
+] as const;
+
+function TheoryContent() {
+  const searchParams = useSearchParams();
+  const paramTab = searchParams.get("tab");
+  const [selectedTab, setSelectedTab] = useState<string | null>(null);
+  const [prevParamTab, setPrevParamTab] = useState<string | null>(paramTab);
+
+  if (paramTab !== prevParamTab) {
+    setPrevParamTab(paramTab);
+    setSelectedTab(null);
+  }
+
+  const activeTab =
+    selectedTab ??
+    (paramTab && (VALID_TABS as readonly string[]).includes(paramTab)
+      ? paramTab
+      : "derivation");
+
   const source = useWorkspaceStore((s) => s.theorySource);
   const setSource = useWorkspaceStore((s) => s.setTheorySource);
 
@@ -102,7 +129,7 @@ export default function TheoryPage() {
             </CardContent>
           </Card>
 
-          <Tabs defaultValue="derivation" className="mt-5">
+          <Tabs value={activeTab} onValueChange={setSelectedTab} className="mt-5">
             {/* Seven tabs do not fit on narrow screens. Scroll them smoothly rather than
                 clipping the last tabs off the edge. */}
             <div className="w-full overflow-x-auto pb-1">
@@ -299,3 +326,25 @@ export default function TheoryPage() {
     </div>
   );
 }
+
+function TheorySkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-4 w-96" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="mt-6 h-96 w-full" />
+      </div>
+    </div>
+  );
+}
+
+export default function TheoryPage() {
+  return (
+    <Suspense fallback={<TheorySkeleton />}>
+      <TheoryContent />
+    </Suspense>
+  );
+}
+

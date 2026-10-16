@@ -25,6 +25,7 @@ import {
   type NodeId,
   type PinRef,
   type Point,
+  type Wire,
   type WireId,
 } from "@/lib/simulation/netlist";
 import type { GateOp } from "@/lib/simulation/logic";
@@ -33,6 +34,7 @@ import { routeAll, type Route } from "@/lib/simulation/router";
 import { placeOnBreadboard, seatOnBoard } from "@/lib/simulation/place";
 import {
   DEFAULT_BOARD,
+  dipHoles,
   holeKey,
   isPositiveRail,
   stripOf,
@@ -325,6 +327,57 @@ export const useCircuitStore = create<CircuitState>()(
       const { doc } = get();
       const node = doc.nodes[id];
       if (!node) return;
+
+      if (doc.board && node.kind === "ic") {
+        const oldCol = Math.round(node.pos.x);
+        const newCol = Math.round(pos.x);
+        const delta = newCol - oldCol;
+
+        if (delta !== 0) {
+          const def = getIc(node.part);
+          const pinTotal = def ? def.pins.length : 14;
+          const span = pinTotal / 2;
+          const terminalRows = new Set(["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]);
+
+          const shiftEndpoint = (end: (typeof doc.wires)[string]["a"]) => {
+            if (
+              end.kind === "hole" &&
+              terminalRows.has(end.ref.row) &&
+              end.ref.col >= oldCol &&
+              end.ref.col < oldCol + span
+            ) {
+              return {
+                ...end,
+                ref: {
+                  ...end.ref,
+                  col: end.ref.col + delta,
+                },
+              };
+            }
+            return end;
+          };
+
+          const nextWires: Record<string, Wire> = {};
+          for (const [wId, wire] of Object.entries(doc.wires)) {
+            nextWires[wId] = {
+              ...wire,
+              a: shiftEndpoint(wire.a),
+              b: shiftEndpoint(wire.b),
+            };
+          }
+
+          commit(
+            {
+              ...doc,
+              nodes: { ...doc.nodes, [id]: { ...node, pos } },
+              wires: nextWires,
+            },
+            true,
+          );
+          return;
+        }
+      }
+
       // A move is cosmetic. The circuit is still the one that was built.
       commit({ ...doc, nodes: { ...doc.nodes, [id]: { ...node, pos } } }, true);
     },
@@ -649,16 +702,21 @@ export const useCircuitStore = create<CircuitState>()(
       const node = doc.nodes[nodeId];
       if (!node || node.kind !== "ic" || !doc.board) return;
       const def = getIc(node.part);
-      const pinCount = def?.pins.length ?? 14;
+      if (!def) return;
       const col = Math.round(node.pos.x);
-      const span = pinCount / 2;
+      const holes = dipHoles({ col }, def.pins.length);
+      const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
+      const gndIdx = def.pins.findIndex((p) => p.dir === "gnd");
+      if (vccIdx === -1 || gndIdx === -1) return;
 
-      // Pin 14 (VCC) is in row F at col. Free row on that strip is row J. Nearest positive rail is +top.
-      // Pin 7 (GND) is in row E at col + span - 1. Free row on that strip is row A. Nearest ground rail is -bottom.
-      const vccHole: HoleRef = { col, row: "J" };
-      const vccRail: HoleRef = { col, row: "+top" };
-      const gndHole: HoleRef = { col: col + span - 1, row: "A" };
-      const gndRail: HoleRef = { col: col + span - 1, row: "-bottom" };
+      const vccLeg = holes[vccIdx]!;
+      const gndLeg = holes[gndIdx]!;
+
+      // Upper half (row F): free hole is row J -> +top rail; lower half (row E): row A -> -bottom rail
+      const vccHole: HoleRef = { col: vccLeg.col, row: vccLeg.row === "F" ? "J" : "A" };
+      const vccRail: HoleRef = { col: vccLeg.col, row: vccLeg.row === "F" ? "+top" : "+bottom" };
+      const gndHole: HoleRef = { col: gndLeg.col, row: gndLeg.row === "E" ? "A" : "J" };
+      const gndRail: HoleRef = { col: gndLeg.col, row: gndLeg.row === "E" ? "-bottom" : "-top" };
 
       const w1 = asWireId(nextId("w"));
       const w2 = asWireId(nextId("w"));
@@ -696,17 +754,18 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     clear: () => {
-      const doc = emptyDocument();
-      const { index, diagnostics, routes, flopState } = simulate(doc, {});
+      const currentDoc = get().doc;
+      const nextDoc = emptyDocument();
+      const { index, diagnostics, routes, flopState } = simulate(nextDoc, {});
       set({
-        doc,
+        doc: nextDoc,
         origin: null,
         flopState,
         schematic: null,
         index,
         diagnostics,
         routes,
-        past: [],
+        past: [...get().past, currentDoc],
         future: [],
         selection: [],
         pendingPin: null,

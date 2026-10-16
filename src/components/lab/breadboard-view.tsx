@@ -29,7 +29,6 @@ import {
   type HoleRef,
 } from "@/lib/simulation/breadboard";
 import {
-  asNodeId,
   endpointKey,
   holeEnd,
   pinEnd,
@@ -53,7 +52,7 @@ import {
 import { useViewBox } from "@/hooks/use-viewbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CircuitBoard, Cpu, Eye, EyeOff, Layers, Maximize2, Plus, Radio, Sparkles, Zap } from "lucide-react";
+import { CircuitBoard, Cpu, Eye, EyeOff, Layers, Maximize2, Plus, Radio, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useConstraint, useWorkspaceStore } from "@/stores/workspace-store";
 import { useSpecStore } from "@/stores/spec-store";
@@ -171,10 +170,10 @@ export function BreadboardView() {
 
     if (vccNode) register({ node: vccNode.id, pin: "VCC" }, { x: 480, y: 60 });
     if (gndNode) register({ node: gndNode.id, pin: "GND" }, { x: 540, y: 60 });
-    if (clockNode) register({ node: clockNode.id, pin: "CLK" }, { x: 850, y: 55 });
+    if (clockNode) register({ node: clockNode.id, pin: "Y" }, { x: 850, y: 55 });
 
     switchNodes.forEach((sw, i) => {
-      register({ node: sw.id, pin: "Q" }, { x: 105 + i * 82, y: 668 });
+      register({ node: sw.id, pin: "Y" }, { x: 105 + i * 82, y: 668 });
     });
 
     ledNodes.forEach((led, i) => {
@@ -189,9 +188,9 @@ export function BreadboardView() {
     const list: { point: Point; pin: PinRef; label: string; color: string }[] = [];
     if (vccNode) list.push({ point: { x: 480, y: 60 }, pin: { node: vccNode.id, pin: "VCC" }, label: "+5V", color: "#ef4444" });
     if (gndNode) list.push({ point: { x: 540, y: 60 }, pin: { node: gndNode.id, pin: "GND" }, label: "GND", color: "#3b82f6" });
-    if (clockNode) list.push({ point: { x: 850, y: 55 }, pin: { node: clockNode.id, pin: "CLK" }, label: "CLK", color: "#f59e0b" });
+    if (clockNode) list.push({ point: { x: 850, y: 55 }, pin: { node: clockNode.id, pin: "Y" }, label: "CLK", color: "#f59e0b" });
     switchNodes.forEach((sw, i) => {
-      list.push({ point: { x: 105 + i * 82, y: 668 }, pin: { node: sw.id, pin: "Q" }, label: sw.label, color: "#38bdf8" });
+      list.push({ point: { x: 105 + i * 82, y: 668 }, pin: { node: sw.id, pin: "Y" }, label: sw.label, color: "#38bdf8" });
     });
     ledNodes.forEach((led, i) => {
       list.push({ point: { x: 945 + i * 66, y: 72 }, pin: { node: led.id, pin: "A" }, label: led.label, color: led.color ?? "#22c55e" });
@@ -410,9 +409,9 @@ export function BreadboardView() {
     const clk = nodes.find((n) => n.kind === "clock");
     if (!clk) {
       const id = addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
-      if (id) clickPin({ node: id, pin: "CLK" });
+      if (id) clickPin({ node: id, pin: "Y" });
     } else {
-      clickPin({ node: clk.id, pin: "CLK" });
+      clickPin({ node: clk.id, pin: "Y" });
     }
   };
 
@@ -429,7 +428,11 @@ export function BreadboardView() {
 
   const w = boardWidth(spec);
   const h = boardHeight();
-  const CHASSIS_W = BOARD_OFFSET_X * 2 + w;
+  const CHASSIS_W = Math.max(
+    BOARD_OFFSET_X * 2 + w,
+    945 + (ledNodes.length + 1) * 66 + 40,
+    105 + (switchNodes.length + 1) * 82 + 80,
+  );
   const CHASSIS_H = BOARD_OFFSET_Y + h + 115;
 
   /** Fit the camera to the full trainer chassis */
@@ -439,6 +442,7 @@ export function BreadboardView() {
 
   const svgRef = useRef<SVGSVGElement>(null);
   const cam = useViewBox(natural, svgRef);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
   return (
     <div className="relative h-full w-full">
@@ -481,6 +485,27 @@ export function BreadboardView() {
           <span>Airwires</span>
           <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[9px] font-mono">A</kbd>
         </Button>
+        <div className="flex items-center rounded-md border bg-card/90 shadow-xs h-7 px-1 text-xs font-mono">
+          <button
+            type="button"
+            className="px-1.5 py-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+            onClick={cam.zoomOut}
+            title="Zoom Out"
+          >
+            -
+          </button>
+          <span className="px-1 min-w-[38px] text-center text-[10px] select-none text-muted-foreground">
+            {Math.round(cam.zoom * 100)}%
+          </span>
+          <button
+            type="button"
+            className="px-1.5 py-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
+            onClick={cam.zoomIn}
+            title="Zoom In"
+          >
+            +
+          </button>
+        </div>
         <Button
           variant="outline"
           size="sm"
@@ -500,9 +525,12 @@ export function BreadboardView() {
         className="bg-card h-full w-full touch-none rounded-md border"
         onWheel={cam.onWheel}
         onPointerDown={(e) => {
-          if (e.button !== 0 || e.shiftKey) cam.startPan(e.clientX, e.clientY);
+          dragStartRef.current = { x: e.clientX, y: e.clientY };
+          cam.handlePointerDown(e);
+          cam.startPan(e.clientX, e.clientY);
         }}
         onPointerMove={(e) => {
+          if (cam.handlePointerMove(e)) return;
           if (cam.movePan(e.clientX, e.clientY)) return;
           const p = cam.toView(e.clientX, e.clientY);
           setCursorPos(p);
@@ -530,7 +558,10 @@ export function BreadboardView() {
           }
           setHover(null);
         }}
-        onPointerUp={() => cam.endPan()}
+        onPointerUp={(e) => {
+          cam.handlePointerUp(e);
+          cam.endPan();
+        }}
         onPointerLeave={() => {
           cam.endPan();
           setHover(null);
@@ -538,7 +569,13 @@ export function BreadboardView() {
           setCursorPos(null);
         }}
         onContextMenu={(e) => e.preventDefault()}
-        onClick={() => {
+        onClick={(e) => {
+          if (
+            dragStartRef.current &&
+            Math.hypot(e.clientX - dragStartRef.current.x, e.clientY - dragStartRef.current.y) > 4
+          ) {
+            return;
+          }
           if (hoverSocket) {
             clickPin(hoverSocket.pin);
           } else if (hover) {
@@ -773,7 +810,7 @@ export function BreadboardView() {
               label="CLK"
               sublabel="OUT"
               color="#f59e0b"
-              isArmed={pendingPin !== null && pendingPin.node === clockNode?.id && pendingPin.pin === "CLK"}
+              isArmed={pendingPin !== null && pendingPin.node === clockNode?.id && pendingPin.pin === "Y"}
               onClick={handleClockClick}
             />
           </g>
@@ -869,11 +906,11 @@ export function BreadboardView() {
                 sw={sw}
                 cx={105 + i * 82}
                 cy={642}
-                isArmed={pendingPin !== null && pendingPin.node === sw.id && pendingPin.pin === "Q"}
+                isArmed={pendingPin !== null && pendingPin.node === sw.id && pendingPin.pin === "Y"}
                 onToggle={() => toggleSwitch(sw.id)}
                 onSocketClick={(e: React.MouseEvent) => {
                   e.stopPropagation();
-                  clickPin({ node: sw.id, pin: "Q" });
+                  clickPin({ node: sw.id, pin: "Y" });
                 }}
               />
             ))}
@@ -952,6 +989,7 @@ export function BreadboardView() {
               wire={wire}
               routedWire={routedWireMap.get(wire.id)}
               isSelected={selectedWireId === wire.id}
+              toView={cam.toView}
               onSelect={() => {
                 select([]);
                 setSelectedWireId((curr) => (curr === wire.id ? null : wire.id));
@@ -1103,7 +1141,7 @@ export function BreadboardView() {
                 onClick={handleSynthesizeTheory}
                 className="justify-start gap-2 h-9"
               >
-                <Sparkles className="size-4 shrink-0 text-amber-300" />
+                <Cpu className="size-4 shrink-0 text-amber-300" />
                 <span className="truncate">
                   Synthesize from Theory: <span className="font-mono text-xs opacity-90">{theorySource}</span>
                 </span>
@@ -1184,7 +1222,7 @@ function TrainerSocket({
           stroke={color}
           strokeWidth={2}
           strokeDasharray="4 3"
-          className="animate-spin"
+          className="animate-spin [transform-box:fill-box] origin-center"
           opacity={0.85}
         />
       )}
@@ -1287,7 +1325,7 @@ function TrainerLed({
         fill={chosenColor}
         stroke="#ffffff"
         strokeWidth={0.75}
-        className="cursor-pointer hover:scale-125 transition-transform"
+        className="cursor-pointer hover:scale-125 [transform-box:fill-box] origin-center transition-transform"
         onClick={cycleColor}
       >
         <title>Click to change LED color ({LED_COLORS.map(c => c.name).join(", ")})</title>
@@ -1643,11 +1681,10 @@ function getAttachedPin(doc: CircuitDocument, spec: BreadboardSpec, hole: HoleRe
 function StripHighlight({
   spec,
   hole,
-  doc,
 }: {
   spec: BreadboardSpec;
   hole: HoleRef;
-  doc: CircuitDocument;
+  doc?: CircuitDocument;
 }) {
   const value = useEndpointValue(holeEnd(hole));
   const color = logicColor(value);
@@ -1765,7 +1802,7 @@ function ProbeTooltipCard({
         fill="#090d16"
         stroke="#334155"
         strokeWidth={1}
-        filter="drop-shadow(0 6px 14px rgba(0,0,0,0.65))"
+        style={{ filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.65))" }}
       />
       <text
         x={10}
@@ -1858,7 +1895,7 @@ function SocketTooltipCard({
         fill="#090d16"
         stroke="#334155"
         strokeWidth={1}
-        filter="drop-shadow(0 6px 14px rgba(0,0,0,0.65))"
+        style={{ filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.65))" }}
       />
       <text x={8} y={14} fill="#f8fafc" className="font-mono text-[9px] font-bold">
         {title}
@@ -1877,29 +1914,7 @@ function SocketTooltipCard({
   );
 }
 
-/** Backward compatibility wrapper for HoleCursor */
-function HoleCursor({
-  spec,
-  hole,
-  doc,
-}: {
-  spec: BreadboardSpec;
-  hole: HoleRef;
-  doc: CircuitDocument;
-}) {
-  return (
-    <>
-      <StripHighlight spec={spec} hole={hole} doc={doc} />
-      <ProbeTooltipCard
-        spec={spec}
-        hole={hole}
-        doc={doc}
-        boardOffsetX={0}
-        boardOffsetY={0}
-      />
-    </>
-  );
-}
+
 
 // ---------------------------------------------------------------------------
 // Parts & 74xx DIP Components
@@ -2054,7 +2069,7 @@ function SeatedIc({
               rx={4}
               className="fill-card/95 stroke-border"
               strokeWidth={1}
-              filter="drop-shadow(0 2px 4px rgba(0,0,0,0.35))"
+              style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}
             />
             <g
               className="cursor-pointer group/pwr"
@@ -2183,7 +2198,7 @@ function SeatedIc({
                 rx={4}
                 className="fill-card/95 stroke-border"
                 strokeWidth={1}
-                filter="drop-shadow(0 2px 4px rgba(0,0,0,0.35))"
+                style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}
               />
               <g
                 className="cursor-pointer group/pwr"
@@ -2300,7 +2315,7 @@ function SeatedIc({
             rx={4}
             className="fill-red-600/95 stroke-red-400"
             strokeWidth={1}
-            filter="drop-shadow(0 2px 4px rgba(0,0,0,0.4))"
+            style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.4))" }}
           />
           <text
             x={(a.x + b.x) / 2}
@@ -2628,10 +2643,10 @@ function resolveEndpointPoint(
 
         if ((isLower && nodeLower) || (isUpper && nodeUpper) || end.ref.row === node.boardRow) {
           if (node.kind === "switch") {
-            const pt = trainerPinMap.get(pinKey({ node: node.id, pin: "Q" })) ?? trainerPinMap.get(`${node.id}:Q`);
+            const pt = trainerPinMap.get(pinKey({ node: node.id, pin: "Y" })) ?? trainerPinMap.get(`${node.id}:Y`);
             if (pt) return pt;
           } else if (node.kind === "clock") {
-            const pt = trainerPinMap.get(pinKey({ node: node.id, pin: "CLK" })) ?? trainerPinMap.get(`${node.id}:CLK`);
+            const pt = trainerPinMap.get(pinKey({ node: node.id, pin: "Y" })) ?? trainerPinMap.get(`${node.id}:Y`);
             if (pt) return pt;
           } else if (node.kind === "led") {
             const pt = trainerPinMap.get(pinKey({ node: node.id, pin: "A" })) ?? trainerPinMap.get(`${node.id}:A`);
@@ -2673,6 +2688,7 @@ function Jumper({
   onDelete,
   onColorChange,
   onChannelDrag,
+  toView,
 }: {
   wire: Wire;
   routedWire?: RoutedWire | undefined;
@@ -2681,6 +2697,7 @@ function Jumper({
   onDelete: () => void;
   onColorChange: (color?: string) => void;
   onChannelDrag?: ((newY: number) => void) | undefined;
+  toView?: ((clientX: number, clientY: number) => { x: number; y: number }) | undefined;
 }) {
   const value = useEndpointValue(wire.a);
   const ordinal = useNetOrdinal(wire.a);
@@ -2789,14 +2806,14 @@ function Jumper({
           fill="#ffffff"
           stroke={color}
           strokeWidth={2}
-          className="cursor-ns-resize hover:scale-125 transition-transform"
+          className="cursor-ns-resize hover:scale-125 [transform-box:fill-box] origin-center transition-transform"
           onPointerDown={(e) => {
             e.stopPropagation();
-            const startY = e.clientY;
-            const startChannelY = handlePoint.y;
             const onPointerMove = (ev: PointerEvent) => {
-              const dy = ev.clientY - startY;
-              onChannelDrag(Math.round((startChannelY + dy) / 2) * 2);
+              if (toView) {
+                const pt = toView(ev.clientX, ev.clientY);
+                onChannelDrag(Math.round(pt.y / 2) * 2);
+              }
             };
             const onPointerUp = () => {
               window.removeEventListener("pointermove", onPointerMove);
@@ -2823,7 +2840,7 @@ function Jumper({
             rx={5}
             className="fill-card/95 stroke-border"
             strokeWidth={1}
-            filter="drop-shadow(0 4px 6px rgba(0,0,0,0.35))"
+            style={{ filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.35))" }}
           />
 
           <circle cx={11} cy={13} r={4} fill={logicColor(value)} />
@@ -2845,7 +2862,7 @@ function Jumper({
               r={5}
               fill={swatch.value}
               className={cn(
-                "cursor-pointer hover:scale-125 transition-transform",
+                "cursor-pointer hover:scale-125 [transform-box:fill-box] origin-center transition-transform",
                 (wire.color || color) === swatch.value && "stroke-white stroke-[1.5]",
               )}
               onClick={(e) => {

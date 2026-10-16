@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Cable, Sparkles, TriangleAlert } from "lucide-react";
+import { Cable, Cpu, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -168,7 +168,7 @@ F(A,B,C) = 01101001`}
       </div>
 
       <Button className="w-full" onClick={build} disabled={!parsed.ok}>
-        <Sparkles />
+        <Cpu />
         Build it on the canvas
       </Button>
 

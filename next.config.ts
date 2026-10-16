@@ -7,7 +7,10 @@ const nextConfig: NextConfig = {
    * rather than 404s — permanently, because the move is not going to be undone.
    */
   async redirects() {
-    return [{ source: "/diagrams", destination: "/solutions", permanent: true }];
+    return [
+      { source: "/diagrams", destination: "/solutions", permanent: true },
+      { source: "/build", destination: "/theory?tab=build", permanent: false },
+    ];
   },
 };
 

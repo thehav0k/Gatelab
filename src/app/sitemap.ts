@@ -17,12 +17,13 @@ import { SITE } from "@/lib/site";
 export default function sitemap(): MetadataRoute.Sitemap {
   const page = (path: string, priority: number) => ({
     url: `${SITE.url}${path}`,
+    lastModified: new Date("2026-10-16"),
     changeFrequency: "monthly" as const,
     priority,
   });
 
   return [
-    page("", 1),
+    page("/", 1),
     page("/theory", 0.9),
     page("/diagram", 0.9),
     page("/lab", 0.9),

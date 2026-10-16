@@ -47,6 +47,15 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-image-preview": "large" },
   },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
   // Emits <meta name="google-site-verification" ...> into <head>. Going through
   // Next's metadata rather than hand-writing the tag keeps it deduplicated and
   // out of the way of the streaming head.

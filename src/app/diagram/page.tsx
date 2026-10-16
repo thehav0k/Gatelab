@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Boxes, Paintbrush, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Binary, Boxes, Paintbrush, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -131,7 +131,7 @@ function SidePanels({ theme }: { theme: ReturnType<typeof useDiagramTheme> }) {
           Block
         </TabsTrigger>
         <TabsTrigger value="build" className="text-xs">
-          <Sparkles className="size-3.5" />
+          <Binary className="size-3.5" />
           Equation
         </TabsTrigger>
         <TabsTrigger value="style" className="text-xs">
