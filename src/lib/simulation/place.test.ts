@@ -4,7 +4,7 @@ import { placeOnBreadboard, seatOnBoard, stripOfPin } from "./place";
 import { realize, synthesize, technologyMap, type Strategy } from "./synth";
 import { verify } from "./verify";
 import { elaborate } from "./elaborate";
-import { evaluate } from "./solver";
+import { evaluate, initialState } from "./solver";
 import { diagnose } from "./diagnostics";
 import { dipHoles, stripOf, DEFAULT_BOARD } from "./breadboard";
 import { pinsOf } from "./parts";
@@ -14,6 +14,7 @@ import { arbFunction } from "@/lib/core-engine/testing/arbitraries";
 import type { BooleanFunction } from "@/lib/core-engine/types";
 import { circuit } from "./testing/build";
 import type { CircuitDocument, CircuitNode } from "./netlist";
+import { getSequentialPreset } from "./sequential-presets";
 
 const fnOf = (src: string): BooleanFunction => {
   const r = parseInput(src);
@@ -304,6 +305,48 @@ describe("seating a part onto a board that is already built", () => {
       );
       expect(unpowered).toHaveLength(0);
     });
+
+    it("preserves VCC logic tie-off wires for sequential circuits on breadboard", () => {
+      const doc = getSequentialPreset("ripple-2")!.build();
+      const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
+      const { index, netlist } = elaborate(placed);
+      const state = evaluate(netlist, netlist.inputs.map(() => 0 as const));
+      const floating = diagnose(placed, index, netlist, state).filter(
+        (d) => d.code === "FLOATING_INPUT",
+      );
+      expect(floating.map((f) => f.message)).toEqual([]);
+    });
+
+    it("simulates and counts correctly on a breadboard-seated sequential circuit", () => {
+      const doc = getSequentialPreset("ripple-2")!.build();
+      const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
+      const { netlist } = elaborate(placed);
+      let state = initialState(netlist);
+      const clrIdx = netlist.inputs.findIndex((p) => p.label === "CLR");
+      const vector = (clr: number) =>
+        netlist.inputs.map((_, i) => (i === clrIdx ? (clr as 0 | 1) : 0));
+
+      // Reset first with CLR=0
+      state = evaluate(netlist, vector(0), { state, clocks: netlist.clocks.map(() => 0) }).state;
+      // Release CLR=1
+      state = evaluate(netlist, vector(1), { state, clocks: netlist.clocks.map(() => 0) }).state;
+
+      const readQ = (vals: Uint8Array) => {
+        const q0 = vals[netlist.outputs.find((o) => o.label === "Q0")!.net];
+        const q1 = vals[netlist.outputs.find((o) => o.label === "Q1")!.net];
+        return `${q1}${q0}`;
+      };
+
+      const counts: string[] = [];
+      for (let i = 0; i < 4; i++) {
+        state = evaluate(netlist, vector(1), { state, clocks: netlist.clocks.map(() => 1) }).state;
+        const res = evaluate(netlist, vector(1), { state, clocks: netlist.clocks.map(() => 0) });
+        state = res.state;
+        counts.push(readQ(res.values));
+      }
+      expect(counts).toEqual(["01", "10", "11", "00"]);
+    });
   });
 });
+
 

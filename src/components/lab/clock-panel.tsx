@@ -50,10 +50,18 @@ export function ClockPanel() {
     const timer = setInterval(() => {
       const state = useCircuitStore.getState();
       for (const node of Object.values(state.doc.nodes)) {
-        if (node.kind === "clock") state.pulseClock(node.id);
+        if (node.kind === "clock") state.toggleClock(node.id);
       }
-    }, 1000 / hz);
-    return () => clearInterval(timer);
+    }, 1000 / (2 * hz));
+    return () => {
+      clearInterval(timer);
+      const state = useCircuitStore.getState();
+      for (const node of Object.values(state.doc.nodes)) {
+        if (node.kind === "clock" && node.state === 1) {
+          state.setClock(node.id, () => 0);
+        }
+      }
+    };
   }, [running, hz]);
 
   // Nothing clocked on the board: say nothing. A panel of controls for a thing

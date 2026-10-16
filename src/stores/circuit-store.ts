@@ -107,10 +107,14 @@ interface CircuitState {
    * a flip-flop.
    */
   flopState: StoredState;
+  /** Drive one clock node to a new level. Not an edit (does not pollute undo). */
+  setClock: (id: NodeId, to: (level: 0 | 1) => 0 | 1) => void;
   /** Toggle a clock once: one edge. */
   toggleClock: (id: NodeId) => void;
-  /** Low, high, low — one complete pulse, so both edges happen. */
-  pulseClock: (id: NodeId) => void;
+  /** Low, high, low — one complete pulse, so both edges happen. In UI, flashes high for ~120ms. */
+  pulseClock: (id: NodeId, sync?: boolean) => void;
+  /** Synchronous low, high, low pulse without timers. */
+  pulseClockSync: (id: NodeId) => void;
   /** Forget every stored bit, as though the power had just come on. */
   resetState: () => void;
 
@@ -253,17 +257,42 @@ export const useCircuitStore = create<CircuitState>()(
    * topology at all — dragging a chip, flipping a switch — where the board is still
    * exactly what was built.
    */
+  let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Drive one clock node to a new level and re-simulate. Not an edit. */
   const setClock = (id: NodeId, to: (level: 0 | 1) => 0 | 1): void => {
-    const { doc } = get();
+    const { doc, flopState } = get();
     const node = doc.nodes[id];
     if (node?.kind !== "clock") return;
     const level = to(node.state);
     if (level === node.state) return;
-    commit(
-      { ...doc, nodes: { ...doc.nodes, [id]: { ...node, state: level } } },
-      true,
-    );
+    const nextDoc = {
+      ...doc,
+      nodes: { ...doc.nodes, [id]: { ...node, state: level } },
+    };
+    const next = simulate(nextDoc, flopState);
+    set({
+      doc: nextDoc,
+      index: next.index,
+      diagnostics: next.diagnostics,
+      routes: next.routes,
+      flopState: next.flopState,
+    });
+  };
+
+  const pulseClockSync = (id: NodeId): void => {
+    const { doc } = get();
+    const node = doc.nodes[id];
+    if (node?.kind !== "clock") return;
+    if (pulseTimer) {
+      clearTimeout(pulseTimer);
+      pulseTimer = null;
+    }
+    if (node.state === 1) {
+      setClock(id, () => 0);
+    }
+    setClock(id, () => 1);
+    setClock(id, () => 0);
   };
 
   const commit = (doc: CircuitDocument, keepOrigin = false): void => {
@@ -443,20 +472,41 @@ export const useCircuitStore = create<CircuitState>()(
       );
     },
 
+    setClock,
     toggleClock: (id) => setClock(id, (level) => (level === 1 ? 0 : 1)),
 
     /**
      * One complete pulse, as two separate evaluations.
      *
-     * It has to be two, not one: a rising-edge part loads on the way up and a
-     * falling-edge part on the way down, and a "pulse" that only ever set the
-     * level to 1 would leave every '107 in the circuit untouched. Running both
-     * halves means one press advances a counter whichever polarity it is.
+     * In browser, keeps the high state for ~120ms so the user visibly sees the
+     * clock LED indicator and wire glow before returning to low.
+     * For synchronous execution (headless/tests), pass sync=true or call pulseClockSync.
      */
-    pulseClock: (id) => {
+    pulseClock: (id, sync = false) => {
+      if (sync || typeof window === "undefined") {
+        pulseClockSync(id);
+        return;
+      }
+      const { doc } = get();
+      const node = doc.nodes[id];
+      if (node?.kind !== "clock") return;
+
+      if (pulseTimer) {
+        clearTimeout(pulseTimer);
+        pulseTimer = null;
+      }
+      // If clock is already high, pull low first to ensure a crisp rising edge
+      if (node.state === 1) {
+        setClock(id, () => 0);
+      }
       setClock(id, () => 1);
-      setClock(id, () => 0);
+      pulseTimer = setTimeout(() => {
+        pulseTimer = null;
+        setClock(id, () => 0);
+      }, 120);
     },
+
+    pulseClockSync,
 
     /**
      * Power-cycle the memory.
@@ -481,7 +531,13 @@ export const useCircuitStore = create<CircuitState>()(
 
       if (pendingHole) {
         const id = asWireId(nextId("w"));
-        const wireColor = get().activeWireColor ?? undefined;
+        let wireColor = get().activeWireColor ?? undefined;
+        const targetNode = doc.nodes[ref.node];
+        if (!wireColor && targetNode) {
+          if (targetNode.kind === "clock") wireColor = "#f59e0b";
+          else if (targetNode.kind === "rail" && targetNode.rail === "vcc") wireColor = "#ef4444";
+          else if (targetNode.kind === "rail" && targetNode.rail === "gnd") wireColor = "#3b82f6";
+        }
         set({ pendingHole: null, pendingPin: null });
         commit({
           ...doc,
@@ -522,7 +578,12 @@ export const useCircuitStore = create<CircuitState>()(
       if (pendingPin) {
         const id = asWireId(nextId("w"));
         let color: string | undefined = get().activeWireColor ?? undefined;
-        if (isPositiveRail(hole.row)) {
+        const sourceNode = doc.nodes[pendingPin.node];
+        if (!color && sourceNode) {
+          if (sourceNode.kind === "clock") color = "#f59e0b";
+          else if (sourceNode.kind === "rail" && sourceNode.rail === "vcc") color = "#ef4444";
+          else if (sourceNode.kind === "rail" && sourceNode.rail === "gnd") color = "#3b82f6";
+        } else if (isPositiveRail(hole.row)) {
           color = "#ef4444";
         } else if (hole.row === "-top" || hole.row === "-bottom") {
           color = "#3b82f6";

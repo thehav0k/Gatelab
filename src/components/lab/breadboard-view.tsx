@@ -29,12 +29,14 @@ import {
   type HoleRef,
 } from "@/lib/simulation/breadboard";
 import {
+  asNodeId,
   endpointKey,
   holeEnd,
   pinEnd,
   pinKey,
   type CircuitDocument,
   type CircuitNode,
+  type ClockNode,
   type Endpoint,
   type PinRef,
   type Point,
@@ -159,17 +161,31 @@ export function BreadboardView() {
     [icNodes, diagnostics],
   );
 
-  // Auto-clock effect
+  // Auto-clock effect: periodic 50% duty cycle square wave at selected frequency
   useEffect(() => {
     if (autoHz === null) return;
     const interval = setInterval(() => {
       const state = useCircuitStore.getState();
-      const clk = Object.values(state.doc.nodes).find((n) => n.kind === "clock");
-      if (clk) {
-        state.pulseClock(clk.id);
+      let clk = Object.values(state.doc.nodes).find((n): n is ClockNode => n.kind === "clock");
+      if (!clk) {
+        const id = state.addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
+        if (id) {
+          const n = state.doc.nodes[id];
+          if (n?.kind === "clock") clk = n;
+        }
       }
-    }, 1000 / autoHz);
-    return () => clearInterval(interval);
+      if (clk) {
+        state.toggleClock(clk.id);
+      }
+    }, 1000 / (2 * autoHz));
+    return () => {
+      clearInterval(interval);
+      const state = useCircuitStore.getState();
+      const clk = Object.values(state.doc.nodes).find((n) => n.kind === "clock");
+      if (clk && clk.state === 1) {
+        state.setClock(clk.id, () => 0);
+      }
+    };
   }, [autoHz]);
 
   // Exact coordinates of all Trainer Panel sockets
@@ -180,9 +196,12 @@ export function BreadboardView() {
       map.set(`${pin.node}:${pin.pin}`, pt);
     };
 
-    if (vccNode) register({ node: vccNode.id, pin: "VCC" }, { x: 430, y: 60 });
-    if (gndNode) register({ node: gndNode.id, pin: "GND" }, { x: 520, y: 60 });
-    if (clockNode) register({ node: clockNode.id, pin: "Y" }, { x: 850, y: 55 });
+    const vccId = vccNode ? vccNode.id : asNodeId("pending_vcc");
+    const gndId = gndNode ? gndNode.id : asNodeId("pending_gnd");
+    const clkId = clockNode ? clockNode.id : asNodeId("pending_clk");
+    register({ node: vccId, pin: "VCC" }, { x: 430, y: 60 });
+    register({ node: gndId, pin: "GND" }, { x: 520, y: 60 });
+    register({ node: clkId, pin: "Y" }, { x: 850, y: 55 });
 
     switchNodes.forEach((sw, i) => {
       register({ node: sw.id, pin: "Y" }, { x: 105 + i * 82 + 18, y: 646 });
@@ -198,9 +217,13 @@ export function BreadboardView() {
   // List of all Trainer Panel sockets for magnetic hovering and snapping
   const trainerSocketsList = useMemo(() => {
     const list: { point: Point; pin: PinRef; label: string; color: string }[] = [];
-    if (vccNode) list.push({ point: { x: 430, y: 60 }, pin: { node: vccNode.id, pin: "VCC" }, label: "+5V", color: "#ef4444" });
-    if (gndNode) list.push({ point: { x: 520, y: 60 }, pin: { node: gndNode.id, pin: "GND" }, label: "GND", color: "#3b82f6" });
-    if (clockNode) list.push({ point: { x: 850, y: 55 }, pin: { node: clockNode.id, pin: "Y" }, label: "CLK", color: "#f59e0b" });
+    const vccId = vccNode ? vccNode.id : asNodeId("pending_vcc");
+    const gndId = gndNode ? gndNode.id : asNodeId("pending_gnd");
+    const clkId = clockNode ? clockNode.id : asNodeId("pending_clk");
+
+    list.push({ point: { x: 430, y: 60 }, pin: { node: vccId, pin: "VCC" }, label: "+5V", color: "#ef4444" });
+    list.push({ point: { x: 520, y: 60 }, pin: { node: gndId, pin: "GND" }, label: "GND", color: "#3b82f6" });
+    list.push({ point: { x: 850, y: 55 }, pin: { node: clkId, pin: "Y" }, label: "CLK", color: "#f59e0b" });
     switchNodes.forEach((sw, i) => {
       list.push({ point: { x: 105 + i * 82 + 18, y: 646 }, pin: { node: sw.id, pin: "Y" }, label: sw.label, color: "#38bdf8" });
     });
@@ -589,7 +612,18 @@ export function BreadboardView() {
             return;
           }
           if (hoverSocket) {
-            clickPin(hoverSocket.pin);
+            if (hoverSocket.label === "CLK" && !clockNode) {
+              const id = addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
+              if (id) clickPin({ node: id, pin: "Y" });
+            } else if (hoverSocket.label === "+5V" && !vccNode) {
+              const id = addNode({ kind: "rail", rail: "vcc", label: "+5V", pos: { x: 0, y: 0 } });
+              if (id) clickPin({ node: id, pin: "VCC" });
+            } else if (hoverSocket.label === "GND" && !gndNode) {
+              const id = addNode({ kind: "rail", rail: "gnd", label: "GND", pos: { x: 0, y: 0 } });
+              if (id) clickPin({ node: id, pin: "GND" });
+            } else {
+              clickPin(hoverSocket.pin);
+            }
           } else if (hover) {
             clickHole(hover);
           } else {
@@ -752,6 +786,8 @@ export function BreadboardView() {
             </text>
             {/* Manual Single-Pulse Button */}
             <g
+              id="trainer-pulse-btn"
+              data-testid="trainer-pulse-btn"
               className="cursor-pointer group"
               onClick={handlePulse}
               transform="translate(605, 42)"
@@ -778,8 +814,19 @@ export function BreadboardView() {
             {[1, 2, 5].map((hzVal, i) => (
               <g
                 key={hzVal}
+                id={`trainer-clk-${hzVal}hz`}
+                data-testid={`trainer-clk-${hzVal}hz`}
                 className="cursor-pointer group"
-                onClick={() => setAutoHz((curr) => (curr === hzVal ? null : hzVal))}
+                onClick={() => {
+                  setAutoHz((curr) => {
+                    if (curr === hzVal) return null;
+                    const state = useCircuitStore.getState();
+                    if (!Object.values(state.doc.nodes).some((n) => n.kind === "clock")) {
+                      state.addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
+                    }
+                    return hzVal;
+                  });
+                }}
                 transform={`translate(${660 + i * 36}, 42)`}
               >
                 <rect
@@ -805,9 +852,28 @@ export function BreadboardView() {
               className="cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
-                if (clockNode) toggleClock(clockNode.id);
+                const clk = clockNode;
+                if (!clk) {
+                  const id = addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
+                  if (id) {
+                    toggleClock(id);
+                    return;
+                  }
+                } else {
+                  toggleClock(clk.id);
+                }
               }}
             >
+              {clockNode?.state === 1 && (
+                <circle
+                  cx={788}
+                  cy={55}
+                  r={9}
+                  fill="#f59e0b"
+                  opacity={0.35}
+                  className="pointer-events-none"
+                />
+              )}
               <circle
                 cx={788}
                 cy={55}
@@ -818,7 +884,7 @@ export function BreadboardView() {
                 x={788}
                 y={70}
                 textAnchor="middle"
-                fill="#94a3b8"
+                fill={clockNode?.state === 1 ? "#f59e0b" : "#94a3b8"}
                 className="font-mono text-[7.5px] font-semibold pointer-events-none select-none"
               >
                 {clockNode?.state === 1 ? "HIGH" : "LOW"}
@@ -1520,12 +1586,21 @@ function TrainerSwitch({
 
       {/* LEFT ZONE: Physical Toggle Switch (centered at x = -18) */}
       <g
+        data-testid={`trainer-switch-toggle-${sw.label}`}
         className="cursor-pointer group"
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
         }}
       >
+        {/* Invisible enlarged hit target for reliable clicking */}
+        <rect
+          x={-34}
+          y={-18}
+          width={32}
+          height={44}
+          fill="transparent"
+        />
         {/* Toggle switch plate / slot */}
         <rect
           x={-28}
@@ -2009,8 +2084,8 @@ function SocketTooltipCard({
       ? "DC POWER SUPPLY (+5V)"
       : socket.pin.pin === "GND"
         ? "DC POWER SUPPLY (0V GND)"
-        : socket.pin.pin === "CLK"
-          ? "PULSE / CLK GENERATOR"
+        : node?.kind === "clock" || socket.label === "CLK" || socket.pin.pin === "CLK"
+          ? "PULSE / CLK GENERATOR (CLK)"
           : node?.kind === "switch"
             ? `LOGIC INPUT SWITCH (${node.label})`
             : node?.kind === "led"

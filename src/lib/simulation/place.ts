@@ -1,5 +1,7 @@
 import {
   DEFAULT_BOARD,
+  ROWS_LOWER,
+  ROWS_UPPER,
   dipHoles,
   stripOf,
   type BoardRow,
@@ -133,12 +135,18 @@ export function placeOnBreadboard(
   const freeHoleOn = (hole: HoleRef): HoleRef | null => {
     const strip = stripOf(spec, hole);
 
-    // Rails are long; any untaken hole in the same segment will do.
+    // Rails are long; find nearest untaken hole in the same segment to hole.col
     if (strip.startsWith("rail:")) {
-      for (let c = 1; c <= spec.columns; c++) {
-        const candidate: HoleRef = { col: c, row: hole.row };
-        if (stripOf(spec, candidate) === strip && !isTaken(candidate)) {
-          return candidate;
+      const maxDist = Math.max(hole.col - 1, spec.columns - hole.col);
+      for (let dist = 0; dist <= maxDist; dist++) {
+        const cols = dist === 0 ? [hole.col] : [hole.col + dist, hole.col - dist];
+        for (const c of cols) {
+          if (c >= 1 && c <= spec.columns) {
+            const candidate: HoleRef = { col: c, row: hole.row };
+            if (stripOf(spec, candidate) === strip && !isTaken(candidate)) {
+              return candidate;
+            }
+          }
         }
       }
       return null;
@@ -251,6 +259,12 @@ export function placeOnBreadboard(
       const isLedA = pinA !== null && leds.some((l) => l.id === pinA.node);
       const isLedB = pinB !== null && leds.some((l) => l.id === pinB.node);
 
+      if ((isSwitchA || isLedA) && (isSwitchB || isLedB)) {
+        // Direct socket-to-socket wire between trainer chassis controls (e.g. switch -> LED)
+        wires[wire.id] = wire;
+        continue;
+      }
+
       if (isSwitchA && !isSwitchB && pinA) {
         const targetLeg = wire.b.kind === "hole" ? wire.b.ref : (pinB ? (holeOfPin.get(pinKey(pinB)) ?? null) : null);
         if (!targetLeg) { unplaced.push(wire.id); continue; }
@@ -284,10 +298,11 @@ export function placeOnBreadboard(
         continue;
       }
 
-      // In panelMode, skip wires to rails or IC power pins (VCC/GND) since power is auto-wired (LAB-05)
       const isRailA = pinA !== null && rails.some((r) => r.id === pinA.node);
       const isRailB = pinB !== null && rails.some((r) => r.id === pinB.node);
-      if (isRailA || isRailB) {
+
+      // Skip wires bridging rails directly since power rails are auto-bridged (lines 181-206)
+      if (isRailA && isRailB) {
         continue;
       }
 
@@ -302,7 +317,91 @@ export function placeOnBreadboard(
         return false;
       };
 
+      // Skip wires to IC power pins (VCC pin 14 / GND pin 7) since chips are auto-powered (lines 208-235)
       if (isPowerPin(pinA) || isPowerPin(pinB)) {
+        continue;
+      }
+
+      // Preserve logic tie-off wires between power rails and signal pins (e.g. 1J/1K tied to VCC)
+      if (isRailA && !isRailB && pinA) {
+        const railNode = nodes[pinA.node] ?? source.nodes[pinA.node];
+        const isVcc = railNode?.kind === "rail" ? railNode.rail === "vcc" : pinA.pin === "VCC";
+        const color = wire.color || (isVcc ? "#ef4444" : "#3b82f6");
+
+        if (isLedB && pinB) {
+          const railRow: BoardRow = isVcc ? "+top" : "-bottom";
+          const railHole = freeHoleOn({ col: 1, row: railRow });
+          if (railHole) {
+            wirePinToHole(pinB, railHole, color);
+          } else {
+            unplaced.push(wire.id);
+          }
+          continue;
+        }
+
+        const targetLeg = wire.b.kind === "hole"
+          ? wire.b.ref
+          : (pinB ? (holeOfPin.get(pinKey(pinB)) ?? null) : null);
+        if (!targetLeg) {
+          unplaced.push(wire.id);
+          continue;
+        }
+        const pinHole = freeHoleOn(targetLeg);
+        if (!pinHole) {
+          unplaced.push(wire.id);
+          continue;
+        }
+        const isUpper = (ROWS_UPPER as readonly string[]).includes(targetLeg.row);
+        const railRow: BoardRow = isUpper
+          ? (isVcc ? "+top" : "-top")
+          : (isVcc ? "+bottom" : "-bottom");
+        const railHole = freeHoleOn({ col: targetLeg.col, row: railRow });
+        if (!railHole) {
+          unplaced.push(wire.id);
+          continue;
+        }
+        jumper(pinHole, railHole, color);
+        continue;
+      }
+
+      if (isRailB && !isRailA && pinB) {
+        const railNode = nodes[pinB.node] ?? source.nodes[pinB.node];
+        const isVcc = railNode?.kind === "rail" ? railNode.rail === "vcc" : pinB.pin === "VCC";
+        const color = wire.color || (isVcc ? "#ef4444" : "#3b82f6");
+
+        if (isLedA && pinA) {
+          const railRow: BoardRow = isVcc ? "+top" : "-bottom";
+          const railHole = freeHoleOn({ col: 1, row: railRow });
+          if (railHole) {
+            wirePinToHole(pinA, railHole, color);
+          } else {
+            unplaced.push(wire.id);
+          }
+          continue;
+        }
+
+        const targetLeg = wire.a.kind === "hole"
+          ? wire.a.ref
+          : (pinA ? (holeOfPin.get(pinKey(pinA)) ?? null) : null);
+        if (!targetLeg) {
+          unplaced.push(wire.id);
+          continue;
+        }
+        const pinHole = freeHoleOn(targetLeg);
+        if (!pinHole) {
+          unplaced.push(wire.id);
+          continue;
+        }
+        const isUpper = (ROWS_UPPER as readonly string[]).includes(targetLeg.row);
+        const railRow: BoardRow = isUpper
+          ? (isVcc ? "+top" : "-top")
+          : (isVcc ? "+bottom" : "-bottom");
+        const railHole = freeHoleOn({ col: targetLeg.col, row: railRow });
+        if (!railHole) {
+          unplaced.push(wire.id);
+          continue;
+        }
+        jumper(pinHole, railHole, color);
         continue;
       }
 
