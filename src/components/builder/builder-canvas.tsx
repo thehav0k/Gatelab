@@ -119,6 +119,8 @@ export function BuilderCanvas({
   const [view, setView] = useState<Transform>({ x: 24, y: 24, z: 1 });
   const [gesture, setGesture] = useState<Gesture>({ kind: "none" });
   const [hoverPort, setHoverPort] = useState<Endpoint | null>(null);
+  const [armedPort, setArmedPort] = useState<Endpoint | null>(null);
+  const [docCursor, setDocCursor] = useState<Point>({ x: 0, y: 0 });
   const host = useRef<HTMLDivElement | null>(null);
 
   /** A client point in document coordinates. */
@@ -160,6 +162,26 @@ export function BuilderCanvas({
     const at = toDoc(e.clientX, e.clientY);
     e.currentTarget.setPointerCapture(e.pointerId);
 
+    // If a pin was armed (via tap), handle connection to second pin
+    if (armedPort) {
+      const target = portAt(placed, at, 14 / view.z);
+      if (target) {
+        if (target.block === armedPort.block && target.port === armedPort.port) {
+          setArmedPort(null);
+          return;
+        }
+        const result = connect(doc, armedPort, target);
+        if (result.ok) {
+          commit(result.doc);
+        } else {
+          toast.error(result.reason);
+        }
+        setArmedPort(null);
+        return;
+      }
+      setArmedPort(null);
+    }
+
     // Pins win over bodies: a pin sits ON the border, so whichever is tested
     // first is the one you can never click.
     //
@@ -200,9 +222,10 @@ export function BuilderCanvas({
 
   const onPointerMove = (e: React.PointerEvent) => {
     const at = toDoc(e.clientX, e.clientY);
+    setDocCursor(at);
 
     if (gesture.kind === "none") {
-      setHoverPort(portAt(placed, at, 10 / view.z));
+      setHoverPort(portAt(placed, at, 12 / view.z));
       return;
     }
     if (gesture.kind === "pan") {
@@ -239,7 +262,7 @@ export function BuilderCanvas({
       return;
     }
     if (gesture.kind === "wire") {
-      setHoverPort(portAt(placed, at, 12 / view.z));
+      setHoverPort(portAt(placed, at, 14 / view.z));
       setGesture({ ...gesture, at });
     }
   };
@@ -273,21 +296,18 @@ export function BuilderCanvas({
         } else {
           toast.error(result.reason);
         }
+        setArmedPort(null);
       } else if (moved) {
         // Let go over empty space and you get a junction there, wired up.
-        //
-        // This is what makes two arbitrary POINTS joinable. A wire in this
-        // model runs pin to pin, so "somewhere on the sheet" had no
-        // representation at all — until it became a block with one pin, which
-        // is what a junction dot has always been on paper.
         dropJunction(at);
+        setArmedPort(null);
       } else {
-        select([gesture.from.block]);
+        // Tapped on a pin without dragging: arm it for tap-to-wire (touchscreen friendly)
+        setArmedPort(gesture.from);
       }
     }
 
     setGesture({ kind: "none" });
-    setHoverPort(null);
   };
 
   const onWheel = (e: React.WheelEvent) => {
@@ -328,6 +348,7 @@ export function BuilderCanvas({
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       setGesture({ kind: "none" });
+      setArmedPort(null);
       clearSelection();
       return;
     }
@@ -350,13 +371,13 @@ export function BuilderCanvas({
       className={cn(
         "builder-canvas relative overflow-hidden outline-none touch-none select-none",
         theme.background === "none" && "bg-muted/20",
-        gesture.kind === "pan" ? "cursor-grabbing" : "cursor-default",
+        gesture.kind === "pan"
+          ? "cursor-grabbing"
+          : gesture.kind === "wire" || armedPort !== null || hoverPort !== null
+            ? "cursor-crosshair"
+            : "cursor-default",
         className,
       )}
-      // The workspace IS the paper: it carries the diagram theme's own
-      // background and grid, so what you are drawing on is what you will export
-      // onto, and panning does not slide a small white page around underneath
-      // the blocks.
       style={sheetStyle(theme, view)}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -368,6 +389,13 @@ export function BuilderCanvas({
       onDrop={onDrop}
       onDoubleClick={fit}
     >
+      {armedPort && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full border bg-card/95 px-3 py-1 shadow-md text-xs font-mono backdrop-blur pointer-events-none">
+          <span className="size-2 rounded-full bg-logic-high animate-pulse" />
+          <span>Click target pin to complete connection (Esc to cancel)</span>
+        </div>
+      )}
+
       <div
         className="absolute top-0 left-0 origin-top-left"
         style={{
@@ -387,6 +415,9 @@ export function BuilderCanvas({
           selectedLink={selectedLink}
           gesture={gesture}
           hoverPort={hoverPort}
+          armedPort={armedPort}
+          doc={doc}
+          cursor={docCursor}
         />
       </div>
 
@@ -407,19 +438,26 @@ function Overlay({
   selectedLink,
   gesture,
   hoverPort,
+  armedPort,
+  doc,
+  cursor,
 }: {
   placed: PlacedDiagram;
   selection: readonly string[];
   selectedLink: string | null;
   gesture: Gesture;
   hoverPort: Endpoint | null;
+  armedPort: Endpoint | null;
+  doc: EditorDocument;
+  cursor: Point;
 }) {
   const selected = new Set(selection);
+  const activeSource = gesture.kind === "wire" ? gesture.from : armedPort;
   const wireFrom =
-    gesture.kind === "wire"
+    activeSource
       ? placed.blocks
-          .find((b) => b.block.id === gesture.from.block)
-          ?.ports.get(gesture.from.port)
+          .find((b) => b.block.id === activeSource.block)
+          ?.ports.get(activeSource.port)
       : undefined;
 
   return (
@@ -433,16 +471,27 @@ function Overlay({
           exactly where a pin ends. */}
       {placed.blocks.map((b) =>
         [...b.ports].map(([id, p]) => {
+          const isArmed = armedPort?.block === b.block.id && armedPort.port === id;
           const hot = hoverPort?.block === b.block.id && hoverPort.port === id;
+          const isSelf = activeSource?.block === b.block.id && activeSource.port === id;
+          const isValidTarget =
+            hot && Boolean(activeSource) && !isSelf && connect(doc, activeSource!, { block: b.block.id, port: id }).ok;
+          const isInvalidTarget =
+            hot && Boolean(activeSource) && !isSelf && !connect(doc, activeSource!, { block: b.block.id, port: id }).ok;
+
           return (
             <circle
               key={`${b.block.id}.${id}`}
               cx={p.ax}
               cy={p.ay}
-              r={hot ? 5 : 2.5}
+              r={isValidTarget ? 7 : isInvalidTarget ? 6 : hot || isArmed ? 5 : 2.5}
               className={cn(
-                "transition-[r]",
-                hot ? "fill-logic-high" : "fill-muted-foreground/50",
+                "transition-[r,fill,stroke]",
+                isValidTarget && "fill-logic-high stroke-logic-high stroke-2",
+                isInvalidTarget && "fill-destructive stroke-destructive stroke-2",
+                isArmed && "fill-logic-high animate-pulse stroke-logic-high stroke-2",
+                hot && !activeSource && "fill-logic-high",
+                !hot && !isArmed && "fill-muted-foreground/50",
               )}
             />
           );
@@ -480,12 +529,12 @@ function Overlay({
           />
         ))}
 
-      {gesture.kind === "wire" && wireFrom && (
+      {wireFrom && (gesture.kind === "wire" || armedPort) && (
         <line
           x1={wireFrom.ax}
           y1={wireFrom.ay}
-          x2={gesture.at.x}
-          y2={gesture.at.y}
+          x2={gesture.kind === "wire" ? gesture.at.x : cursor.x}
+          y2={gesture.kind === "wire" ? gesture.at.y : cursor.y}
           className="stroke-logic-high"
           strokeWidth={2}
           strokeDasharray="5 4"

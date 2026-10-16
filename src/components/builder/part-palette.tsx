@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Boxes, Search, Trash2 } from "lucide-react";
+import { Boxes, ChevronDown, ChevronRight, Clock, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -22,12 +22,9 @@ import { cn } from "@/lib/utils";
  * Two ways to place, on purpose. DRAG puts the block exactly where you want it
  * and is what the tool is for; CLICK drops it in the open and is what you use
  * when the canvas is scrolled somewhere else, on a touch screen, or when
- * dragging thirty small gates would be tedious. Offering only drag makes the
- * palette unusable on a tablet; offering only click makes placement a chore.
+ * dragging thirty small gates would be tedious.
  *
- * The user's own grouped blocks appear at the bottom, in the same list as the
- * built-in ones — because to the person building a 16-bit adder out of four
- * 4-bit ones, their block IS a part.
+ * Includes collapsible categories, search, and a recently-used tray.
  */
 export function PartPalette({
   className,
@@ -40,6 +37,12 @@ export function PartPalette({
   const commit = useBuilderStore((s) => s.commit);
   const select = useBuilderStore((s) => s.select);
   const [query, setQuery] = useState("");
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const toggleCategory = (cat: string) => {
+    setCollapsed((prev) => ({ ...prev, [cat]: !prev[cat] }));
+  };
 
   const q = query.trim().toLowerCase();
   const matches = (p: PartDefinition) =>
@@ -49,6 +52,9 @@ export function PartPalette({
     p.id.includes(q);
 
   const drop = (partId: string) => {
+    // Record in recently used
+    setRecentIds((prev) => [partId, ...prev.filter((id) => id !== partId)].slice(0, 4));
+
     // Somewhere clear of what is already there, so a click never lands a block
     // exactly on top of another one.
     const used = Object.values(doc.instances);
@@ -61,6 +67,9 @@ export function PartPalette({
   };
 
   const customs = Object.values(doc.customParts);
+  const recentParts = recentIds
+    .map((id) => PARTS.find((p) => p.id === id))
+    .filter((p): p is PartDefinition => p !== undefined && matches(p));
 
   return (
     <div className={cn("flex min-h-0 flex-col", className)}>
@@ -69,34 +78,69 @@ export function PartPalette({
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Find a block"
+          placeholder="Find a block..."
           className="h-9 pl-8 text-sm"
           aria-label="Search blocks"
         />
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-4 p-3 pt-1">
+        <div className="space-y-3.5 p-3 pt-1">
+          {/* Recently Used Blocks */}
+          {recentParts.length > 0 && q === "" && (
+            <section className="border-b pb-3">
+              <h3 className="text-muted-foreground mb-1.5 flex items-center gap-1.5 text-[11px] font-medium tracking-wide uppercase">
+                <Clock className="size-3 text-logic-high" />
+                Recently used
+              </h3>
+              <ul className="space-y-1">
+                {recentParts.map((part) => (
+                  <li key={`recent-${part.id}`}>
+                    <PaletteItem
+                      id={part.id}
+                      name={part.name}
+                      summary={part.summary}
+                      onPlace={() => drop(part.id)}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {CATEGORY_ORDER.map((category) => {
             const items = PARTS.filter((p) => p.category === category && matches(p));
             if (items.length === 0) return null;
+            const isCollapsed = Boolean(collapsed[category]) && q === "";
+
             return (
               <section key={category}>
-                <h3 className="text-muted-foreground mb-1.5 text-[11px] font-medium tracking-wide uppercase">
-                  {CATEGORY_LABELS[category]}
-                </h3>
-                <ul className="space-y-1">
-                  {items.map((part) => (
-                    <li key={part.id}>
-                      <PaletteItem
-                        id={part.id}
-                        name={part.name}
-                        summary={part.summary}
-                        onPlace={() => drop(part.id)}
-                      />
-                    </li>
-                  ))}
-                </ul>
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(category)}
+                  className="text-muted-foreground hover:text-foreground mb-1.5 flex w-full items-center justify-between text-[11px] font-medium tracking-wide uppercase cursor-pointer"
+                >
+                  <span>{CATEGORY_LABELS[category]}</span>
+                  {isCollapsed ? (
+                    <ChevronRight className="size-3.5 opacity-60" />
+                  ) : (
+                    <ChevronDown className="size-3.5 opacity-60" />
+                  )}
+                </button>
+                {!isCollapsed && (
+                  <ul className="space-y-1">
+                    {items.map((part) => (
+                      <li key={part.id}>
+                        <PaletteItem
+                          id={part.id}
+                          name={part.name}
+                          summary={part.summary}
+                          onPlace={() => drop(part.id)}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
             );
           })}

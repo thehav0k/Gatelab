@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Boxes, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
+import { Boxes, BookOpen, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
 
 import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { BreadboardView } from "@/components/lab/breadboard-view";
@@ -427,15 +427,21 @@ export default function LabPage() {
             variant="outline"
             value={onBoard ? "board" : "schematic"}
             onValueChange={switchView}
+            className="border shadow-2xs p-0.5 rounded-lg"
           >
             <ToggleGroupItem
               id="toggle-schematic"
               value="schematic"
               disabled={onBoard && !hasSchematic}
+              className={cn("px-2.5 text-xs font-medium", !onBoard && "bg-secondary text-secondary-foreground font-semibold")}
             >
               Schematic
             </ToggleGroupItem>
-            <ToggleGroupItem id="toggle-breadboard" value="board">
+            <ToggleGroupItem
+              id="toggle-breadboard"
+              value="board"
+              className={cn("px-2.5 text-xs font-medium", onBoard && "bg-secondary text-secondary-foreground font-semibold")}
+            >
               Breadboard
             </ToggleGroupItem>
           </ToggleGroup>
@@ -444,18 +450,19 @@ export default function LabPage() {
           <PresetMenu />
           <EquationBuilder />
 
-          <Separator orientation="vertical" className="hidden h-6 sm:block" />
+          <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-          <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo}>
-            <Undo2 />
+          <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+            <Undo2 className="size-3.5" />
             <span className="sr-only">Undo</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={redo} disabled={!canRedo}>
-            <Redo2 />
+          <Button variant="outline" size="sm" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
+            <Redo2 className="size-3.5" />
             <span className="sr-only">Redo</span>
           </Button>
+
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => {
               if (!hasNodes) return;
@@ -467,14 +474,24 @@ export default function LabPage() {
                 },
               });
             }}
-            title="Clear circuit (Undoable with Ctrl+Z)"
+            title="Clear circuit (Destructive, Undoable with Ctrl+Z)"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
           >
-            <Trash2 />
+            <Trash2 className="size-3.5" />
             <span className="sr-only">Clear</span>
           </Button>
-          <Button variant="outline" size="sm" asChild>
+
+          <Separator orientation="vertical" className="hidden h-5 sm:block" />
+
+          <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+            <Link href="/manual#lab">
+              <BookOpen className="size-3.5" /> Manual
+            </Link>
+          </Button>
+
+          <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
             <Link href="/report">
-              <FileText /> <span className="hidden sm:inline">Report</span>
+              <FileText className="size-3.5" /> Report
             </Link>
           </Button>
         </div>

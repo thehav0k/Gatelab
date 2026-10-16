@@ -61,19 +61,33 @@ function UnlockForm() {
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col justify-center px-4 py-16 sm:py-24">
-      <div className="mb-6 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2">
         <Lock className="text-logic-high size-5" />
-        <h1 className="text-xl font-semibold tracking-tight">Private</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Protected Solutions</h1>
       </div>
 
-      <p className="text-muted-foreground mb-6 text-sm text-pretty">
-        The worked solutions are behind a password. The circuit builder is open to
-        everyone —{" "}
-        <Link href="/diagram" className="text-foreground underline underline-offset-4">
-          go there instead
-        </Link>
-        .
-      </p>
+      <div className="text-muted-foreground mb-6 space-y-2 text-sm text-pretty">
+        <p>
+          The worked solutions catalog contains instructor answer keys and reference exam
+          diagrams protected by an access password.
+        </p>
+        <p className="text-xs">
+          All design, simulation, and verification tools are completely open and free for
+          everyone without an account.
+        </p>
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-2 text-xs">
+        <Button variant="outline" size="sm" asChild className="h-7 text-xs">
+          <Link href="/diagram">Open Diagram Editor</Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild className="h-7 text-xs">
+          <Link href="/theory">Theory Workspace</Link>
+        </Button>
+        <Button variant="ghost" size="sm" asChild className="h-7 text-xs">
+          <Link href="/">Back to Home</Link>
+        </Button>
+      </div>
 
       {unconfigured ? (
         <Alert variant="destructive">

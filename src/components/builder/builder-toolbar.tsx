@@ -1,7 +1,9 @@
 "use client";
 
 import { useRef } from "react";
+import Link from "next/link";
 import {
+  BookOpen,
   Copy,
   FileDown,
   FilePlus2,
@@ -279,6 +281,14 @@ export function BuilderToolbar({ theme }: { theme: DiagramTheme }) {
             })
           }
         />
+
+        <Separator orientation="vertical" className="mx-1 h-6" />
+
+        <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+          <Link href="/manual#diagrams">
+            <BookOpen className="size-3.5" /> Manual
+          </Link>
+        </Button>
       </div>
       </div>
 

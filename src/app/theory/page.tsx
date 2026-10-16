@@ -1,7 +1,9 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { BookOpen } from "lucide-react";
 import { ExpressionInput } from "@/components/theory/expression-input";
 import { TruthTableEditor } from "@/components/theory/truth-table-editor";
 import { FunctionSummary } from "@/components/theory/function-summary";
@@ -15,8 +17,10 @@ import { BlockDiagramView } from "@/components/theory/block-diagram-view";
 import { FunctionLibrary } from "@/components/theory/function-library";
 import { ConstraintMenu } from "@/components/lab/constraint-menu";
 
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Separator } from "@/components/ui/separator";
 import { SequentialView } from "@/components/theory/sequential-view";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,6 +55,10 @@ const VALID_TABS = [
 function TheoryContent() {
   const searchParams = useSearchParams();
   const paramTab = searchParams.get("tab");
+  const paramMode = searchParams.get("mode");
+  const [designMode, setDesignMode] = useState<"combinational" | "sequential">(
+    paramMode === "sequential" ? "sequential" : "combinational",
+  );
   const [selectedTab, setSelectedTab] = useState<string | null>(null);
   const [prevParamTab, setPrevParamTab] = useState<string | null>(paramTab);
 
@@ -78,23 +86,53 @@ function TheoryContent() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 sm:py-6">
-      <header className="mb-4 flex flex-wrap items-start gap-4">
+      <header className="mb-5 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Theory</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            One function, many views. Write it as an expression, as minterms, or fill
-            in a truth table — then see it derived, mapped, and drawn as a circuit.
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight">Theory</h1>
+            <ToggleGroup
+              type="single"
+              size="sm"
+              variant="outline"
+              value={designMode}
+              onValueChange={(v) => {
+                if (v === "combinational" || v === "sequential") setDesignMode(v);
+              }}
+              className="h-8"
+              aria-label="Design mode selector"
+            >
+              <ToggleGroupItem value="combinational" className="px-2.5 text-xs font-medium">
+                Combinational
+              </ToggleGroupItem>
+              <ToggleGroupItem value="sequential" className="px-2.5 text-xs font-medium">
+                Sequential
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
+          <p className="text-muted-foreground mt-1 text-sm max-w-2xl text-pretty">
+            {designMode === "combinational"
+              ? "One function, many views. Write an expression, minterms, or truth table — see it derived, mapped, and reduced to minimal logic."
+              : "Sequential circuit design: Synchronous counters, state transition tables, flip-flop excitation equations (JK, D, T), and hardware realization."}
           </p>
         </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <FunctionLibrary onPick={setSource} />
+        <div className="flex flex-wrap items-center gap-2">
+          {designMode === "combinational" && <FunctionLibrary onPick={setSource} />}
           <ConstraintMenu />
+          <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+            <Link href={designMode === "sequential" ? "/manual#sequential" : "/manual#theory"}>
+              <BookOpen className="size-3.5" /> Manual
+            </Link>
+          </Button>
         </div>
       </header>
 
-      <ExpressionInput value={source} onChange={setSource} diagnostics={diagnostics} />
+      {designMode === "sequential" ? (
+        <SequentialView />
+      ) : (
+        <>
+          <ExpressionInput value={source} onChange={setSource} diagnostics={diagnostics} />
 
-      {!analysis && pending && <Skeleton className="mt-6 h-96 w-full" />}
+          {!analysis && pending && <Skeleton className="mt-6 h-96 w-full" />}
 
       {analysis && min && (
         <>
@@ -319,10 +357,25 @@ function TheoryContent() {
         </>
       )}
 
-      {/* Below everything, and outside the function's own tabs on purpose — see
-          the note in SequentialView. A counter is not a view of a function. */}
-      <Separator className="my-8" />
-      <SequentialView />
+          {/* Prompt card to switch to sequential when in combinational */}
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card/50 p-4 text-xs">
+            <div>
+              <p className="font-medium text-foreground">Need synchronous counters or state machines?</p>
+              <p className="text-muted-foreground mt-0.5">
+                Switch to Sequential mode to derive flip-flop excitation equations (JK, D, T) and excitation tables.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDesignMode("sequential")}
+              className="text-xs"
+            >
+              Open Sequential Design
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

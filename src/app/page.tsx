@@ -131,14 +131,18 @@ export default function Home() {
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            <Button asChild size="lg">
+            <Button asChild size="lg" className="shadow-sm">
               <Link href="/theory">
-                Minimize a function
-                <ArrowRight />
+                <Sigma className="mr-1.5 size-4" />
+                Derive a function
+                <ArrowRight className="ml-1 size-4" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline">
-              <Link href="/lab">Go straight to the bench</Link>
+            <Button asChild size="lg" variant="outline" className="border-border/80 hover:bg-muted/70">
+              <Link href="/lab">
+                <CircuitBoard className="mr-1.5 size-4 text-logic-high" />
+                Open practical lab
+              </Link>
             </Button>
           </div>
 
@@ -151,12 +155,12 @@ export default function Home() {
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }}
-          className="bg-card/50 rounded-xl border p-4"
+          className="bg-card/50 rounded-xl border p-4 shadow-xs"
         >
           <LogicAnimation className="w-full" />
           <p className="text-muted-foreground mt-2 text-center text-xs text-pretty">
-            The inverter path is longer. Watch it arrive late — that delay is what a
-            static hazard is made of.
+            Interactive logic circuit: click switch A or B to toggle inputs and trace
+            signal propagation through real gates.
           </p>
         </motion.div>
       </section>

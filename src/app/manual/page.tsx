@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   Blocks,
@@ -10,10 +11,12 @@ import {
   Mail,
   MessageSquare,
   Network,
+  Search,
   Sigma,
   TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FeedbackDialog } from "@/components/shared/feedback-dialog";
 import { GithubIcon } from "@/components/shared/github-icon";
@@ -177,6 +180,13 @@ const TOC = [
 ] as const;
 
 export default function ManualPage() {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+
+  const filteredToc = TOC.filter(
+    (item) => q === "" || item.label.toLowerCase().includes(q) || item.id.includes(q),
+  );
+
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
       <header className="mb-8">
@@ -191,21 +201,59 @@ export default function ManualPage() {
         </p>
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[200px_1fr]">
-        {/* The contents list is a luxury on a phone and a necessity on a laptop. */}
-        <nav className="hidden lg:block">
-          <ul className="sticky top-20 space-y-1 text-sm">
+      {/* Mobile outline jump drawer */}
+      <div className="mb-6 lg:hidden">
+        <details className="rounded-lg border bg-card p-3 text-sm">
+          <summary className="cursor-pointer font-medium text-foreground">
+            Table of contents ({TOC.length} topics)
+          </summary>
+          <ul className="mt-3 grid grid-cols-2 gap-1.5 text-xs">
             {TOC.map(({ id, label }) => (
               <li key={id}>
                 <a
                   href={`#${id}`}
-                  className="text-muted-foreground hover:text-foreground block rounded px-2 py-1 transition-colors"
+                  className="text-muted-foreground hover:text-foreground block rounded py-1 transition-colors"
                 >
                   {label}
                 </a>
               </li>
             ))}
           </ul>
+        </details>
+      </div>
+
+      <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
+        {/* Sticky Desktop Table of Contents with quick search */}
+        <nav className="hidden lg:block">
+          <div className="sticky top-20 space-y-3">
+            <div className="relative">
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Filter topics..."
+                className="h-8 pl-8 text-xs"
+                aria-label="Filter manual topics"
+              />
+            </div>
+            <ul className="space-y-0.5 text-sm">
+              {filteredToc.map(({ id, label }) => (
+                <li key={id}>
+                  <a
+                    href={`#${id}`}
+                    className="text-muted-foreground hover:text-foreground hover:bg-muted/60 block rounded px-2.5 py-1 text-xs transition-colors"
+                  >
+                    {label}
+                  </a>
+                </li>
+              ))}
+              {filteredToc.length === 0 && (
+                <li className="text-muted-foreground px-2 py-2 text-xs italic">
+                  No matching topics found
+                </li>
+              )}
+            </ul>
+          </div>
         </nav>
 
         <div className="min-w-0 space-y-10">

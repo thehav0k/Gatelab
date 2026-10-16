@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { CircuitBoard, FileText, Printer, TriangleAlert } from "lucide-react";
+import { CircuitBoard, FileText, Printer, Sparkles, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { KMapGrid } from "@/components/theory/kmap-grid";
 import { TruthTable } from "@/components/theory/truth-table";
@@ -16,29 +16,39 @@ import { LOGIC_NAMES, type Logic } from "@/lib/simulation/logic";
 import { DONT_CARE } from "@/lib/core-engine/types";
 import { cn } from "@/lib/utils";
 
+const SAMPLE_SOURCE = "F(A,B,C,D) = Σm(0,2,5,7,8,10,13,15)";
+
+const SECTIONS = [
+  { id: "section-1", title: "1. The function" },
+  { id: "section-2", title: "2. Truth table & K-map" },
+  { id: "section-3", title: "3. Tabular reduction" },
+  { id: "section-4", title: "4. Implementation" },
+  { id: "section-5", title: "5. Verification" },
+];
+
 /**
  * The lab report.
  *
  * Printed through the BROWSER'S OWN PDF ENGINE — a /report route, an @media print
  * stylesheet, and window.print(). That keeps the circuit, the K-map, and the
  * waveform as real VECTORS in the output, and costs zero dependencies.
- *
- * The alternative everyone reaches for — jsPDF plus html2canvas — adds about a
- * megabyte to the bundle in order to rasterize a vector drawing into a blurry
- * bitmap and then paste that bitmap into a PDF. For a document whose entire
- * content is line art and text, that is strictly worse in every dimension.
  */
 export default function ReportPage() {
   const specSource = useSpecStore((s) => s.source);
   const theorySource = useWorkspaceStore((s) => s.theorySource);
-  const source = specSource || theorySource;
+  const userSource = specSource || theorySource;
+  const [showSample, setShowSample] = useState(false);
+
+  const activeSource = userSource || (showSample ? SAMPLE_SOURCE : null);
   const doc = useCircuitStore((s) => s.doc);
 
+  const isSample = !userSource && showSample;
+
   const report = useMemo(() => {
-    if (!source) return null;
+    if (!activeSource) return null;
     const hasCircuit = Object.keys(doc.nodes).length > 0;
-    return buildReport(source, hasCircuit ? doc : null);
-  }, [source, doc]);
+    return buildReport(activeSource, hasCircuit && !isSample ? doc : null);
+  }, [activeSource, doc, isSample]);
 
   if (!report) {
     return (
@@ -47,7 +57,7 @@ export default function ReportPage() {
           <FileText className="text-muted-foreground size-6" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">Nothing to report yet</h1>
-        <p className="text-muted-foreground mt-3 text-sm">
+        <p className="text-muted-foreground mt-3 text-sm text-pretty">
           No derivation or circuit is loaded. Enter a Boolean function in the theory workspace
           and build its circuit in the lab to generate a complete report with truth tables, K-maps,
           Quine–McCluskey derivations, circuit schematics, and verification.
@@ -59,18 +69,47 @@ export default function ReportPage() {
           <Button variant="outline" asChild>
             <Link href="/lab">2. Go to Lab</Link>
           </Button>
+          <Button variant="secondary" onClick={() => setShowSample(true)} className="gap-1.5">
+            <Sparkles className="size-3.5 text-logic-high" /> View Sample Report
+          </Button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 sm:py-8 print:max-w-none print:px-0 print:py-0">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8 print:max-w-none print:px-0 print:py-0">
+      {/* Sample indicator banner */}
+      {isSample && (
+        <div className="print:hidden no-print mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-logic-high/30 bg-logic-high/10 p-3.5 text-xs">
+          <div className="flex items-center gap-2">
+            <Sparkles className="size-4 shrink-0 text-logic-high" />
+            <div>
+              <span className="font-semibold text-logic-high">Viewing Sample Worked Report</span>
+              <span className="text-muted-foreground ml-1.5">
+                — Worked derivation for <code>{SAMPLE_SOURCE}</code>.
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="xs" asChild>
+              <Link href="/theory">Derive Your Own</Link>
+            </Button>
+            <Button size="xs" variant="ghost" onClick={() => setShowSample(false)}>
+              Close Sample
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Top action toolbar */}
       <div className="print:hidden no-print mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-xs">
         <div>
           <h2 className="text-sm font-semibold">Laboratory Derivation & Verification Report</h2>
           <p className="text-muted-foreground text-xs">
-            Recomputed live from the engine. Vector graphics remain crisp in browser print/PDF export.
+            {isSample
+              ? "Sample demonstration report with complete algebraic reduction."
+              : `Derived from your workspace: ${activeSource}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -86,7 +125,42 @@ export default function ReportPage() {
         </div>
       </div>
 
-      <Report report={report} />
+      <div className="grid gap-8 lg:grid-cols-[180px_1fr] print:block">
+        {/* Sticky Desktop Outline Navigator */}
+        <aside className="print:hidden no-print hidden lg:block">
+          <nav className="sticky top-20 rounded-lg border bg-card/50 p-3">
+            <p className="text-muted-foreground mb-2 text-[10px] font-semibold tracking-wider uppercase">
+              Contents
+            </p>
+            <ul className="space-y-1 text-xs">
+              {SECTIONS.map((s) => (
+                <li key={s.id}>
+                  <a
+                    href={`#${s.id}`}
+                    className="text-muted-foreground hover:text-foreground block rounded px-2 py-1 transition-colors"
+                  >
+                    {s.title}
+                  </a>
+                </li>
+              ))}
+              {report.timing && report.timing.glitches.length > 0 && (
+                <li>
+                  <a
+                    href="#section-6"
+                    className="text-muted-foreground hover:text-foreground block rounded px-2 py-1 transition-colors"
+                  >
+                    6. Timing hazards
+                  </a>
+                </li>
+              )}
+            </ul>
+          </nav>
+        </aside>
+
+        <div className="min-w-0">
+          <Report report={report} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -503,7 +577,7 @@ function Section({
   breakBefore?: boolean;
 }) {
   return (
-    <section className={cn("print-section", breakBefore && "print-break-before")}>
+    <section id={`section-${n}`} className={cn("scroll-mt-20 print-section", breakBefore && "print-break-before")}>
       <h2 className="mb-3 text-base font-semibold">
         <span className="text-muted-foreground mr-2 font-mono">{n}.</span>
         {title}

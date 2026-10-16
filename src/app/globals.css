@@ -127,6 +127,11 @@
     --wire-6: oklch(0.55 0.19 260);
     --wire-7: oklch(0.58 0.20 305);
     --wire-8: oklch(0.60 0.18 350);
+
+    /* Animation and interaction motion tokens */
+    --motion-fast: 120ms;
+    --motion-enter: 180ms;
+    --ease-ui: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .dark {
@@ -237,6 +242,52 @@
   /* Ctrl+wheel zooms; a plain wheel must still scroll the page, and touch must
      still pan the page rather than being swallowed by the drag handler. */
   touch-action: pan-y;
+}
+
+/* ---------------------------------------------------------------------------
+   MOTION AND CURSORS
+   --------------------------------------------------------------------------- */
+.ui-button,
+button[data-slot="button"] {
+  transition:
+    transform var(--motion-fast) var(--ease-ui),
+    background-color var(--motion-fast) ease,
+    border-color var(--motion-fast) ease,
+    color var(--motion-fast) ease;
+}
+
+.ui-button:active:not(:disabled),
+button[data-slot="button"]:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+/* Canvas state-aware cursors */
+.canvas-wire {
+  cursor: crosshair;
+}
+
+.canvas-pan {
+  cursor: grab;
+}
+
+.canvas-pan:active {
+  cursor: grabbing;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .ui-button,
+  button[data-slot="button"] {
+    transform: none !important;
+  }
 }
 
 /* ---------------------------------------------------------------------------
