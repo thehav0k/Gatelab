@@ -27,20 +27,15 @@ const TICK_W = 7;
  */
 export function WaveformPanel() {
   const doc = useCircuitStore((s) => s.doc);
+  const flopState = useCircuitStore((s) => s.flopState);
+  const pulseClear = useCircuitStore((s) => s.pulseClear);
   const [delay, setDelay] = useState(1);
 
-  // The clocked chart continues from where the board actually is, so a counter
-  // you have just cleared charts a count and one you have not charts unknowns —
-  // which is the truth about an uncleared counter, and the lesson.
-  const flopState = useCircuitStore((s) => s.flopState);
   const result = useMemo(() => {
     const netlist = elaborate(doc).netlist;
     return simulateTimed(netlist, { delay, state: toSeqState(netlist, flopState) });
   }, [doc, delay, flopState]);
 
-  // Too many inputs to sweep. Say which circuit and by how much, rather than
-  // fall through to the "add some switches" line — the user has just built
-  // something substantial and being told to add a switch reads as a bug.
   if (result.tooWide) {
     return (
       <p className="text-muted-foreground p-3 text-sm text-pretty">
@@ -62,12 +57,39 @@ export function WaveformPanel() {
     );
   }
 
+  const outputWaves = result.waves.filter((w) => !w.isInput);
+  const allOutputsUnknown =
+    Boolean(result.clocked) &&
+    outputWaves.length > 0 &&
+    outputWaves.every((w) => w.samples.every((s) => s === LX || s === LZ));
+
   const width = LABEL_W + result.ticks * TICK_W;
   const height = result.waves.length * ROW_H + 18;
   const glitchTicks = new Set(result.glitches.flatMap((g) => g.ticks));
 
   return (
     <div className="space-y-3 p-3">
+      {allOutputsUnknown && (
+        <Alert>
+          <Zap className="text-amber-500" />
+          <AlertTitle>Flip-flops are in power-up unknown state (X)</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              Real flip-flops power up in an unknown state (X), and toggling X
+              stays X. Pulse Clear (or initialize to 0) to see the count waveform.
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 text-xs"
+              onClick={pulseClear}
+            >
+              Initialize (Clear → 0)
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {result.glitches.length > 0 && (
         <Alert>
           <Zap className="text-logic-z" />
@@ -85,18 +107,22 @@ export function WaveformPanel() {
       )}
 
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground text-xs">Gate delay</span>
-        {[1, 2, 3].map((d) => (
-          <Button
-            key={d}
-            size="sm"
-            variant={delay === d ? "secondary" : "ghost"}
-            className="h-7 px-2 font-mono text-xs"
-            onClick={() => setDelay(d)}
-          >
-            {d}
-          </Button>
-        ))}
+        {!result.clocked && (
+          <>
+            <span className="text-muted-foreground text-xs">Gate delay</span>
+            {[1, 2, 3].map((d) => (
+              <Button
+                key={d}
+                size="sm"
+                variant={delay === d ? "secondary" : "ghost"}
+                className="h-7 px-2 font-mono text-xs"
+                onClick={() => setDelay(d)}
+              >
+                {d}
+              </Button>
+            ))}
+          </>
+        )}
         <span className="text-muted-foreground ml-auto text-xs">
           {result.clocked
             ? `${result.clocked.cycles} clock cycles`
@@ -142,9 +168,9 @@ export function WaveformPanel() {
       </div>
 
       <p className="text-muted-foreground text-xs">
-        Inputs step through every combination changing one bit at a time, then
-        reverse — so each transition is exercised in both directions. A hazard is
-        directional: it appears on a falling edge but not the matching rising one.
+        {result.clocked
+          ? "Clocked waveform starting from the circuit's current flip-flop state and switch settings."
+          : "Inputs step through every combination changing one bit at a time, then reverse — so each transition is exercised in both directions. A hazard is directional: it appears on a falling edge but not the matching rising one."}
       </p>
     </div>
   );

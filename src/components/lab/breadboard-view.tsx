@@ -29,12 +29,14 @@ import {
   type HoleRef,
 } from "@/lib/simulation/breadboard";
 import {
+  asNodeId,
   endpointKey,
   holeEnd,
   pinEnd,
   pinKey,
   type CircuitDocument,
   type CircuitNode,
+  type ClockNode,
   type Endpoint,
   type PinRef,
   type Point,
@@ -101,6 +103,7 @@ export function BreadboardView() {
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
   const toggleClock = useCircuitStore((s) => s.toggleClock);
   const pulseClock = useCircuitStore((s) => s.pulseClock);
+  const pulseClear = useCircuitStore((s) => s.pulseClear);
   const diagnostics = useCircuitStore((s) => s.diagnostics);
   const selection = useCircuitStore((s) => s.selection);
   const select = useCircuitStore((s) => s.select);
@@ -159,17 +162,30 @@ export function BreadboardView() {
     [icNodes, diagnostics],
   );
 
-  // Auto-clock effect
+  // Auto-clock effect: periodic 50% duty cycle square wave at selected frequency
   useEffect(() => {
     if (autoHz === null) return;
     const interval = setInterval(() => {
       const state = useCircuitStore.getState();
-      const clk = Object.values(state.doc.nodes).find((n) => n.kind === "clock");
-      if (clk) {
-        state.pulseClock(clk.id);
+      const clks = Object.values(state.doc.nodes).filter(
+        (n): n is ClockNode => n.kind === "clock",
+      );
+      if (clks.length === 0) {
+        const id = state.addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
+        if (id) state.toggleClock(id);
+      } else {
+        for (const c of clks) state.toggleClock(c.id);
       }
-    }, 1000 / autoHz);
-    return () => clearInterval(interval);
+    }, 1000 / (2 * autoHz));
+    return () => {
+      clearInterval(interval);
+      const state = useCircuitStore.getState();
+      for (const n of Object.values(state.doc.nodes)) {
+        if (n.kind === "clock" && n.state === 1) {
+          state.setClock(n.id, () => 0);
+        }
+      }
+    };
   }, [autoHz]);
 
   // Exact coordinates of all Trainer Panel sockets
@@ -180,9 +196,12 @@ export function BreadboardView() {
       map.set(`${pin.node}:${pin.pin}`, pt);
     };
 
-    if (vccNode) register({ node: vccNode.id, pin: "VCC" }, { x: 430, y: 60 });
-    if (gndNode) register({ node: gndNode.id, pin: "GND" }, { x: 520, y: 60 });
-    if (clockNode) register({ node: clockNode.id, pin: "Y" }, { x: 850, y: 55 });
+    const vccId = vccNode ? vccNode.id : asNodeId("pending_vcc");
+    const gndId = gndNode ? gndNode.id : asNodeId("pending_gnd");
+    const clkId = clockNode ? clockNode.id : asNodeId("pending_clk");
+    register({ node: vccId, pin: "VCC" }, { x: 430, y: 60 });
+    register({ node: gndId, pin: "GND" }, { x: 520, y: 60 });
+    register({ node: clkId, pin: "Y" }, { x: 850, y: 55 });
 
     switchNodes.forEach((sw, i) => {
       register({ node: sw.id, pin: "Y" }, { x: 105 + i * 82 + 18, y: 646 });
@@ -198,9 +217,13 @@ export function BreadboardView() {
   // List of all Trainer Panel sockets for magnetic hovering and snapping
   const trainerSocketsList = useMemo(() => {
     const list: { point: Point; pin: PinRef; label: string; color: string }[] = [];
-    if (vccNode) list.push({ point: { x: 430, y: 60 }, pin: { node: vccNode.id, pin: "VCC" }, label: "+5V", color: "#ef4444" });
-    if (gndNode) list.push({ point: { x: 520, y: 60 }, pin: { node: gndNode.id, pin: "GND" }, label: "GND", color: "#3b82f6" });
-    if (clockNode) list.push({ point: { x: 850, y: 55 }, pin: { node: clockNode.id, pin: "Y" }, label: "CLK", color: "#f59e0b" });
+    const vccId = vccNode ? vccNode.id : asNodeId("pending_vcc");
+    const gndId = gndNode ? gndNode.id : asNodeId("pending_gnd");
+    const clkId = clockNode ? clockNode.id : asNodeId("pending_clk");
+
+    list.push({ point: { x: 430, y: 60 }, pin: { node: vccId, pin: "VCC" }, label: "+5V", color: "#ef4444" });
+    list.push({ point: { x: 520, y: 60 }, pin: { node: gndId, pin: "GND" }, label: "GND", color: "#3b82f6" });
+    list.push({ point: { x: 850, y: 55 }, pin: { node: clkId, pin: "Y" }, label: "CLK", color: "#f59e0b" });
     switchNodes.forEach((sw, i) => {
       list.push({ point: { x: 105 + i * 82 + 18, y: 646 }, pin: { node: sw.id, pin: "Y" }, label: sw.label, color: "#38bdf8" });
     });
@@ -438,6 +461,12 @@ export function BreadboardView() {
     }
   };
 
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    pulseClear();
+    toast.info("Cleared flip-flops (state -> 0)");
+  };
+
   const w = boardWidth(spec);
   const h = boardHeight();
   const CHASSIS_W = Math.max(
@@ -589,7 +618,18 @@ export function BreadboardView() {
             return;
           }
           if (hoverSocket) {
-            clickPin(hoverSocket.pin);
+            if (hoverSocket.label === "CLK" && !clockNode) {
+              const id = addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
+              if (id) clickPin({ node: id, pin: "Y" });
+            } else if (hoverSocket.label === "+5V" && !vccNode) {
+              const id = addNode({ kind: "rail", rail: "vcc", label: "+5V", pos: { x: 0, y: 0 } });
+              if (id) clickPin({ node: id, pin: "VCC" });
+            } else if (hoverSocket.label === "GND" && !gndNode) {
+              const id = addNode({ kind: "rail", rail: "gnd", label: "GND", pos: { x: 0, y: 0 } });
+              if (id) clickPin({ node: id, pin: "GND" });
+            } else {
+              clickPin(hoverSocket.pin);
+            }
           } else if (hover) {
             clickHole(hover);
           } else {
@@ -752,19 +792,21 @@ export function BreadboardView() {
             </text>
             {/* Manual Single-Pulse Button */}
             <g
+              id="trainer-pulse-btn"
+              data-testid="trainer-pulse-btn"
               className="cursor-pointer group"
               onClick={handlePulse}
               transform="translate(605, 42)"
             >
               <rect
-                width={48}
+                width={44}
                 height={26}
                 rx={4}
                 className="fill-primary/90 hover:fill-primary stroke-border"
                 strokeWidth={1}
               />
               <text
-                x={24}
+                x={22}
                 y={16.5}
                 textAnchor="middle"
                 fill="#ffffff"
@@ -774,22 +816,59 @@ export function BreadboardView() {
               </text>
             </g>
 
+            {/* Manual Clear Button */}
+            <g
+              id="trainer-clear-btn"
+              data-testid="trainer-clear-btn"
+              className="cursor-pointer group"
+              onClick={handleClear}
+              transform="translate(653, 42)"
+            >
+              <rect
+                width={30}
+                height={26}
+                rx={4}
+                className="fill-slate-800 hover:fill-slate-700 stroke-border"
+                strokeWidth={1}
+              />
+              <text
+                x={15}
+                y={16.5}
+                textAnchor="middle"
+                fill="#cbd5e1"
+                className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
+              >
+                CLR
+              </text>
+            </g>
+
             {/* Auto frequency buttons (1Hz, 2Hz, 5Hz) */}
             {[1, 2, 5].map((hzVal, i) => (
               <g
                 key={hzVal}
+                id={`trainer-clk-${hzVal}hz`}
+                data-testid={`trainer-clk-${hzVal}hz`}
                 className="cursor-pointer group"
-                onClick={() => setAutoHz((curr) => (curr === hzVal ? null : hzVal))}
-                transform={`translate(${660 + i * 36}, 42)`}
+                onClick={() => {
+                  setAutoHz((curr) => {
+                    if (curr === hzVal) return null;
+                    const state = useCircuitStore.getState();
+                    if (!Object.values(state.doc.nodes).some((n) => n.kind === "clock")) {
+                      state.addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
+                    }
+                    return hzVal;
+                  });
+                }}
+                transform={`translate(${687 + i * 32}, 42)`}
               >
                 <rect
-                  width={32}
+                  width={28}
                   height={26}
                   rx={4}
                   className={autoHz === hzVal ? "fill-primary" : "fill-slate-800 hover:fill-slate-700"}
                 />
                 <text
-                  x={16}
+                  x={14}
                   y={16.5}
                   textAnchor="middle"
                   fill={autoHz === hzVal ? "#ffffff" : "#cbd5e1"}
@@ -805,9 +884,28 @@ export function BreadboardView() {
               className="cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
-                if (clockNode) toggleClock(clockNode.id);
+                const clk = clockNode;
+                if (!clk) {
+                  const id = addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
+                  if (id) {
+                    toggleClock(id);
+                    return;
+                  }
+                } else {
+                  toggleClock(clk.id);
+                }
               }}
             >
+              {clockNode?.state === 1 && (
+                <circle
+                  cx={788}
+                  cy={55}
+                  r={9}
+                  fill="#f59e0b"
+                  opacity={0.35}
+                  className="pointer-events-none"
+                />
+              )}
               <circle
                 cx={788}
                 cy={55}
@@ -818,7 +916,7 @@ export function BreadboardView() {
                 x={788}
                 y={70}
                 textAnchor="middle"
-                fill="#94a3b8"
+                fill={clockNode?.state === 1 ? "#f59e0b" : "#94a3b8"}
                 className="font-mono text-[7.5px] font-semibold pointer-events-none select-none"
               >
                 {clockNode?.state === 1 ? "HIGH" : "LOW"}
@@ -1520,12 +1618,21 @@ function TrainerSwitch({
 
       {/* LEFT ZONE: Physical Toggle Switch (centered at x = -18) */}
       <g
+        data-testid={`trainer-switch-toggle-${sw.label}`}
         className="cursor-pointer group"
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
         }}
       >
+        {/* Invisible enlarged hit target for reliable clicking */}
+        <rect
+          x={-34}
+          y={-18}
+          width={32}
+          height={44}
+          fill="transparent"
+        />
         {/* Toggle switch plate / slot */}
         <rect
           x={-28}
@@ -2009,8 +2116,8 @@ function SocketTooltipCard({
       ? "DC POWER SUPPLY (+5V)"
       : socket.pin.pin === "GND"
         ? "DC POWER SUPPLY (0V GND)"
-        : socket.pin.pin === "CLK"
-          ? "PULSE / CLK GENERATOR"
+        : node?.kind === "clock" || socket.label === "CLK" || socket.pin.pin === "CLK"
+          ? "PULSE / CLK GENERATOR (CLK)"
           : node?.kind === "switch"
             ? `LOGIC INPUT SWITCH (${node.label})`
             : node?.kind === "led"
@@ -2537,6 +2644,44 @@ function IcXRay({
             outputHole={holes[outPinNum - 1]!}
             inputHoles={inPinNums.map((n) => holes[n - 1]!)}
           />
+        );
+      })}
+
+      {def.flops.map((flop) => {
+        const qPinNum = pinNumberByName.get(flop.qPin);
+        const clkPinNum = pinNumberByName.get(flop.clockPin);
+        if (!qPinNum || !clkPinNum) return null;
+        const qPt = pinPointMap.get(qPinNum);
+        const clkPt = pinPointMap.get(clkPinNum);
+        if (!qPt || !clkPt) return null;
+        const qHole = holes[qPinNum - 1]!;
+        const boxX = (qPt.x + clkPt.x) / 2 - 11;
+        const boxY = midY - 8;
+        return (
+          <g key={`flop-${flop.slot}`}>
+            <XRayLead from={clkPt} to={{ x: boxX + 11, y: boxY + 8 }} hole={holes[clkPinNum - 1]!} />
+            <XRayLead from={qPt} to={{ x: boxX + 11, y: boxY + 8 }} hole={qHole} />
+            <rect
+              x={boxX}
+              y={boxY}
+              width={22}
+              height={16}
+              rx={2.5}
+              fill="rgba(15, 23, 42, 0.88)"
+              stroke="#38bdf8"
+              strokeWidth={1}
+            />
+            <text
+              x={boxX + 11}
+              y={boxY + 10.5}
+              textAnchor="middle"
+              fill="#f8fafc"
+              className="font-mono text-[6.5px] font-bold"
+            >
+              {flop.kind.toUpperCase()}
+              {flop.slot}
+            </text>
+          </g>
         );
       })}
     </g>

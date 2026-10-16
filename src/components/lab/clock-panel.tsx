@@ -26,13 +26,33 @@ import { cn } from "@/lib/utils";
  */
 export function ClockPanel() {
   const doc = useCircuitStore((s) => s.doc);
+  const index = useCircuitStore((s) => s.index);
   const pulseClock = useCircuitStore((s) => s.pulseClock);
   const toggleClock = useCircuitStore((s) => s.toggleClock);
+  const pulseClear = useCircuitStore((s) => s.pulseClear);
   const resetState = useCircuitStore((s) => s.resetState);
   const flopState = useCircuitStore((s) => s.flopState);
 
   const clocks = Object.values(doc.nodes).filter((n) => n.kind === "clock");
-  const stored = Object.entries(flopState);
+  const allFlopEntries = Object.entries(flopState).filter(
+    ([key]) => !key.startsWith("cell:"),
+  );
+
+  // Hide unused flip-flop slots in multi-unit packages (e.g. slot 2 of 7474 in divide-by-two)
+  const stored = allFlopEntries.filter(([key]) => {
+    const [nodeId, slotStr] = key.split("/");
+    if (!nodeId || !slotStr || !index) return true;
+    const prefix = `${slotStr}`;
+    return index.nets.some(
+      (net) =>
+        net.pins.length > 1 &&
+        net.pins.some(
+          (p) =>
+            p.node === nodeId &&
+            (p.pin.startsWith(prefix) || p.pin === "CLK" || p.pin === "CLR"),
+        ),
+    );
+  });
 
   const [running, setRunning] = useState(false);
   const [hz, setHz] = useState(2);
@@ -50,10 +70,18 @@ export function ClockPanel() {
     const timer = setInterval(() => {
       const state = useCircuitStore.getState();
       for (const node of Object.values(state.doc.nodes)) {
-        if (node.kind === "clock") state.pulseClock(node.id);
+        if (node.kind === "clock") state.toggleClock(node.id);
       }
-    }, 1000 / hz);
-    return () => clearInterval(timer);
+    }, 1000 / (2 * hz));
+    return () => {
+      clearInterval(timer);
+      const state = useCircuitStore.getState();
+      for (const node of Object.values(state.doc.nodes)) {
+        if (node.kind === "clock" && node.state === 1) {
+          state.setClock(node.id, () => 0);
+        }
+      }
+    };
   }, [running, hz]);
 
   // Nothing clocked on the board: say nothing. A panel of controls for a thing
@@ -150,6 +178,22 @@ export function ClockPanel() {
               ))}
             </span>
           </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 px-2 text-xs"
+                onClick={pulseClear}
+              >
+                Clear (0)
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-64">
+              Pulse active-low Clear (or initialize all flip-flops to 0) so the
+              counter starts from a known state.
+            </TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

@@ -24,6 +24,8 @@ import {
 
 export function PresetMenu() {
   const load = useCircuitStore((s) => s.load);
+  const onBoard = useCircuitStore((s) => !!s.doc.board);
+  const toBreadboard = useCircuitStore((s) => s.toBreadboard);
   const clearSpec = useSpecStore((s) => s.clear);
 
   const openPreset = (preset: Preset) => {
@@ -31,6 +33,7 @@ export function PresetMenu() {
     // A preset is not the function the theory workspace was checking, so drop
     // the old spec rather than verify the new board against a stale one.
     clearSpec();
+    if (onBoard) toBreadboard();
     toast.success(preset.name, {
       description: preset.note ?? preset.description,
       duration: preset.note ? 9000 : 4000,
@@ -47,6 +50,7 @@ export function PresetMenu() {
   const openSequential = (preset: SequentialPreset) => {
     load(preset.build());
     clearSpec();
+    if (onBoard) toBreadboard();
     toast.success(preset.name, {
       description: preset.note ?? preset.description,
       duration: preset.note ? 10000 : 4500,
@@ -56,6 +60,7 @@ export function PresetMenu() {
   const openComposite = (spec: CompositeSpec) => {
     load(composePreset(spec));
     clearSpec();
+    if (onBoard) toBreadboard();
     toast.success(spec.name, {
       description: spec.note ?? spec.description,
       duration: spec.note ? 10000 : 4000,

@@ -76,58 +76,63 @@ export interface SeqState {
   readonly q: Uint8Array;
   /** Per flip-flop, its clock net's value at the end of the last evaluation. */
   readonly clk: Uint8Array;
+  /** Per gate cell, its last settled output — gives cross-coupled gate latches memory. */
+  readonly cellOut?: Uint8Array;
 }
 
-/**
- * A circuit that has not been clocked yet.
- *
- * Q starts UNKNOWN, not 0. A real flip-flop powers up in whichever state the
- * metastability fell into — which is the entire reason every counter ever built
- * has a clear wired to it. Starting at 0 would make a missing reset invisible,
- * which is the same mistake as reading a floating input as false.
- */
 export const initialState = (nl: SimNetlist): SeqState => ({
   q: new Uint8Array(nl.flops.length).fill(UNKNOWN),
   clk: new Uint8Array(nl.flops.length).fill(LZ),
+  cellOut: new Uint8Array(nl.cells.length).fill(LZ),
 });
 
 export const cloneState = (state: SeqState): SeqState => ({
   q: new Uint8Array(state.q),
   clk: new Uint8Array(state.clk),
+  ...(state.cellOut ? { cellOut: new Uint8Array(state.cellOut) } : {}),
 });
 
-/**
- * The stored state, keyed by WHICH FLIP-FLOP rather than by array position.
- *
- * The netlist is rebuilt from the document on every simulation, so a flip-flop's
- * index in `nl.flops` is only as stable as the document's node order — add a
- * chip and every index after it shifts. Carrying the state across in an array
- * would then hand flip-flop 3's bit to flip-flop 4, which is a memory circuit
- * silently changing its mind about what it remembered. The identity of a
- * flip-flop is its package and its slot, so that is the key.
- *
- * Plain JSON, so it survives `persist` and a page reload.
- */
-export type StoredState = Readonly<Record<string, readonly [Logic, Logic]>>;
+export type StoredState = Readonly<
+  Record<string, readonly [Logic, Logic] | readonly [Logic]>
+>;
 
 const keyOf = (flop: SimFlop): string => `${flop.owner.node}/${flop.owner.slot}`;
+const cellKeyOf = (cell: { owner: { node: string; slot: number } }): string =>
+  `cell:${cell.owner.node}/${cell.owner.slot}`;
 
 export function toSeqState(nl: SimNetlist, stored: StoredState | undefined): SeqState {
   const state = initialState(nl);
   if (!stored) return state;
   for (const flop of nl.flops) {
     const saved = stored[keyOf(flop)];
-    if (!saved) continue;
-    state.q[flop.id] = saved[0];
-    state.clk[flop.id] = saved[1];
+    if (!saved || saved.length < 2) continue;
+    state.q[flop.id] = saved[0] as Logic;
+    state.clk[flop.id] = saved[1] as Logic;
+  }
+  if (state.cellOut) {
+    for (const cell of nl.cells) {
+      const saved = stored[cellKeyOf(cell)];
+      if (!saved) continue;
+      state.cellOut[cell.id] = saved[0] as Logic;
+    }
   }
   return state;
 }
 
 export function fromSeqState(nl: SimNetlist, state: SeqState): StoredState {
-  const out: Record<string, readonly [Logic, Logic]> = {};
+  const out: Record<string, readonly [Logic, Logic] | readonly [Logic]> = {};
   for (const flop of nl.flops) {
     out[keyOf(flop)] = [state.q[flop.id] as Logic, state.clk[flop.id] as Logic];
+  }
+  if (state.cellOut && nl.feedbackLoops.length > 0) {
+    for (const loop of nl.feedbackLoops) {
+      for (const cellId of loop) {
+        const cell = nl.cells[cellId];
+        if (cell) {
+          out[cellKeyOf(cell)] = [state.cellOut[cell.id] as Logic];
+        }
+      }
+    }
   }
   return out;
 }
@@ -203,8 +208,8 @@ export function evaluate(
   let edges = 0;
 
   for (let pass = 0; pass < maxPasses; pass++) {
-    const moved = advance(nl, last.values, state);
-    edges += moved;
+    const { moved, triggered } = advance(nl, last.values, state);
+    edges += triggered;
     if (moved === 0) return { ...last, state, edges };
     last = settle(nl, inputs, options, state);
   }
@@ -218,8 +223,14 @@ export function evaluate(
  * Returns how many flip-flops actually loaded, which is the loop's termination
  * condition above.
  */
-function advance(nl: SimNetlist, values: Uint8Array, state: SeqState): number {
+function advance(
+  nl: SimNetlist,
+  values: Uint8Array,
+  state: SeqState,
+): { moved: number; triggered: number } {
   let moved = 0;
+  let triggered = 0;
+  const nextQ = new Uint8Array(state.q);
 
   for (const flop of nl.flops) {
     const clockNow = values[flop.clock] as Logic;
@@ -227,21 +238,19 @@ function advance(nl: SimNetlist, values: Uint8Array, state: SeqState): number {
     state.clk[flop.id] = clockNow;
 
     if (flop.power && !isPowered(flop.power, values)) {
-      // An unpowered flip-flop is not holding anything. It has no supply to
-      // hold it with, and saying it still remembers the last value would be the
-      // same lie as an unpowered gate driving a clean 0.
-      state.q[flop.id] = UNKNOWN;
+      if (state.q[flop.id] !== UNKNOWN) moved += 1;
+      nextQ[flop.id] = UNKNOWN;
       continue;
     }
 
-    // Preset and clear are LEVEL-sensitive and outrank the clock, so they are
-    // applied first and they write the stored bit — otherwise releasing clear
-    // would reveal whatever was underneath it.
     const async = asyncOutputs(asyncOf(flop, values));
     if (async) {
       const forced = asStored(async.q);
-      if (state.q[flop.id] !== forced) moved += 1;
-      state.q[flop.id] = forced;
+      if (state.q[flop.id] !== forced) {
+        moved += 1;
+        triggered += 1;
+      }
+      nextQ[flop.id] = forced;
       continue;
     }
 
@@ -251,11 +260,15 @@ function advance(nl: SimNetlist, values: Uint8Array, state: SeqState): number {
     const after = asStored(
       clockedNext(flop.kind, flop.data.map((n) => values[n] as Logic), before),
     );
-    state.q[flop.id] = after;
-    if (after !== before) moved += 1;
+    nextQ[flop.id] = after;
+    if (after !== before) {
+      moved += 1;
+      triggered += 1;
+    }
   }
 
-  return moved;
+  state.q.set(nextQ);
+  return { moved, triggered };
 }
 
 const asyncOf = (flop: SimFlop, values: Uint8Array) => ({
@@ -301,11 +314,14 @@ function settle(
     });
   });
 
-  // A cell's current output, so a net can be resolved from all of its drivers
-  // without re-evaluating any of them. THIS is what the seed initializes — see
-  // SimOptions.seed. Defaults to Z: a gate that has not been evaluated yet
-  // drives nothing.
-  const cellOut = new Uint8Array(nl.cells.length).fill(seed);
+  // Seed from explicit options.seed when provided (e.g. verification sweeps),
+  // otherwise preserve feedback cell outputs from `state.cellOut` if available.
+  const cellOut =
+    options.seed === undefined &&
+    state.cellOut &&
+    state.cellOut.length === nl.cells.length
+      ? new Uint8Array(state.cellOut)
+      : new Uint8Array(nl.cells.length).fill(seed);
 
   const shorted = new Set(nl.railShorts);
 
@@ -379,6 +395,9 @@ function settle(
     // placed first would flag every stable circuit as an oscillator.
     if (equal(cur, next)) {
       cellOut.set(nextCellOut);
+      if (state.cellOut && state.cellOut.length === cellOut.length) {
+        state.cellOut.set(cellOut);
+      }
       settled = true;
       break;
     }

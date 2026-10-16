@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { elaborate } from "./elaborate";
-import { evaluate, type InputVector } from "./solver";
+import { evaluate, fromSeqState, toSeqState, type InputVector } from "./solver";
 import { diagnose } from "./diagnostics";
 import { L0, L1, LX, LZ, type Logic } from "./logic";
 import { circuit, ref } from "./testing/build";
@@ -381,5 +381,59 @@ describe("evaluate — purity", () => {
     const a = evaluate(netlist, [1, 1]).values;
     const b = evaluate(netlist, [1, 1]).values;
     expect([...a]).toEqual([...b]);
+  });
+});
+
+describe("evaluate — sequential feedback memory (SEQ-01 & SEQ-04)", () => {
+  it("retains state across evaluations in cross-coupled NAND SR latch (SEQ-01)", () => {
+    // Cross-coupled NAND SR latch
+    const doc = circuit()
+      .switch("R_BAR")
+      .switch("S_BAR")
+      .gate("G1", "nand")
+      .gate("G2", "nand")
+      .wire("S_BAR", "Y", "G1", "A")
+      .wire("G2", "Y", "G1", "B")
+      .wire("R_BAR", "Y", "G2", "B")
+      .wire("G1", "Y", "G2", "A")
+      .build();
+
+    const { index, netlist } = elaborate(doc);
+    expect(netlist.feedbackLoops.length).toBeGreaterThan(0);
+
+    const qNet = index.netOfPin.get(pinKey(ref("G1", "Y")))!;
+    const qnNet = index.netOfPin.get(pinKey(ref("G2", "Y")))!;
+    const qOrd = index.ordinalOf.get(qNet)!;
+    const qnOrd = index.ordinalOf.get(qnNet)!;
+
+    // 1. Set mode: S_BAR=0, R_BAR=1 -> Q=1, QN=0
+    // Inputs are sorted alphabetically: [R_BAR, S_BAR] -> [1, 0]
+    const step1 = evaluate(netlist, [1, 0]);
+    expect(step1.values[qOrd]).toBe(L1);
+    expect(step1.values[qnOrd]).toBe(L0);
+
+    // 2. Hold mode: S_BAR=1, R_BAR=1 -> Q must REMAIN 1, QN must REMAIN 0
+    // Inputs: [1, 1]
+    const step2 = evaluate(netlist, [1, 1], { state: step1.state });
+    expect(step2.values[qOrd]).toBe(L1);
+    expect(step2.values[qnOrd]).toBe(L0);
+
+    // Test JSON round-trip via fromSeqState / toSeqState
+    const stored = fromSeqState(netlist, step2.state);
+    const restoredState = toSeqState(netlist, stored);
+    const step2Restored = evaluate(netlist, [1, 1], { state: restoredState });
+    expect(step2Restored.values[qOrd]).toBe(L1);
+    expect(step2Restored.values[qnOrd]).toBe(L0);
+
+    // 3. Reset mode: S_BAR=1, R_BAR=0 -> Q=0, QN=1
+    // Inputs: [0, 1]
+    const step3 = evaluate(netlist, [0, 1], { state: step2.state });
+    expect(step3.values[qOrd]).toBe(L0);
+    expect(step3.values[qnOrd]).toBe(L1);
+
+    // 4. Hold mode again: S_BAR=1, R_BAR=1 -> Q must REMAIN 0, QN must REMAIN 1
+    const step4 = evaluate(netlist, [1, 1], { state: step3.state });
+    expect(step4.values[qOrd]).toBe(L0);
+    expect(step4.values[qnOrd]).toBe(L1);
   });
 });

@@ -157,10 +157,11 @@ export function simulateTimed(
     combinations: [],
   };
 
-  // A circuit with memory has no truth table to sweep, so the clock drives the
-  // chart instead. This is not a fallback — it is the right chart for the
-  // circuit, and the one a counter is always drawn with.
-  if (nl.flops.length > 0) return simulateClocked(nl, options);
+  // A circuit with flip-flops or a clock source has no combinational truth table
+  // to sweep — drive the clock instead.
+  if (nl.flops.length > 0 || nl.clocks.length > 0) {
+    return simulateClocked(nl, options);
+  }
 
   if (n === 0 || nl.cells.length === 0) return nothing;
 

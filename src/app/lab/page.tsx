@@ -110,10 +110,12 @@ export default function LabPage() {
       const el = document.activeElement;
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
 
-      if (e.key === "Backspace" || e.key === "Delete") deleteSelected();
+      if ((e.key === "Backspace" || e.key === "Delete") && !onBoard) {
+        deleteSelected();
+      }
       if (e.key === "Escape") {
         if (isZenMode) setIsZenMode(false);
-        else useCircuitStore.getState().cancelWire();
+        else if (!onBoard) useCircuitStore.getState().cancelWire();
       }
       if (e.key === "f" || e.key === "F") {
         setIsZenMode((v) => !v);
@@ -132,7 +134,7 @@ export default function LabPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [deleteSelected, undo, redo, isZenMode, setRightSidebarOpen, setLeftSidebarOpen]);
+  }, [deleteSelected, undo, redo, isZenMode, onBoard, setRightSidebarOpen, setLeftSidebarOpen]);
 
   const hint = pendingHole
     ? "Now click a second hole to lay the jumper — or press Escape."
@@ -494,7 +496,7 @@ export default function LabPage() {
             {onBoard ? <BreadboardView /> : <CircuitCanvas />}
           </div>
 
-          {!onBoard && !isZenMode && <ClockPanel />}
+          {(!onBoard || hasFlops) && !isZenMode && <ClockPanel />}
 
           {!isZenMode && (
             <Card className="shrink-0 overflow-hidden py-0 shadow-xs">

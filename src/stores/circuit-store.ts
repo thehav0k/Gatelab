@@ -107,10 +107,16 @@ interface CircuitState {
    * a flip-flop.
    */
   flopState: StoredState;
+  /** Drive one clock node to a new level. Not an edit (does not pollute undo). */
+  setClock: (id: NodeId, to: (level: 0 | 1) => 0 | 1) => void;
   /** Toggle a clock once: one edge. */
   toggleClock: (id: NodeId) => void;
-  /** Low, high, low — one complete pulse, so both edges happen. */
-  pulseClock: (id: NodeId) => void;
+  /** Low, high, low — one complete pulse, so both edges happen. In UI, flashes high for ~120ms. */
+  pulseClock: (id: NodeId, sync?: boolean) => void;
+  /** Synchronous low, high, low pulse without timers. */
+  pulseClockSync: (id: NodeId) => void;
+  /** Pulse active-low CLR/RESET switches (1 -> 0 -> 1) or seed flip-flops to 0. */
+  pulseClear: () => void;
   /** Forget every stored bit, as though the power had just come on. */
   resetState: () => void;
 
@@ -253,17 +259,47 @@ export const useCircuitStore = create<CircuitState>()(
    * topology at all — dragging a chip, flipping a switch — where the board is still
    * exactly what was built.
    */
+  const pulseTimers = new Map<NodeId, ReturnType<typeof setTimeout>>();
+  const clearAllPulseTimers = (): void => {
+    for (const timer of pulseTimers.values()) clearTimeout(timer);
+    pulseTimers.clear();
+  };
+
   /** Drive one clock node to a new level and re-simulate. Not an edit. */
   const setClock = (id: NodeId, to: (level: 0 | 1) => 0 | 1): void => {
-    const { doc } = get();
+    const { doc, flopState } = get();
     const node = doc.nodes[id];
     if (node?.kind !== "clock") return;
     const level = to(node.state);
     if (level === node.state) return;
-    commit(
-      { ...doc, nodes: { ...doc.nodes, [id]: { ...node, state: level } } },
-      true,
-    );
+    const nextDoc = {
+      ...doc,
+      nodes: { ...doc.nodes, [id]: { ...node, state: level } },
+    };
+    const next = simulate(nextDoc, flopState);
+    set({
+      doc: nextDoc,
+      index: next.index,
+      diagnostics: next.diagnostics,
+      routes: next.routes,
+      flopState: next.flopState,
+    });
+  };
+
+  const pulseClockSync = (id: NodeId): void => {
+    const { doc } = get();
+    const node = doc.nodes[id];
+    if (node?.kind !== "clock") return;
+    const existing = pulseTimers.get(id);
+    if (existing) {
+      clearTimeout(existing);
+      pulseTimers.delete(id);
+    }
+    if (node.state === 1) {
+      setClock(id, () => 0);
+    }
+    setClock(id, () => 1);
+    setClock(id, () => 0);
   };
 
   const commit = (doc: CircuitDocument, keepOrigin = false): void => {
@@ -410,18 +446,33 @@ export const useCircuitStore = create<CircuitState>()(
       if (selection.length === 0) return;
 
       const gone = new Set<string>(selection);
+      const deletedIcStrips = new Set<string>();
+      if (doc.board) {
+        for (const id of selection) {
+          const node = doc.nodes[id];
+          if (node?.kind === "ic") {
+            const def = getIc(node.part);
+            const holes = dipHoles({ col: Math.round(node.pos.x) }, def?.pins.length ?? 14);
+            for (const h of holes) deletedIcStrips.add(stripOf(doc.board, h));
+          }
+        }
+      }
+
       const nodes = Object.fromEntries(
         Object.entries(doc.nodes).filter(([id]) => !gone.has(id)),
       );
-      // Wires to a deleted node go with it. The nets are rebuilt from scratch
-      // afterwards, so there is nothing else to clean up.
-      const touches = (e: (typeof doc.wires)[string]["a"]): boolean =>
-        e.kind === "pin" && gone.has(e.ref.node);
+      const touches = (e: (typeof doc.wires)[string]["a"]): boolean => {
+        if (e.kind === "pin") return gone.has(e.ref.node);
+        if (doc.board && deletedIcStrips.size > 0) {
+          return deletedIcStrips.has(stripOf(doc.board, e.ref));
+        }
+        return false;
+      };
       const wires = Object.fromEntries(
         Object.entries(doc.wires).filter(([, w]) => !touches(w.a) && !touches(w.b)),
       );
       set({ selection: [] });
-      commit({ nodes, wires });
+      commit({ ...doc, nodes, wires });
     },
 
     select: (ids) => set({ selection: ids }),
@@ -443,29 +494,85 @@ export const useCircuitStore = create<CircuitState>()(
       );
     },
 
+    setClock,
     toggleClock: (id) => setClock(id, (level) => (level === 1 ? 0 : 1)),
 
     /**
      * One complete pulse, as two separate evaluations.
      *
-     * It has to be two, not one: a rising-edge part loads on the way up and a
-     * falling-edge part on the way down, and a "pulse" that only ever set the
-     * level to 1 would leave every '107 in the circuit untouched. Running both
-     * halves means one press advances a counter whichever polarity it is.
+     * In browser, keeps the high state for ~120ms so the user visibly sees the
+     * clock LED indicator and wire glow before returning to low.
+     * For synchronous execution (headless/tests), pass sync=true or call pulseClockSync.
      */
-    pulseClock: (id) => {
+    pulseClock: (id, sync = false) => {
+      if (sync || typeof window === "undefined") {
+        pulseClockSync(id);
+        return;
+      }
+      const { doc } = get();
+      const node = doc.nodes[id];
+      if (node?.kind !== "clock") return;
+
+      const existing = pulseTimers.get(id);
+      if (existing) {
+        clearTimeout(existing);
+        pulseTimers.delete(id);
+      }
+      if (node.state === 1) {
+        setClock(id, () => 0);
+      }
       setClock(id, () => 1);
-      setClock(id, () => 0);
+      const timer = setTimeout(() => {
+        pulseTimers.delete(id);
+        setClock(id, () => 0);
+      }, 120);
+      pulseTimers.set(id, timer);
     },
 
-    /**
-     * Power-cycle the memory.
-     *
-     * Not a document edit — nothing about the circuit changes — so it does not
-     * touch the undo stack. It puts every flip-flop back to unknown, which is
-     * where a real one starts.
-     */
+    pulseClockSync,
+
+    pulseClear: () => {
+      clearAllPulseTimers();
+      const { doc, flopState } = get();
+      const clrSwitches = Object.values(doc.nodes).filter(
+        (n): n is Extract<CircuitNode, { kind: "switch" }> =>
+          n.kind === "switch" && /^(CLR|RESET|RST|CLEAR)/i.test(n.label),
+      );
+      if (clrSwitches.length > 0) {
+        const assertedNodes = { ...doc.nodes };
+        for (const sw of clrSwitches) assertedNodes[sw.id] = { ...sw, state: 0 };
+        const mid = simulate({ ...doc, nodes: assertedNodes }, flopState);
+
+        const releasedNodes = { ...doc.nodes };
+        for (const sw of clrSwitches) releasedNodes[sw.id] = { ...sw, state: 1 };
+        const finalDoc = { ...doc, nodes: releasedNodes };
+        const next = simulate(finalDoc, mid.flopState);
+        set({
+          doc: finalDoc,
+          index: next.index,
+          diagnostics: next.diagnostics,
+          routes: next.routes,
+          flopState: next.flopState,
+        });
+        return;
+      }
+
+      const { netlist } = elaborate(doc);
+      const seeded: Record<string, readonly [0, 0]> = {};
+      for (const flop of netlist.flops) {
+        seeded[`${flop.owner.node}/${flop.owner.slot}`] = [0, 0];
+      }
+      const next = simulate(doc, seeded);
+      set({
+        flopState: next.flopState,
+        index: next.index,
+        diagnostics: next.diagnostics,
+        routes: next.routes,
+      });
+    },
+
     resetState: () => {
+      clearAllPulseTimers();
       const { doc } = get();
       const next = simulate(doc, {});
       set({
@@ -481,7 +588,13 @@ export const useCircuitStore = create<CircuitState>()(
 
       if (pendingHole) {
         const id = asWireId(nextId("w"));
-        const wireColor = get().activeWireColor ?? undefined;
+        let wireColor = get().activeWireColor ?? undefined;
+        const targetNode = doc.nodes[ref.node];
+        if (!wireColor && targetNode) {
+          if (targetNode.kind === "clock") wireColor = "#f59e0b";
+          else if (targetNode.kind === "rail" && targetNode.rail === "vcc") wireColor = "#ef4444";
+          else if (targetNode.kind === "rail" && targetNode.rail === "gnd") wireColor = "#3b82f6";
+        }
         set({ pendingHole: null, pendingPin: null });
         commit({
           ...doc,
@@ -522,7 +635,12 @@ export const useCircuitStore = create<CircuitState>()(
       if (pendingPin) {
         const id = asWireId(nextId("w"));
         let color: string | undefined = get().activeWireColor ?? undefined;
-        if (isPositiveRail(hole.row)) {
+        const sourceNode = doc.nodes[pendingPin.node];
+        if (!color && sourceNode) {
+          if (sourceNode.kind === "clock") color = "#f59e0b";
+          else if (sourceNode.kind === "rail" && sourceNode.rail === "vcc") color = "#ef4444";
+          else if (sourceNode.kind === "rail" && sourceNode.rail === "gnd") color = "#3b82f6";
+        } else if (isPositiveRail(hole.row)) {
           color = "#ef4444";
         } else if (hole.row === "-top" || hole.row === "-bottom") {
           color = "#3b82f6";
@@ -578,6 +696,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     toBreadboard: (spec) => {
+      clearAllPulseTimers();
       const { doc } = get();
       if (doc.board) return [];
 
@@ -605,6 +724,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     toSchematic: () => {
+      clearAllPulseTimers();
       const { schematic, doc } = get();
       if (!doc.board) return true; // already there
       if (!schematic) return false; // built on the board; there is nothing to go back to
@@ -701,8 +821,142 @@ export const useCircuitStore = create<CircuitState>()(
       const { doc } = get();
       const node = doc.nodes[nodeId];
       if (!node || node.kind !== "ic" || !doc.board) return;
+      const spec = doc.board;
       const def = getIc(node.part);
       if (!def) return;
+
+      const nextNodes = { ...doc.nodes };
+      const nextWires = { ...doc.wires };
+      const taken = new Set<string>();
+
+      for (const n of Object.values(nextNodes)) {
+        if (n.kind === "ic") {
+          const d = getIc(n.part);
+          for (const h of dipHoles({ col: Math.round(n.pos.x) }, d?.pins.length ?? 14)) {
+            taken.add(`${h.col}/${h.row}`);
+          }
+        }
+      }
+      for (const w of Object.values(nextWires)) {
+        if (w.a.kind === "hole") taken.add(`${w.a.ref.col}/${w.a.ref.row}`);
+        if (w.b.kind === "hole") taken.add(`${w.b.ref.col}/${w.b.ref.row}`);
+      }
+
+      const pickFree = (col: number, rows: readonly ("A" | "B" | "C" | "D" | "G" | "H" | "I" | "J")[]): HoleRef => {
+        for (const r of rows) {
+          if (!taken.has(`${col}/${r}`)) {
+            taken.add(`${col}/${r}`);
+            return { col, row: r };
+          }
+        }
+        return { col, row: rows[0]! };
+      };
+
+      const pickFreeRail = (targetCol: number, row: "+top" | "-top" | "+bottom" | "-bottom"): HoleRef => {
+        const targetStrip = stripOf(spec, { col: targetCol, row });
+        for (let d = 0; d < spec.columns; d++) {
+          for (const c of d === 0 ? [targetCol] : [targetCol + d, targetCol - d]) {
+            if (c >= 1 && c <= spec.columns) {
+              const cand: HoleRef = { col: c, row };
+              if (stripOf(spec, cand) === targetStrip && !taken.has(`${c}/${row}`)) {
+                taken.add(`${c}/${row}`);
+                return cand;
+              }
+            }
+          }
+        }
+        return { col: targetCol, row };
+      };
+
+      // Ensure +5V and GND trainer rail nodes exist and feed the breadboard rails
+      let vccNode = Object.values(nextNodes).find((n) => n.kind === "rail" && n.rail === "vcc");
+      if (!vccNode) {
+        const id = asNodeId(nextId("n"));
+        vccNode = { id, kind: "rail", rail: "vcc", label: "+5V", pos: { x: 0, y: 0 } };
+        nextNodes[id] = vccNode;
+      }
+      let gndNode = Object.values(nextNodes).find((n) => n.kind === "rail" && n.rail === "gnd");
+      if (!gndNode) {
+        const id = asNodeId(nextId("n"));
+        gndNode = { id, kind: "rail", rail: "gnd", label: "GND", pos: { x: 0, y: 0 } };
+        nextNodes[id] = gndNode;
+      }
+
+      const hasVccFeed = Object.values(nextWires).some(
+        (w) =>
+          (w.a.kind === "pin" && w.a.ref.node === vccNode.id) ||
+          (w.b.kind === "pin" && w.b.ref.node === vccNode.id),
+      );
+      if (!hasVccFeed) {
+        const wFeed = asWireId(nextId("w"));
+        const wBridge = asWireId(nextId("w"));
+        nextWires[wFeed] = {
+          id: wFeed,
+          a: pinEnd({ node: vccNode.id, pin: "VCC" }),
+          b: holeEnd(pickFreeRail(1, "+top")),
+          color: "#ef4444",
+        };
+        nextWires[wBridge] = {
+          id: wBridge,
+          a: holeEnd(pickFreeRail(1, "+top")),
+          b: holeEnd(pickFreeRail(1, "+bottom")),
+          color: "#ef4444",
+        };
+      }
+
+      const hasGndFeed = Object.values(nextWires).some(
+        (w) =>
+          (w.a.kind === "pin" && w.a.ref.node === gndNode.id) ||
+          (w.b.kind === "pin" && w.b.ref.node === gndNode.id),
+      );
+      if (!hasGndFeed) {
+        const wFeed = asWireId(nextId("w"));
+        const wBridge = asWireId(nextId("w"));
+        nextWires[wFeed] = {
+          id: wFeed,
+          a: pinEnd({ node: gndNode.id, pin: "GND" }),
+          b: holeEnd(pickFreeRail(1, "-bottom")),
+          color: "#3b82f6",
+        };
+        nextWires[wBridge] = {
+          id: wBridge,
+          a: holeEnd(pickFreeRail(1, "-top")),
+          b: holeEnd(pickFreeRail(1, "-bottom")),
+          color: "#3b82f6",
+        };
+      }
+
+      // Bridge split rail segments if needed
+      if (spec.railSegments > 1) {
+        const perSegment = Math.ceil(spec.columns / spec.railSegments);
+        for (let seg = 1; seg < spec.railSegments; seg++) {
+          const cLeft = seg * perSegment;
+          const cRight = cLeft + 1;
+          if (cRight <= spec.columns) {
+            for (const r of ["+top", "-top", "+bottom", "-bottom"] as const) {
+              const alreadyBridged = Object.values(nextWires).some(
+                (w) =>
+                  w.a.kind === "hole" &&
+                  w.b.kind === "hole" &&
+                  w.a.ref.row === r &&
+                  w.b.ref.row === r &&
+                  Math.min(w.a.ref.col, w.b.ref.col) <= cLeft &&
+                  Math.max(w.a.ref.col, w.b.ref.col) >= cRight,
+              );
+              if (!alreadyBridged) {
+                const wb = asWireId(nextId("w"));
+                nextWires[wb] = {
+                  id: wb,
+                  a: holeEnd(pickFreeRail(cLeft, r)),
+                  b: holeEnd(pickFreeRail(cRight, r)),
+                  color: isPositiveRail(r) ? "#ef4444" : "#3b82f6",
+                };
+              }
+            }
+          }
+        }
+      }
+
       const col = Math.round(node.pos.x);
       const holes = dipHoles({ col }, def.pins.length);
       const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
@@ -712,26 +966,21 @@ export const useCircuitStore = create<CircuitState>()(
       const vccLeg = holes[vccIdx]!;
       const gndLeg = holes[gndIdx]!;
 
-      // Upper half (row F): free hole is row J -> +top rail; lower half (row E): row A -> -bottom rail
-      const vccHole: HoleRef = { col: vccLeg.col, row: vccLeg.row === "F" ? "J" : "A" };
-      const vccRail: HoleRef = { col: vccLeg.col, row: vccLeg.row === "F" ? "+top" : "+bottom" };
-      const gndHole: HoleRef = { col: gndLeg.col, row: gndLeg.row === "E" ? "A" : "J" };
-      const gndRail: HoleRef = { col: gndLeg.col, row: gndLeg.row === "E" ? "-bottom" : "-top" };
+      const vccHole = pickFree(vccLeg.col, vccLeg.row === "F" ? ["G", "H", "I", "J"] : ["D", "C", "B", "A"]);
+      const vccRail = pickFreeRail(vccLeg.col, vccLeg.row === "F" ? "+top" : "+bottom");
+      const gndHole = pickFree(gndLeg.col, gndLeg.row === "E" ? ["D", "C", "B", "A"] : ["G", "H", "I", "J"]);
+      const gndRail = pickFreeRail(gndLeg.col, gndLeg.row === "E" ? "-bottom" : "-top");
 
       const w1 = asWireId(nextId("w"));
       const w2 = asWireId(nextId("w"));
+      nextWires[w1] = { id: w1, a: holeEnd(vccHole), b: holeEnd(vccRail), color: "#ef4444" };
+      nextWires[w2] = { id: w2, a: holeEnd(gndHole), b: holeEnd(gndRail), color: "#3b82f6" };
 
-      commit({
-        ...doc,
-        wires: {
-          ...doc.wires,
-          [w1]: { id: w1, a: holeEnd(vccHole), b: holeEnd(vccRail), color: "#ef4444" },
-          [w2]: { id: w2, a: holeEnd(gndHole), b: holeEnd(gndRail), color: "#3b82f6" },
-        },
-      });
+      commit({ ...doc, nodes: nextNodes, wires: nextWires });
     },
 
     load: (doc, origin = null) => {
+      clearAllPulseTimers();
       // A freshly loaded circuit has not been clocked. Carrying the old state in
       // would have its flip-flops start at values from a different circuit.
       const { index, diagnostics, routes, flopState } = simulate(doc, {});
@@ -754,6 +1003,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     clear: () => {
+      clearAllPulseTimers();
       const currentDoc = get().doc;
       const nextDoc = emptyDocument();
       const { index, diagnostics, routes, flopState } = simulate(nextDoc, {});
@@ -774,6 +1024,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     undo: () => {
+      clearAllPulseTimers();
       const { past, doc, future } = get();
       const prev = past[past.length - 1];
       if (!prev) return;
@@ -792,6 +1043,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     redo: () => {
+      clearAllPulseTimers();
       const { future, doc, past } = get();
       const next = future[0];
       if (!next) return;
@@ -820,7 +1072,12 @@ export const useCircuitStore = create<CircuitState>()(
        * ghost-connection failure the invariants exist to prevent. Undo history is
        * dropped too: nobody expects to reopen a tab and undo yesterday.
        */
-      partialize: (s) => ({ doc: s.doc, schematic: s.schematic, origin: s.origin }),
+      partialize: (s) => ({
+        doc: s.doc,
+        schematic: s.schematic,
+        origin: s.origin,
+        flopState: s.flopState,
+      }),
 
       /**
        * Rehydration must RE-DERIVE, not restore. The document is plain JSON, so it

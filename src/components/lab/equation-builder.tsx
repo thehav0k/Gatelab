@@ -109,8 +109,12 @@ export function EquationBuilder() {
     // Set the TARGET too, so the board is immediately checkable against the very
     // equation it was built from.
     setSpec(draft.trim());
+    const onBoard = useCircuitStore.getState().doc.board !== null;
     // Remember WHAT this board is, so changing the gate rule can rebuild it.
     load(doc, draft.trim());
+    if (onBoard) {
+      useCircuitStore.getState().toBreadboard();
+    }
     setOpen(false);
     toast.success(
       `Built with ${preview.design.chipCount} IC${preview.design.chipCount === 1 ? "" : "s"}`,
