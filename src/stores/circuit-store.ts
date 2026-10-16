@@ -32,6 +32,7 @@ import { arityOf, gateInputNames } from "@/lib/simulation/parts";
 import { routeAll, type Route } from "@/lib/simulation/router";
 import { placeOnBreadboard, seatOnBoard } from "@/lib/simulation/place";
 import {
+  DEFAULT_BOARD,
   holeKey,
   isPositiveRail,
   stripOf,
@@ -120,6 +121,7 @@ interface CircuitState {
   setWireColor: (id: WireId, color?: string) => void;
   activeWireColor: string | null;
   setActiveWireColor: (color: string | null) => void;
+  setLedColor: (id: NodeId, color: string) => void;
   rotateNode: (id: NodeId, delta?: 90 | -90) => void;
   flipNode: (id: NodeId, axis: "x" | "y") => void;
   autoWireIcPower: (nodeId: string) => void;
@@ -527,8 +529,8 @@ export const useCircuitStore = create<CircuitState>()(
       if (doc.board) return [];
 
       const { doc: placed, unplaced } = spec
-        ? placeOnBreadboard(doc, spec)
-        : placeOnBreadboard(doc);
+        ? placeOnBreadboard(doc, spec, { panelMode: true })
+        : placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
       const { index, diagnostics, routes, flopState } = simulate(placed, get().flopState);
       set({
         doc: placed,
@@ -593,6 +595,22 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     setActiveWireColor: (color) => set({ activeWireColor: color }),
+
+    setLedColor: (id, color) => {
+      const { doc } = get();
+      const node = doc.nodes[id];
+      if (!node || node.kind !== "led") return;
+      commit(
+        {
+          ...doc,
+          nodes: {
+            ...doc.nodes,
+            [id]: { ...node, color },
+          },
+        },
+        true,
+      );
+    },
 
     rotateNode: (id, delta = 90) => {
       const { doc } = get();

@@ -29,6 +29,7 @@ import {
   type HoleRef,
 } from "@/lib/simulation/breadboard";
 import {
+  asNodeId,
   endpointKey,
   holeEnd,
   pinEnd,
@@ -36,6 +37,7 @@ import {
   type CircuitDocument,
   type CircuitNode,
   type Endpoint,
+  type PinRef,
   type Point,
   type Wire,
   type WireId,
@@ -84,6 +86,7 @@ export function BreadboardView() {
   const cancelWire = useCircuitStore((s) => s.cancelWire);
   const deleteWire = useCircuitStore((s) => s.deleteWire);
   const setWireColor = useCircuitStore((s) => s.setWireColor);
+  const setLedColor = useCircuitStore((s) => s.setLedColor);
   const autoWireIcPower = useCircuitStore((s) => s.autoWireIcPower);
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
   const toggleClock = useCircuitStore((s) => s.toggleClock);
@@ -105,6 +108,9 @@ export function BreadboardView() {
   const clearCircuit = useCircuitStore((s) => s.clear);
 
   const [hover, setHover] = useState<HoleRef | null>(null);
+  const [hoverSocket, setHoverSocket] = useState<{ point: Point; pin: PinRef; label: string; color: string } | null>(null);
+  const [cursorPos, setCursorPos] = useState<Point | null>(null);
+  const hoverValue = useEndpointValue(hover ? holeEnd(hover) : null);
   const [selectedWireId, setSelectedWireId] = useState<string | null>(null);
   const [showXRay, setShowXRay] = useState<boolean>(true);
   const [showAirwires, setShowAirwires] = useState<boolean>(false);
@@ -158,20 +164,65 @@ export function BreadboardView() {
   // Exact coordinates of all Trainer Panel sockets
   const trainerPinMap = useMemo(() => {
     const map = new Map<string, Point>();
-    if (vccNode) map.set(`${vccNode.id}:VCC`, { x: 480, y: 60 });
-    if (gndNode) map.set(`${gndNode.id}:GND`, { x: 540, y: 60 });
-    if (clockNode) map.set(`${clockNode.id}:CLK`, { x: 850, y: 55 });
+    const register = (pin: PinRef, pt: Point) => {
+      map.set(pinKey(pin), pt);
+      map.set(`${pin.node}:${pin.pin}`, pt);
+    };
+
+    if (vccNode) register({ node: vccNode.id, pin: "VCC" }, { x: 480, y: 60 });
+    if (gndNode) register({ node: gndNode.id, pin: "GND" }, { x: 540, y: 60 });
+    if (clockNode) register({ node: clockNode.id, pin: "CLK" }, { x: 850, y: 55 });
 
     switchNodes.forEach((sw, i) => {
-      map.set(`${sw.id}:Q`, { x: 105 + i * 82, y: 668 });
+      register({ node: sw.id, pin: "Q" }, { x: 105 + i * 82, y: 668 });
     });
 
     ledNodes.forEach((led, i) => {
-      map.set(`${led.id}:A`, { x: 945 + i * 66, y: 72 });
+      register({ node: led.id, pin: "A" }, { x: 945 + i * 66, y: 72 });
     });
 
     return map;
   }, [vccNode, gndNode, clockNode, switchNodes, ledNodes]);
+
+  // List of all Trainer Panel sockets for magnetic hovering and snapping
+  const trainerSocketsList = useMemo(() => {
+    const list: { point: Point; pin: PinRef; label: string; color: string }[] = [];
+    if (vccNode) list.push({ point: { x: 480, y: 60 }, pin: { node: vccNode.id, pin: "VCC" }, label: "+5V", color: "#ef4444" });
+    if (gndNode) list.push({ point: { x: 540, y: 60 }, pin: { node: gndNode.id, pin: "GND" }, label: "GND", color: "#3b82f6" });
+    if (clockNode) list.push({ point: { x: 850, y: 55 }, pin: { node: clockNode.id, pin: "CLK" }, label: "CLK", color: "#f59e0b" });
+    switchNodes.forEach((sw, i) => {
+      list.push({ point: { x: 105 + i * 82, y: 668 }, pin: { node: sw.id, pin: "Q" }, label: sw.label, color: "#38bdf8" });
+    });
+    ledNodes.forEach((led, i) => {
+      list.push({ point: { x: 945 + i * 66, y: 72 }, pin: { node: led.id, pin: "A" }, label: led.label, color: led.color ?? "#22c55e" });
+    });
+    return list;
+  }, [vccNode, gndNode, clockNode, switchNodes, ledNodes]);
+
+  const pendingStart = useMemo<Point | null>(() => {
+    if (pendingHole) {
+      const p = holePoint(pendingHole);
+      return { x: BOARD_OFFSET_X + p.x, y: BOARD_OFFSET_Y + p.y };
+    }
+    if (pendingPin) {
+      return (
+        trainerPinMap.get(pinKey(pendingPin)) ??
+        trainerPinMap.get(`${pendingPin.node}:${pendingPin.pin}`) ??
+        null
+      );
+    }
+    return null;
+  }, [pendingHole, pendingPin, trainerPinMap]);
+
+  const pendingTarget = useMemo<Point | null>(() => {
+    if (!pendingStart) return null;
+    if (hoverSocket) return hoverSocket.point;
+    if (hover) {
+      const p = holePoint(hover);
+      return { x: BOARD_OFFSET_X + p.x, y: BOARD_OFFSET_Y + p.y };
+    }
+    return cursorPos;
+  }, [pendingStart, hoverSocket, hover, cursorPos]);
 
   // Dedicated Manhattan routing channels
   const channelConfig = useMemo<BreadboardChannelConfig>(
@@ -454,17 +505,43 @@ export function BreadboardView() {
         onPointerMove={(e) => {
           if (cam.movePan(e.clientX, e.clientY)) return;
           const p = cam.toView(e.clientX, e.clientY);
+          setCursorPos(p);
+
+          // Check Trainer Panel sockets first (magnetic snap radius 16px)
+          const nearSocket = trainerSocketsList.find(
+            (s) => Math.hypot(p.x - s.point.x, p.y - s.point.y) <= 16,
+          );
+          if (nearSocket) {
+            setHoverSocket(nearSocket);
+            setHover(null);
+            return;
+          }
+          setHoverSocket(null);
+
+          // Check Breadboard holes (magnetic snap radius 14px)
           const bh = holeAt(spec, p.x - BOARD_OFFSET_X, p.y - BOARD_OFFSET_Y);
-          setHover(bh);
+          if (bh) {
+            const hp = holePoint(bh);
+            const dist = Math.hypot(p.x - (BOARD_OFFSET_X + hp.x), p.y - (BOARD_OFFSET_Y + hp.y));
+            if (dist <= 14) {
+              setHover(bh);
+              return;
+            }
+          }
+          setHover(null);
         }}
         onPointerUp={() => cam.endPan()}
         onPointerLeave={() => {
           cam.endPan();
           setHover(null);
+          setHoverSocket(null);
+          setCursorPos(null);
         }}
         onContextMenu={(e) => e.preventDefault()}
         onClick={() => {
-          if (hover) {
+          if (hoverSocket) {
+            clickPin(hoverSocket.pin);
+          } else if (hover) {
             clickHole(hover);
           } else {
             setSelectedWireId(null);
@@ -494,287 +571,343 @@ export function BreadboardView() {
           </pattern>
         </defs>
 
-        {/* --- Digital Logic Trainer Board Chassis Base --- */}
-        <rect
-          width={CHASSIS_W}
-          height={CHASSIS_H}
-          rx={12}
-          className="fill-slate-950 stroke-border"
-          strokeWidth={2}
-        />
-
-        {/* Chassis Metallic Hex Corner Screws */}
-        {[
-          { x: 16, y: 16 },
-          { x: CHASSIS_W - 16, y: 16 },
-          { x: 16, y: CHASSIS_H - 16 },
-          { x: CHASSIS_W - 16, y: CHASSIS_H - 16 },
-        ].map((pos, idx) => (
-          <g key={idx} className="pointer-events-none">
-            <circle cx={pos.x} cy={pos.y} r={6.5} fill="#334155" stroke="#1e293b" strokeWidth={1} />
-            <circle cx={pos.x} cy={pos.y} r={4.5} fill="#475569" />
-            <line x1={pos.x - 3} y1={pos.y - 3} x2={pos.x + 3} y2={pos.y + 3} stroke="#0f172a" strokeWidth={1} />
-          </g>
-        ))}
-
-        {/* Chassis Brand Silk-Screen Title */}
-        <g className="pointer-events-none">
-          <text
-            x={24}
-            y={34}
-            className="fill-foreground font-mono text-[13px] font-bold tracking-wider"
-          >
-            DIGITAL LOGIC TRAINER
-          </text>
-          <text
-            x={24}
-            y={50}
-            className="fill-muted-foreground font-mono text-[9px] tracking-wide"
-          >
-            MODEL 74XX-TTL · 5V BENCH
-          </text>
-        </g>
-
-        {/* Top-Left: DC Power Supply Module */}
-        <g>
+        {/* =============================================================== */}
+        {/* LAYER 1: Base Chassis & Breadboard Body                          */}
+        {/* =============================================================== */}
+        <g id="layer-chassis-and-board">
+          {/* Digital Logic Trainer Board Chassis Base */}
           <rect
-            x={400}
-            y={14}
-            width={180}
-            height={82}
-            rx={6}
-            className="fill-card/75 stroke-border"
-            strokeWidth={1}
+            width={CHASSIS_W}
+            height={CHASSIS_H}
+            rx={12}
+            fill="#020617"
+            stroke="#1e293b"
+            strokeWidth={2}
           />
-          <text
-            x={410}
-            y={28}
-            className="fill-muted-foreground font-mono text-[8.5px] font-bold pointer-events-none"
-          >
-            DC POWER SUPPLY
-          </text>
-          {/* Status Power LED */}
-          <circle cx={425} cy={60} r={4} fill="#10b981" />
-          <text
-            x={434}
-            y={63}
-            className="fill-emerald-400 font-mono text-[8.5px] font-semibold pointer-events-none"
-          >
-            +5.0V ON
-          </text>
-          {/* +5V Socket */}
-          <TrainerSocket
-            cx={480}
-            cy={60}
-            label="+5V"
-            sublabel="VCC"
-            color="#ef4444"
-            isArmed={pendingPin !== null && pendingPin.node === vccNode?.id && pendingPin.pin === "VCC"}
-            onClick={handleVccClick}
-          />
-          {/* GND Socket */}
-          <TrainerSocket
-            cx={540}
-            cy={60}
-            label="GND"
-            sublabel="0V"
-            color="#3b82f6"
-            isArmed={pendingPin !== null && pendingPin.node === gndNode?.id && pendingPin.pin === "GND"}
-            onClick={handleGndClick}
-          />
-        </g>
 
-        {/* Top-Center: Pulse / Clock Generator Module */}
-        <g>
-          <rect
-            x={595}
-            y={14}
-            width={295}
-            height={82}
-            rx={6}
-            className="fill-card/75 stroke-border"
-            strokeWidth={1}
-          />
-          <text
-            x={605}
-            y={28}
-            className="fill-muted-foreground font-mono text-[8.5px] font-bold pointer-events-none"
-          >
-            PULSE / CLK GENERATOR
-          </text>
-          {/* Manual Single-Pulse Button */}
-          <g
-            className="cursor-pointer group"
-            onClick={handlePulse}
-            transform="translate(605, 42)"
-          >
-            <rect
-              width={48}
-              height={26}
-              rx={4}
-              className="fill-primary/90 hover:fill-primary stroke-border"
-              strokeWidth={1}
-            />
-            <text
-              x={24}
-              y={16.5}
-              textAnchor="middle"
-              fill="#ffffff"
-              className="font-mono text-[9px] font-bold pointer-events-none"
-            >
-              PULSE
-            </text>
-          </g>
-
-          {/* Auto frequency buttons (1Hz, 2Hz, 5Hz) */}
-          {[1, 2, 5].map((hzVal, i) => (
-            <g
-              key={hzVal}
-              className="cursor-pointer group"
-              onClick={() => setAutoHz((curr) => (curr === hzVal ? null : hzVal))}
-              transform={`translate(${660 + i * 36}, 42)`}
-            >
-              <rect
-                width={32}
-                height={26}
-                rx={4}
-                className={autoHz === hzVal ? "fill-primary" : "fill-muted hover:fill-accent"}
-              />
-              <text
-                x={16}
-                y={16.5}
-                textAnchor="middle"
-                className={cn(
-                  "font-mono text-[9px] font-bold pointer-events-none",
-                  autoHz === hzVal ? "fill-primary-foreground" : "fill-foreground",
-                )}
-              >
-                {hzVal}Hz
-              </text>
+          {/* Chassis Metallic Hex Corner Screws */}
+          {[
+            { x: 16, y: 16 },
+            { x: CHASSIS_W - 16, y: 16 },
+            { x: 16, y: CHASSIS_H - 16 },
+            { x: CHASSIS_W - 16, y: CHASSIS_H - 16 },
+          ].map((pos, idx) => (
+            <g key={idx} className="pointer-events-none">
+              <circle cx={pos.x} cy={pos.y} r={6.5} fill="#334155" stroke="#1e293b" strokeWidth={1} />
+              <circle cx={pos.x} cy={pos.y} r={4.5} fill="#475569" />
+              <line x1={pos.x - 3} y1={pos.y - 3} x2={pos.x + 3} y2={pos.y + 3} stroke="#0f172a" strokeWidth={1} />
             </g>
           ))}
 
-          {/* Clock LED indicator */}
-          <g
-            className="cursor-pointer"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (clockNode) toggleClock(clockNode.id);
-            }}
-          >
-            <circle
-              cx={788}
-              cy={55}
-              r={5.5}
-              fill={clockNode?.state === 1 ? "#f59e0b" : "#475569"}
-            />
+          {/* Chassis Brand Silk-Screen Title (Silver on Dark Chassis) */}
+          <g className="pointer-events-none select-none">
             <text
-              x={788}
-              y={70}
-              textAnchor="middle"
-              className="fill-muted-foreground font-mono text-[7.5px] font-semibold pointer-events-none"
+              x={24}
+              y={34}
+              fill="#f8fafc"
+              className="font-mono text-[13px] font-bold tracking-wider"
             >
-              {clockNode?.state === 1 ? "HIGH" : "LOW"}
+              DIGITAL LOGIC TRAINER
+            </text>
+            <text
+              x={24}
+              y={50}
+              fill="#94a3b8"
+              className="font-mono text-[9px] tracking-wide"
+            >
+              MODEL 74XX-TTL · 5V BENCH
             </text>
           </g>
 
-          {/* CLK Socket */}
-          <TrainerSocket
-            cx={850}
-            cy={55}
-            label="CLK"
-            sublabel="OUT"
-            color="#f59e0b"
-            isArmed={pendingPin !== null && pendingPin.node === clockNode?.id && pendingPin.pin === "CLK"}
-            onClick={handleClockClick}
-          />
-        </g>
-
-        {/* Top-Right: Logic Indicators (Output Monitor LEDs) */}
-        <g>
-          <rect
-            x={905}
-            y={14}
-            width={CHASSIS_W - 925}
-            height={82}
-            rx={6}
-            className="fill-card/75 stroke-border"
-            strokeWidth={1}
-          />
-          <text
-            x={915}
-            y={28}
-            className="fill-muted-foreground font-mono text-[8.5px] font-bold pointer-events-none"
-          >
-            LOGIC INDICATORS (OUTPUT MONITOR)
-          </text>
-          {ledNodes.map((led, i) => (
-            <TrainerLed
-              key={led.id}
-              led={led}
-              cx={945 + i * 66}
-              cy={48}
-              isArmed={pendingPin !== null && pendingPin.node === led.id && pendingPin.pin === "A"}
-              onClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
-                clickPin({ node: led.id, pin: "A" });
-              }}
-            />
-          ))}
-          <g
-            className="cursor-pointer group"
-            onClick={handleAddLed}
-            transform={`translate(${945 + ledNodes.length * 66 + 8}, 36)`}
-          >
+          {/* Top-Left: DC Power Supply Module */}
+          <g>
             <rect
-              width={56}
-              height={24}
-              rx={4}
-              className="fill-muted/80 hover:fill-muted stroke-border"
+              x={400}
+              y={14}
+              width={180}
+              height={82}
+              rx={6}
+              fill="#090d16"
+              stroke="#1e293b"
               strokeWidth={1}
             />
             <text
-              x={28}
-              y={15}
-              textAnchor="middle"
-              className="fill-foreground font-mono text-[9px] font-semibold pointer-events-none"
+              x={410}
+              y={28}
+              fill="#94a3b8"
+              className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
             >
-              + LED
+              DC POWER SUPPLY
             </text>
+            {/* Status Power LED */}
+            <circle cx={425} cy={60} r={4} fill="#10b981" />
+            <text
+              x={434}
+              y={63}
+              fill="#34d399"
+              className="font-mono text-[8.5px] font-semibold pointer-events-none select-none"
+            >
+              +5.0V ON
+            </text>
+            {/* +5V Socket */}
+            <TrainerSocket
+              cx={480}
+              cy={60}
+              label="+5V"
+              sublabel="VCC"
+              color="#ef4444"
+              isArmed={pendingPin !== null && pendingPin.node === vccNode?.id && pendingPin.pin === "VCC"}
+              onClick={handleVccClick}
+            />
+            {/* GND Socket */}
+            <TrainerSocket
+              cx={540}
+              cy={60}
+              label="GND"
+              sublabel="0V"
+              color="#3b82f6"
+              isArmed={pendingPin !== null && pendingPin.node === gndNode?.id && pendingPin.pin === "GND"}
+              onClick={handleGndClick}
+            />
+          </g>
+
+          {/* Top-Center: Pulse / Clock Generator Module */}
+          <g>
+            <rect
+              x={595}
+              y={14}
+              width={295}
+              height={82}
+              rx={6}
+              fill="#090d16"
+              stroke="#1e293b"
+              strokeWidth={1}
+            />
+            <text
+              x={605}
+              y={28}
+              fill="#94a3b8"
+              className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
+            >
+              PULSE / CLK GENERATOR
+            </text>
+            {/* Manual Single-Pulse Button */}
+            <g
+              className="cursor-pointer group"
+              onClick={handlePulse}
+              transform="translate(605, 42)"
+            >
+              <rect
+                width={48}
+                height={26}
+                rx={4}
+                className="fill-primary/90 hover:fill-primary stroke-border"
+                strokeWidth={1}
+              />
+              <text
+                x={24}
+                y={16.5}
+                textAnchor="middle"
+                fill="#ffffff"
+                className="font-mono text-[9px] font-bold pointer-events-none select-none"
+              >
+                PULSE
+              </text>
+            </g>
+
+            {/* Auto frequency buttons (1Hz, 2Hz, 5Hz) */}
+            {[1, 2, 5].map((hzVal, i) => (
+              <g
+                key={hzVal}
+                className="cursor-pointer group"
+                onClick={() => setAutoHz((curr) => (curr === hzVal ? null : hzVal))}
+                transform={`translate(${660 + i * 36}, 42)`}
+              >
+                <rect
+                  width={32}
+                  height={26}
+                  rx={4}
+                  className={autoHz === hzVal ? "fill-primary" : "fill-slate-800 hover:fill-slate-700"}
+                />
+                <text
+                  x={16}
+                  y={16.5}
+                  textAnchor="middle"
+                  fill={autoHz === hzVal ? "#ffffff" : "#cbd5e1"}
+                  className="font-mono text-[9px] font-bold pointer-events-none select-none"
+                >
+                  {hzVal}Hz
+                </text>
+              </g>
+            ))}
+
+            {/* Clock LED indicator */}
+            <g
+              className="cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (clockNode) toggleClock(clockNode.id);
+              }}
+            >
+              <circle
+                cx={788}
+                cy={55}
+                r={5.5}
+                fill={clockNode?.state === 1 ? "#f59e0b" : "#475569"}
+              />
+              <text
+                x={788}
+                y={70}
+                textAnchor="middle"
+                fill="#94a3b8"
+                className="font-mono text-[7.5px] font-semibold pointer-events-none select-none"
+              >
+                {clockNode?.state === 1 ? "HIGH" : "LOW"}
+              </text>
+            </g>
+
+            {/* CLK Socket */}
+            <TrainerSocket
+              cx={850}
+              cy={55}
+              label="CLK"
+              sublabel="OUT"
+              color="#f59e0b"
+              isArmed={pendingPin !== null && pendingPin.node === clockNode?.id && pendingPin.pin === "CLK"}
+              onClick={handleClockClick}
+            />
+          </g>
+
+          {/* Top-Right: Logic Indicators (Output Monitor LEDs) */}
+          <g>
+            <rect
+              x={905}
+              y={14}
+              width={CHASSIS_W - 925}
+              height={82}
+              rx={6}
+              fill="#090d16"
+              stroke="#1e293b"
+              strokeWidth={1}
+            />
+            <text
+              x={915}
+              y={28}
+              fill="#94a3b8"
+              className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
+            >
+              LOGIC INDICATORS (OUTPUT MONITOR)
+            </text>
+            {ledNodes.map((led, i) => (
+              <TrainerLed
+                key={led.id}
+                led={led}
+                cx={945 + i * 66}
+                cy={48}
+                isArmed={pendingPin !== null && pendingPin.node === led.id && pendingPin.pin === "A"}
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  clickPin({ node: led.id, pin: "A" });
+                }}
+                onColorChange={(color) => setLedColor(led.id, color)}
+              />
+            ))}
+            <g
+              className="cursor-pointer group"
+              onClick={handleAddLed}
+              transform={`translate(${945 + ledNodes.length * 66 + 8}, 36)`}
+            >
+              <rect
+                width={56}
+                height={24}
+                rx={4}
+                className="fill-slate-800 hover:fill-slate-700 stroke-slate-700"
+                strokeWidth={1}
+              />
+              <text
+                x={28}
+                y={15}
+                textAnchor="middle"
+                fill="#cbd5e1"
+                className="font-mono text-[9px] font-semibold pointer-events-none select-none"
+              >
+                + LED
+              </text>
+            </g>
+          </g>
+
+          {/* Center: Solderless Breadboard Base & Body */}
+          <g transform={`translate(${BOARD_OFFSET_X}, ${BOARD_OFFSET_Y})`}>
+            <rect width={w} height={h} rx={6} className="fill-muted stroke-border" />
+            <rect width={w} height={h} fill="transparent" />
+            <BoardBody spec={spec} />
+          </g>
+
+          {/* Bottom: Logic Input Switches (Data Switches) */}
+          <g>
+            <rect
+              x={60}
+              y={595}
+              width={w}
+              height={88}
+              rx={6}
+              fill="#090d16"
+              stroke="#1e293b"
+              strokeWidth={1}
+            />
+            <text
+              x={75}
+              y={610}
+              fill="#94a3b8"
+              className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
+            >
+              LOGIC INPUT SWITCHES (DATA LEVEL)
+            </text>
+            {switchNodes.map((sw, i) => (
+              <TrainerSwitch
+                key={sw.id}
+                sw={sw}
+                cx={105 + i * 82}
+                cy={642}
+                isArmed={pendingPin !== null && pendingPin.node === sw.id && pendingPin.pin === "Q"}
+                onToggle={() => toggleSwitch(sw.id)}
+                onSocketClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  clickPin({ node: sw.id, pin: "Q" });
+                }}
+              />
+            ))}
+            <g
+              className="cursor-pointer group"
+              onClick={handleAddSwitch}
+              transform={`translate(${105 + switchNodes.length * 82 + 8}, 630)`}
+            >
+              <rect
+                width={62}
+                height={26}
+                rx={4}
+                className="fill-slate-800 hover:fill-slate-700 stroke-slate-700"
+                strokeWidth={1}
+              />
+              <text
+                x={31}
+                y={16.5}
+                textAnchor="middle"
+                fill="#cbd5e1"
+                className="font-mono text-[9px] font-semibold pointer-events-none select-none"
+              >
+                + Input
+              </text>
+            </g>
           </g>
         </g>
 
-        {/* --- Center: Solderless Breadboard --- */}
-        <g transform={`translate(${BOARD_OFFSET_X}, ${BOARD_OFFSET_Y})`}>
-          <rect width={w} height={h} rx={6} className="fill-muted stroke-border" />
-          <rect width={w} height={h} fill="transparent" />
-
-          <BoardBody spec={spec} />
-
-          {/* Airwires (Rat's Nest) Guide */}
+        {/* =============================================================== */}
+        {/* LAYER 2: Strip Continuity Highlights & Wiring Guides             */}
+        {/* =============================================================== */}
+        <g id="layer-strip-highlights" transform={`translate(${BOARD_OFFSET_X}, ${BOARD_OFFSET_Y})`}>
+          {hover && <StripHighlight spec={spec} hole={hover} doc={doc} />}
           {showAirwires && <AirwiresGuide doc={doc} spec={spec} />}
-
-          {/* Seated 74xx ICs with Horizontal Drag and Action Pill */}
-          {icNodes.map((node) => (
-            <SeatedIc
-              key={node.id}
-              node={node}
-              spec={spec}
-              otherIcs={icNodes}
-              isSelected={selection.includes(node.id)}
-              showXRay={showXRay}
-              onSelect={() => select([node.id])}
-              onDelete={() => deleteSelected()}
-              onAutoPower={(nodeId) => autoWireIcPower(nodeId)}
-              onMove={(newCol: number) => moveNode(node.id, { x: newCol, y: 0 })}
-              camZoom={cam.zoom}
-            />
-          ))}
-
-          {/* Hovered hole continuity halo & live 4-state logic probe badge */}
-          {hover && <HoleCursor spec={spec} hole={hover} doc={doc} />}
-
-          {/* Pending hole ring */}
           {pendingHole && (
             <circle
               cx={holePoint(pendingHole).x}
@@ -787,110 +920,151 @@ export function BreadboardView() {
           )}
         </g>
 
-        {/* --- Bottom: Logic Input Switches (Data Switches) --- */}
-        <g>
-          <rect
-            x={60}
-            y={595}
-            width={w}
-            height={88}
-            rx={6}
-            className="fill-card/75 stroke-border"
-            strokeWidth={1}
-          />
-          <text
-            x={75}
-            y={610}
-            className="fill-muted-foreground font-mono text-[8.5px] font-bold pointer-events-none"
-          >
-            LOGIC INPUT SWITCHES (DATA LEVEL)
-          </text>
-          {switchNodes.map((sw, i) => (
-            <TrainerSwitch
-              key={sw.id}
-              sw={sw}
-              cx={105 + i * 82}
-              cy={642}
-              isArmed={pendingPin !== null && pendingPin.node === sw.id && pendingPin.pin === "Q"}
-              onToggle={() => toggleSwitch(sw.id)}
-              onSocketClick={(e: React.MouseEvent) => {
-                e.stopPropagation();
-                clickPin({ node: sw.id, pin: "Q" });
+        {/* =============================================================== */}
+        {/* LAYER 3: IC Chip Bodies & Orientation Notch/Dot                 */}
+        {/* =============================================================== */}
+        <g id="layer-ic-bodies" transform={`translate(${BOARD_OFFSET_X}, ${BOARD_OFFSET_Y})`}>
+          {icNodes.map((node) => (
+            <SeatedIc
+              key={node.id}
+              node={node}
+              spec={spec}
+              otherIcs={icNodes}
+              isSelected={selection.includes(node.id)}
+              showXRay={showXRay}
+              renderPart="body"
+              onSelect={() => select([node.id])}
+              onDelete={() => deleteSelected()}
+              onAutoPower={(nodeId) => autoWireIcPower(nodeId)}
+              onMove={(newCol: number) => moveNode(node.id, { x: newCol, y: 0 })}
+              camZoom={cam.zoom}
+            />
+          ))}
+        </g>
+
+        {/* =============================================================== */}
+        {/* LAYER 4: Jumper Wires & Pending Rubberband Wire                 */}
+        {/* =============================================================== */}
+        <g id="layer-wires">
+          {Object.values(doc.wires).map((wire) => (
+            <Jumper
+              key={wire.id}
+              wire={wire}
+              routedWire={routedWireMap.get(wire.id)}
+              isSelected={selectedWireId === wire.id}
+              onSelect={() => {
+                select([]);
+                setSelectedWireId((curr) => (curr === wire.id ? null : wire.id));
+              }}
+              onDelete={() => {
+                deleteWire(wire.id);
+                setSelectedWireId(null);
+                toast.info("Deleted jumper wire");
+              }}
+              onColorChange={(color) => {
+                setWireColor(wire.id, color);
+                toast.success("Wire color updated");
+              }}
+              onChannelDrag={(newY) => {
+                setWireCustomY((prev) => ({ ...prev, [wire.id]: newY }));
               }}
             />
           ))}
-          <g
-            className="cursor-pointer group"
-            onClick={handleAddSwitch}
-            transform={`translate(${105 + switchNodes.length * 82 + 8}, 630)`}
-          >
-            <rect
-              width={62}
-              height={26}
-              rx={4}
-              className="fill-muted/80 hover:fill-muted stroke-border"
-              strokeWidth={1}
-            />
-            <text
-              x={31}
-              y={16.5}
-              textAnchor="middle"
-              className="fill-foreground font-mono text-[9px] font-semibold pointer-events-none"
-            >
-              + Input
-            </text>
-          </g>
+
+          {/* Pending Wire Rubberband */}
+          {pendingStart && pendingTarget && (
+            <g className="pointer-events-none">
+              <line
+                x1={pendingStart.x}
+                y1={pendingStart.y}
+                x2={pendingTarget.x}
+                y2={pendingTarget.y}
+                className="stroke-primary"
+                strokeWidth={2.5}
+                strokeDasharray="4 4"
+                strokeLinecap="round"
+              />
+              <circle
+                cx={pendingTarget.x}
+                cy={pendingTarget.y}
+                r={3.5}
+                fill="var(--color-primary, #38bdf8)"
+                opacity={0.8}
+              />
+            </g>
+          )}
         </g>
 
-        {/* --- Jumpers (Routed across Chassis & Breadboard) --- */}
-        {Object.values(doc.wires).map((wire) => (
-          <Jumper
-            key={wire.id}
-            wire={wire}
-            routedWire={routedWireMap.get(wire.id)}
-            isSelected={selectedWireId === wire.id}
-            onSelect={() => {
-              select([]);
-              setSelectedWireId((curr) => (curr === wire.id ? null : wire.id));
-            }}
-            onDelete={() => {
-              deleteWire(wire.id);
-              setSelectedWireId(null);
-              toast.info("Deleted jumper wire");
-            }}
-            onColorChange={(color) => {
-              setWireColor(wire.id, color);
-              toast.success("Wire color updated");
-            }}
-            onChannelDrag={(newY) => {
-              setWireCustomY((prev) => ({ ...prev, [wire.id]: newY }));
-            }}
-          />
-        ))}
+        {/* =============================================================== */}
+        {/* LAYER 5: IC Labels, Part Badges, & Action Pills (Above Wires)   */}
+        {/* =============================================================== */}
+        <g id="layer-ic-labels-and-xray" transform={`translate(${BOARD_OFFSET_X}, ${BOARD_OFFSET_Y})`}>
+          {icNodes.map((node) => (
+            <SeatedIc
+              key={node.id}
+              node={node}
+              spec={spec}
+              otherIcs={icNodes}
+              isSelected={selection.includes(node.id)}
+              showXRay={showXRay}
+              renderPart="overlay"
+              onSelect={() => select([node.id])}
+              onDelete={() => deleteSelected()}
+              onAutoPower={(nodeId) => autoWireIcPower(nodeId)}
+              onMove={(newCol: number) => moveNode(node.id, { x: newCol, y: 0 })}
+              camZoom={cam.zoom}
+            />
+          ))}
+        </g>
 
-        {/* Pending jumper line being drawn */}
-        {pendingHole && hover && (
-          <line
-            x1={BOARD_OFFSET_X + holePoint(pendingHole).x}
-            y1={BOARD_OFFSET_Y + holePoint(pendingHole).y}
-            x2={BOARD_OFFSET_X + holePoint(hover).x}
-            y2={BOARD_OFFSET_Y + holePoint(hover).y}
-            className="stroke-foreground/60"
-            strokeWidth={2.5}
-            strokeDasharray="4 4"
-          />
-        )}
-        {pendingPin && hover && trainerPinMap.get(pinKey(pendingPin)) && (
-          <line
-            x1={trainerPinMap.get(pinKey(pendingPin))!.x}
-            y1={trainerPinMap.get(pinKey(pendingPin))!.y}
-            x2={BOARD_OFFSET_X + holePoint(hover).x}
-            y2={BOARD_OFFSET_Y + holePoint(hover).y}
-            className="stroke-foreground/60"
-            strokeWidth={2.5}
-            strokeDasharray="4 4"
-          />
-        )}
+        {/* =============================================================== */}
+        {/* LAYER 6: Interactive Reticles & Snap Rings                      */}
+        {/* =============================================================== */}
+        <g id="layer-interactive-handles" className="pointer-events-none">
+          {hover && (
+            <circle
+              cx={BOARD_OFFSET_X + holePoint(hover).x}
+              cy={BOARD_OFFSET_Y + holePoint(hover).y}
+              r={6.5}
+              fill="none"
+              stroke={logicColor(hoverValue)}
+              strokeWidth={1.75}
+            />
+          )}
+          {hoverSocket && (
+            <circle
+              cx={hoverSocket.point.x}
+              cy={hoverSocket.point.y}
+              r={12}
+              fill="none"
+              stroke={hoverSocket.color}
+              strokeWidth={2}
+              strokeDasharray="3 2"
+            />
+          )}
+        </g>
+
+        {/* =============================================================== */}
+        {/* LAYER 7: Topmost Floating Logic Probe & Socket Tooltip Cards    */}
+        {/* =============================================================== */}
+        <g id="layer-topmost-tooltips">
+          {hover && (
+            <ProbeTooltipCard
+              spec={spec}
+              hole={hover}
+              doc={doc}
+              boardOffsetX={BOARD_OFFSET_X}
+              boardOffsetY={BOARD_OFFSET_Y}
+            />
+          )}
+          {hoverSocket && (
+            <SocketTooltipCard
+              socket={hoverSocket}
+              doc={doc}
+              chassisWidth={CHASSIS_W}
+            />
+          )}
+        </g>
       </svg>
 
       {/* Bottom Camera Toolbar */}
@@ -1052,12 +1226,23 @@ function TrainerSocket({
   );
 }
 
+const LED_COLORS: { name: string; value: string }[] = [
+  { name: "Green", value: "#22c55e" },
+  { name: "Red", value: "#ef4444" },
+  { name: "Amber", value: "#f59e0b" },
+  { name: "Blue", value: "#3b82f6" },
+  { name: "Cyan", value: "#06b6d4" },
+  { name: "Purple", value: "#a855f7" },
+  { name: "White", value: "#f8fafc" },
+];
+
 interface TrainerLedProps {
   led: Extract<CircuitNode, { kind: "led" }>;
   cx: number;
   cy: number;
   isArmed?: boolean | undefined;
   onClick: (e: React.MouseEvent) => void;
+  onColorChange: (color: string) => void;
 }
 
 function TrainerLed({
@@ -1066,49 +1251,91 @@ function TrainerLed({
   cy,
   isArmed,
   onClick,
+  onColorChange,
 }: TrainerLedProps) {
   const value = useEndpointValue(pinEnd({ node: led.id, pin: "A" }));
   const lit = value === 1;
-  const col = logicColor(value);
+  const isFault = value === 3;
+  const chosenColor = led.color ?? "#22c55e";
+
+  const cycleColor = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const currIdx = LED_COLORS.findIndex((c) => c.value === chosenColor);
+    const next = LED_COLORS[(currIdx + 1) % LED_COLORS.length]!;
+    onColorChange(next.value);
+    toast.success(`LED ${led.label} set to ${next.name}`);
+  };
 
   return (
     <g transform={`translate(${cx}, ${cy})`}>
-      {/* Label */}
+      {/* Label and interactive color dot */}
       <text
-        x={0}
+        x={-5}
         y={-14}
         textAnchor="middle"
-        className="fill-foreground font-mono text-[9px] font-bold pointer-events-none"
+        fill="#f8fafc"
+        className="font-mono text-[9px] font-bold pointer-events-none select-none"
       >
         {led.label}
       </text>
 
-      {/* Glow if HIGH */}
+      {/* Color switcher swatch dot */}
+      <circle
+        cx={12}
+        cy={-17}
+        r={3.5}
+        fill={chosenColor}
+        stroke="#ffffff"
+        strokeWidth={0.75}
+        className="cursor-pointer hover:scale-125 transition-transform"
+        onClick={cycleColor}
+      >
+        <title>Click to change LED color ({LED_COLORS.map(c => c.name).join(", ")})</title>
+      </circle>
+
+      {/* Radial glow if HIGH */}
       {lit && (
-        <circle cx={0} cy={0} r={14} fill={col} opacity={0.35} />
+        <>
+          <circle cx={0} cy={0} r={16} fill={chosenColor} opacity={0.3} />
+          <circle cx={0} cy={0} r={11} fill={chosenColor} opacity={0.5} />
+        </>
       )}
 
       {/* Bezel */}
-      <circle cx={0} cy={0} r={9} fill="#1e293b" stroke="#334155" strokeWidth={1} />
-      {/* Jewel lens */}
+      <circle cx={0} cy={0} r={9} fill="#0f172a" stroke="#334155" strokeWidth={1} />
+
+      {/* Fault warning ring */}
+      {isFault && (
+        <circle cx={0} cy={0} r={10} fill="none" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="3 2" />
+      )}
+
+      {/* Jewel lens: ON = full vivid color, OFF = darkened translucent lens tinted in chosen color */}
       <circle
         cx={0}
         cy={0}
         r={7}
-        fill={lit ? col : "#1e293b"}
-        stroke={col}
-        strokeWidth={1}
+        fill={chosenColor}
+        fillOpacity={lit ? 1 : 0.32}
+        stroke={lit ? "#ffffff" : chosenColor}
+        strokeWidth={lit ? 0.75 : 0.5}
       />
-      {/* Dome reflection highlight */}
-      <ellipse cx={-2.5} cy={-2.5} rx={2} ry={1.2} fill="#ffffff" opacity={lit ? 0.6 : 0.2} />
+      {/* Center specular highlight */}
+      <ellipse
+        cx={-2}
+        cy={-2}
+        rx={2.2}
+        ry={1.4}
+        fill="#ffffff"
+        opacity={lit ? 0.85 : 0.28}
+      />
 
       {/* 4-state indicator badge */}
       <text
         x={0}
         y={14}
         textAnchor="middle"
-        fill={col}
-        className="font-mono text-[7.5px] font-bold pointer-events-none"
+        fill={lit ? chosenColor : isFault ? "#ef4444" : "#94a3b8"}
+        className="font-mono text-[7.5px] font-bold pointer-events-none select-none"
       >
         {value === 1 ? "1" : value === 0 ? "0" : value === 2 ? "Z" : "X"}
       </text>
@@ -1118,7 +1345,7 @@ function TrainerLed({
         <TrainerSocket
           cx={0}
           cy={0}
-          color="#10b981"
+          color={chosenColor}
           isArmed={isArmed}
           onClick={onClick}
         />
@@ -1412,8 +1639,8 @@ function getAttachedPin(doc: CircuitDocument, spec: BreadboardSpec, hole: HoleRe
   return null;
 }
 
-/** Highlights the hovered hole, its whole electrical strip, and displays the 4-state logic probe badge. */
-function HoleCursor({
+/** Renders the metallic tie-bar and continuity strip highlight halos on the breadboard. */
+function StripHighlight({
   spec,
   hole,
   doc,
@@ -1423,9 +1650,7 @@ function HoleCursor({
   doc: CircuitDocument;
 }) {
   const value = useEndpointValue(holeEnd(hole));
-  const p = holePoint(hole);
   const color = logicColor(value);
-  const attached = useMemo(() => getAttachedPin(doc, spec, hole), [doc, spec, hole]);
 
   const mates: HoleRef[] = [];
   let stripBox: { x: number; y: number; w: number; h: number } | null = null;
@@ -1466,22 +1691,8 @@ function HoleCursor({
     };
   }
 
-  // Floating probe badge position
-  const badgeW = attached ? 200 : 160;
-  const badgeH = attached ? 46 : 32;
-  const boardW = boardWidth(spec);
-  const badgeX = Math.min(boardW - badgeW - 12, Math.max(12, p.x - badgeW / 2));
-  const badgeY = p.y < 80 ? p.y + 18 : p.y - badgeH - 14;
-
-  const rowName = isRail(hole.row)
-    ? isPositiveRail(hole.row)
-      ? "+5V Rail"
-      : "GND Rail"
-    : `Row ${hole.row}`;
-
   return (
     <g className="pointer-events-none">
-      {/* Strip backdrop metallic tie-bar */}
       {stripBox && (
         <rect
           x={stripBox.x}
@@ -1497,7 +1708,6 @@ function HoleCursor({
         />
       )}
 
-      {/* Halos on all connected holes in strip */}
       {mates.map((m) => {
         const q = holePoint(m);
         return (
@@ -1511,79 +1721,183 @@ function HoleCursor({
           />
         );
       })}
+    </g>
+  );
+}
 
-      {/* Target hole cursor */}
-      <circle
-        cx={p.x}
-        cy={p.y}
-        r={7}
-        fill="none"
-        stroke={color}
-        strokeWidth={2}
-      />
-      <circle
-        cx={p.x}
-        cy={p.y}
-        r={2.5}
-        fill={color}
-      />
+/** Topmost floating 4-state logic probe badge card for inspected breadboard holes. */
+function ProbeTooltipCard({
+  spec,
+  hole,
+  doc,
+  boardOffsetX,
+  boardOffsetY,
+}: {
+  spec: BreadboardSpec;
+  hole: HoleRef;
+  doc: CircuitDocument;
+  boardOffsetX: number;
+  boardOffsetY: number;
+}) {
+  const value = useEndpointValue(holeEnd(hole));
+  const p = holePoint(hole);
+  const color = logicColor(value);
+  const attached = useMemo(() => getAttachedPin(doc, spec, hole), [doc, spec, hole]);
 
-      {/* Floating 4-State Logic Probe Card */}
-      <g transform={`translate(${badgeX}, ${badgeY})`}>
-        <rect
-          width={badgeW}
-          height={badgeH}
-          rx={6}
-          className="fill-card/95 stroke-border"
-          strokeWidth={1}
-          filter="drop-shadow(0 4px 6px rgba(0,0,0,0.35))"
-        />
+  const badgeW = attached ? 210 : 165;
+  const badgeH = attached ? 48 : 34;
+  const boardW = boardWidth(spec);
+  const badgeX = Math.min(boardW - badgeW - 12, Math.max(12, p.x - badgeW / 2)) + boardOffsetX;
+  const badgeY = (p.y < 80 ? p.y + 22 : p.y - badgeH - 16) + boardOffsetY;
+
+  const rowName = isRail(hole.row)
+    ? isPositiveRail(hole.row)
+      ? "+5V Rail"
+      : "GND Rail"
+    : `Row ${hole.row}`;
+
+  return (
+    <g transform={`translate(${badgeX}, ${badgeY})`} className="pointer-events-none select-none">
+      <rect
+        width={badgeW}
+        height={badgeH}
+        rx={6}
+        fill="#090d16"
+        stroke="#334155"
+        strokeWidth={1}
+        filter="drop-shadow(0 6px 14px rgba(0,0,0,0.65))"
+      />
+      <text
+        x={10}
+        y={14}
+        fill="#f8fafc"
+        className="font-mono text-[9px] font-semibold"
+      >
+        {isRail(hole.row) ? rowName : `Col ${hole.col} · ${rowName}`}
+        <tspan fill="#94a3b8" className="font-normal"> ({hole.col}{hole.row})</tspan>
+      </text>
+
+      {attached && (
         <text
           x={10}
-          y={14}
-          className="fill-foreground font-mono text-[9px] font-semibold"
+          y={28}
+          fill="#f8fafc"
+          className="font-mono text-[8.5px]"
         >
-          {isRail(hole.row) ? rowName : `Col ${hole.col} · ${rowName}`}
-          <tspan className="fill-muted-foreground font-normal"> ({hole.col}{hole.row})</tspan>
+          <tspan fill={attached.isPower ? "#ef4444" : attached.isGnd ? "#3b82f6" : "#38bdf8"}>
+            ⚡ {attached.nodeLabel}
+          </tspan>
+          <tspan fill="#94a3b8"> ({attached.part})</tspan>
+          <tspan fill="#f1f5f9" className="font-semibold"> P{attached.pinNumber}:{attached.pinName}</tspan>
         </text>
+      )}
 
-        {attached && (
-          <text
-            x={10}
-            y={27}
-            className="fill-foreground/90 font-mono text-[8.5px]"
-          >
-            <tspan fill={attached.isPower ? "#ef4444" : attached.isGnd ? "#3b82f6" : "var(--color-primary, #38bdf8)"}>
-              ⚡ {attached.nodeLabel}
-            </tspan>
-            <tspan className="fill-muted-foreground"> ({attached.part})</tspan>
-            <tspan className="font-semibold"> P{attached.pinNumber}:{attached.pinName}</tspan>
-          </text>
-        )}
-
-        {/* 4-State Level Pill */}
-        <g transform={`translate(${badgeW - 56}, ${attached ? 24 : 10})`}>
-          <rect
-            width={48}
-            height={16}
-            rx={4}
-            fill={color}
-            opacity={0.2}
-            stroke={color}
-            strokeWidth={0.75}
-          />
-          <circle cx={7} cy={8} r={3} fill={color} />
-          <text
-            x={14}
-            y={11.5}
-            fill={color}
-            className="font-mono text-[8.5px] font-bold"
-          >
-            {value === 1 ? "1:HIGH" : value === 0 ? "0:LOW" : value === 2 ? "Z:HIZ" : "X:FLT"}
-          </text>
-        </g>
+      {/* 4-State Level Pill */}
+      <g transform={`translate(${badgeW - 54}, ${attached ? 24 : 9})`}>
+        <rect
+          width={46}
+          height={16}
+          rx={4}
+          fill={color}
+          opacity={0.25}
+          stroke={color}
+          strokeWidth={0.75}
+        />
+        <circle cx={6} cy={8} r={2.5} fill={color} />
+        <text
+          x={13}
+          y={11.5}
+          fill={color}
+          className="font-mono text-[8px] font-bold"
+        >
+          {value === 1 ? "1:HIGH" : value === 0 ? "0:LOW" : value === 2 ? "Z:HIZ" : "X:FLT"}
+        </text>
       </g>
     </g>
+  );
+}
+
+/** Topmost floating tooltip card for inspected Trainer Panel sockets. */
+function SocketTooltipCard({
+  socket,
+  doc,
+  chassisWidth = 1400,
+}: {
+  socket: { point: Point; pin: PinRef; label: string; color: string };
+  doc: CircuitDocument;
+  chassisWidth?: number | undefined;
+}) {
+  const value = useEndpointValue(pinEnd(socket.pin));
+  const node = doc.nodes[socket.pin.node];
+  const color = logicColor(value);
+
+  const title =
+    socket.pin.pin === "VCC"
+      ? "DC POWER SUPPLY (+5V)"
+      : socket.pin.pin === "GND"
+        ? "DC POWER SUPPLY (0V GND)"
+        : socket.pin.pin === "CLK"
+          ? "PULSE / CLK GENERATOR"
+          : node?.kind === "switch"
+            ? `LOGIC INPUT SWITCH (${node.label})`
+            : node?.kind === "led"
+              ? `LOGIC INDICATOR LED (${node.label})`
+              : socket.pin.node;
+
+  const cardW = 190;
+  const cardH = 34;
+  const cardX = Math.max(10, Math.min(chassisWidth - cardW - 10, socket.point.x - cardW / 2));
+  const cardY = socket.point.y > 500 ? socket.point.y - cardH - 16 : socket.point.y + 16;
+
+  return (
+    <g transform={`translate(${cardX}, ${cardY})`} className="pointer-events-none select-none">
+      <rect
+        width={cardW}
+        height={cardH}
+        rx={6}
+        fill="#090d16"
+        stroke="#334155"
+        strokeWidth={1}
+        filter="drop-shadow(0 6px 14px rgba(0,0,0,0.65))"
+      />
+      <text x={8} y={14} fill="#f8fafc" className="font-mono text-[9px] font-bold">
+        {title}
+      </text>
+      <text x={8} y={26} fill="#94a3b8" className="font-mono text-[8px]">
+        Terminal Pin: {socket.pin.pin}
+      </text>
+      <g transform={`translate(${cardW - 48}, 9)`}>
+        <rect width={40} height={16} rx={3} fill={color} opacity={0.25} stroke={color} strokeWidth={0.75} />
+        <circle cx={6} cy={8} r={2.5} fill={color} />
+        <text x={12} y={11.5} fill={color} className="font-mono text-[8px] font-bold">
+          {value === 1 ? "1:HIGH" : value === 0 ? "0:LOW" : value === 2 ? "Z:HIZ" : "X:FLT"}
+        </text>
+      </g>
+    </g>
+  );
+}
+
+/** Backward compatibility wrapper for HoleCursor */
+function HoleCursor({
+  spec,
+  hole,
+  doc,
+}: {
+  spec: BreadboardSpec;
+  hole: HoleRef;
+  doc: CircuitDocument;
+}) {
+  return (
+    <>
+      <StripHighlight spec={spec} hole={hole} doc={doc} />
+      <ProbeTooltipCard
+        spec={spec}
+        hole={hole}
+        doc={doc}
+        boardOffsetX={0}
+        boardOffsetY={0}
+      />
+    </>
   );
 }
 
@@ -1599,6 +1913,7 @@ function SeatedIc({
   otherIcs,
   isSelected,
   showXRay,
+  renderPart,
   onSelect,
   onDelete,
   onAutoPower,
@@ -1610,6 +1925,7 @@ function SeatedIc({
   otherIcs: Extract<CircuitNode, { kind: "ic" }>[];
   isSelected: boolean;
   showXRay: boolean;
+  renderPart?: "body" | "overlay" | undefined;
   onSelect: () => void;
   onDelete: () => void;
   onAutoPower: (nodeId: string) => void;
@@ -1696,6 +2012,104 @@ function SeatedIc({
     setDragCol(null);
   };
 
+  if (renderPart === "overlay") {
+    return (
+      <g>
+        {/* Part & instance text label with opaque pill */}
+        <g
+          transform={`translate(${(a.x + b.x) / 2}, ${midY + (showXRay ? -22 : 4)})`}
+          className="pointer-events-none"
+        >
+          <rect
+            x={-38}
+            y={-9}
+            width={76}
+            height={18}
+            rx={4}
+            fill="#090d16"
+            stroke="#334155"
+            strokeWidth={0.75}
+          />
+          <text
+            x={0}
+            y={3.5}
+            textAnchor="middle"
+            fill="#f8fafc"
+            className="font-mono text-[9.5px] font-bold select-none"
+          >
+            {node.part} · {node.label}
+          </text>
+        </g>
+
+        {/* Floating Action Pill on Selected IC */}
+        {isSelected && (
+          <g
+            transform={`translate(${midX - 55}, ${bodyY - 26})`}
+            className="cursor-default pointer-events-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <rect
+              width={110}
+              height={22}
+              rx={4}
+              className="fill-card/95 stroke-border"
+              strokeWidth={1}
+              filter="drop-shadow(0 2px 4px rgba(0,0,0,0.35))"
+            />
+            <g
+              className="cursor-pointer group/pwr"
+              onClick={() => {
+                onAutoPower(node.id);
+                toast.success(`Auto-powered ${node.label}`);
+              }}
+            >
+              <rect
+                x={3}
+                y={3}
+                width={48}
+                height={16}
+                rx={3}
+                className="fill-amber-500/20 hover:fill-amber-500/35"
+              />
+              <text
+                x={27}
+                y={14.5}
+                textAnchor="middle"
+                className="fill-amber-500 font-mono text-[8.5px] font-bold pointer-events-none"
+              >
+                ⚡ +PWR
+              </text>
+            </g>
+            <g
+              className="cursor-pointer group/del"
+              onClick={() => {
+                onDelete();
+                toast.info(`Deleted ${node.label}`);
+              }}
+            >
+              <rect
+                x={55}
+                y={3}
+                width={52}
+                height={16}
+                rx={3}
+                className="fill-destructive/20 hover:fill-destructive/35"
+              />
+              <text
+                x={81}
+                y={14.5}
+                textAnchor="middle"
+                className="fill-destructive font-mono text-[8.5px] font-bold pointer-events-none"
+              >
+                DELETE
+              </text>
+            </g>
+          </g>
+        )}
+      </g>
+    );
+  }
+
   return (
     <g>
       {/* Selection halo */}
@@ -1745,80 +2159,83 @@ function SeatedIc({
         className={showXRay ? "fill-primary/60" : "fill-background/70"}
       />
 
-      {/* Part & instance text label */}
-      <text
-        x={(a.x + b.x) / 2}
-        y={midY + (showXRay ? -22 : 4)}
-        textAnchor="middle"
-        className={showXRay ? "fill-foreground font-mono text-[10px] font-bold pointer-events-none" : "fill-background font-mono text-[11px] font-semibold pointer-events-none"}
-      >
-        {node.part} · {node.label}
-      </text>
+      {/* Render labels here only if not separated into overlay layer */}
+      {renderPart === undefined && (
+        <>
+          <text
+            x={(a.x + b.x) / 2}
+            y={midY + (showXRay ? -22 : 4)}
+            textAnchor="middle"
+            className={showXRay ? "fill-foreground font-mono text-[10px] font-bold pointer-events-none" : "fill-background font-mono text-[11px] font-semibold pointer-events-none"}
+          >
+            {node.part} · {node.label}
+          </text>
 
-      {/* Floating Action Pill on Selected IC */}
-      {isSelected && (
-        <g
-          transform={`translate(${midX - 55}, ${bodyY - 26})`}
-          className="cursor-default pointer-events-auto"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <rect
-            width={110}
-            height={22}
-            rx={4}
-            className="fill-card/95 stroke-border"
-            strokeWidth={1}
-            filter="drop-shadow(0 2px 4px rgba(0,0,0,0.35))"
-          />
-          <g
-            className="cursor-pointer group/pwr"
-            onClick={() => {
-              onAutoPower(node.id);
-              toast.success(`Auto-powered ${node.label}`);
-            }}
-          >
-            <rect
-              x={3}
-              y={3}
-              width={48}
-              height={16}
-              rx={3}
-              className="fill-amber-500/20 hover:fill-amber-500/35"
-            />
-            <text
-              x={27}
-              y={14.5}
-              textAnchor="middle"
-              className="fill-amber-500 font-mono text-[8.5px] font-bold pointer-events-none"
+          {isSelected && (
+            <g
+              transform={`translate(${midX - 55}, ${bodyY - 26})`}
+              className="cursor-default pointer-events-auto"
+              onClick={(e) => e.stopPropagation()}
             >
-              ⚡ +PWR
-            </text>
-          </g>
-          <g
-            className="cursor-pointer group/del"
-            onClick={() => {
-              onDelete();
-              toast.info(`Deleted ${node.label}`);
-            }}
-          >
-            <rect
-              x={55}
-              y={3}
-              width={52}
-              height={16}
-              rx={3}
-              className="fill-destructive/20 hover:fill-destructive/35"
-            />
-            <text
-              x={81}
-              y={14.5}
-              textAnchor="middle"
-              className="fill-destructive font-mono text-[8.5px] font-bold pointer-events-none"
-            >
-              DELETE
-            </text>
-          </g>
-        </g>
+              <rect
+                width={110}
+                height={22}
+                rx={4}
+                className="fill-card/95 stroke-border"
+                strokeWidth={1}
+                filter="drop-shadow(0 2px 4px rgba(0,0,0,0.35))"
+              />
+              <g
+                className="cursor-pointer group/pwr"
+                onClick={() => {
+                  onAutoPower(node.id);
+                  toast.success(`Auto-powered ${node.label}`);
+                }}
+              >
+                <rect
+                  x={3}
+                  y={3}
+                  width={48}
+                  height={16}
+                  rx={3}
+                  className="fill-amber-500/20 hover:fill-amber-500/35"
+                />
+                <text
+                  x={27}
+                  y={14.5}
+                  textAnchor="middle"
+                  className="fill-amber-500 font-mono text-[8.5px] font-bold pointer-events-none"
+                >
+                  ⚡ +PWR
+                </text>
+              </g>
+              <g
+                className="cursor-pointer group/del"
+                onClick={() => {
+                  onDelete();
+                  toast.info(`Deleted ${node.label}`);
+                }}
+              >
+                <rect
+                  x={55}
+                  y={3}
+                  width={52}
+                  height={16}
+                  rx={3}
+                  className="fill-destructive/20 hover:fill-destructive/35"
+                />
+                <text
+                  x={81}
+                  y={14.5}
+                  textAnchor="middle"
+                  className="fill-destructive font-mono text-[8.5px] font-bold pointer-events-none"
+                >
+                  DELETE
+                </text>
+              </g>
+            </g>
+          )}
+        </>
       )}
 
       {/* X-Ray Internal Gate Schematics */}
@@ -2198,24 +2615,32 @@ function resolveEndpointPoint(
 ): Point | null {
   if (end.kind === "pin") {
     const key = pinKey(end.ref);
-    return trainerPinMap.get(key) ?? null;
+    return trainerPinMap.get(key) ?? trainerPinMap.get(`${end.ref.node}:${end.ref.pin}`) ?? null;
   }
   if (end.kind === "hole") {
     // If a circuit was seated with proxy switches/leds/rails, redirect to the trainer panel socket
     for (const node of Object.values(nodes)) {
-      if (node.boardRow && node.boardRow === end.ref.row && Math.round(node.pos.x) === end.ref.col) {
-        if (node.kind === "switch") {
-          const pt = trainerPinMap.get(`${node.id}:Q`);
-          if (pt) return pt;
-        } else if (node.kind === "clock") {
-          const pt = trainerPinMap.get(`${node.id}:CLK`);
-          if (pt) return pt;
-        } else if (node.kind === "led") {
-          const pt = trainerPinMap.get(`${node.id}:A`);
-          if (pt) return pt;
-        } else if (node.kind === "rail") {
-          const pt = trainerPinMap.get(`${node.id}:${node.rail === "vcc" ? "VCC" : "GND"}`);
-          if (pt) return pt;
+      if (node.boardRow && Math.round(node.pos.x) === end.ref.col) {
+        const isLower = ["A", "B", "C", "D", "E"].includes(end.ref.row);
+        const nodeLower = ["A", "B", "C", "D", "E"].includes(node.boardRow);
+        const isUpper = ["F", "G", "H", "I", "J"].includes(end.ref.row);
+        const nodeUpper = ["F", "G", "H", "I", "J"].includes(node.boardRow);
+
+        if ((isLower && nodeLower) || (isUpper && nodeUpper) || end.ref.row === node.boardRow) {
+          if (node.kind === "switch") {
+            const pt = trainerPinMap.get(pinKey({ node: node.id, pin: "Q" })) ?? trainerPinMap.get(`${node.id}:Q`);
+            if (pt) return pt;
+          } else if (node.kind === "clock") {
+            const pt = trainerPinMap.get(pinKey({ node: node.id, pin: "CLK" })) ?? trainerPinMap.get(`${node.id}:CLK`);
+            if (pt) return pt;
+          } else if (node.kind === "led") {
+            const pt = trainerPinMap.get(pinKey({ node: node.id, pin: "A" })) ?? trainerPinMap.get(`${node.id}:A`);
+            if (pt) return pt;
+          } else if (node.kind === "rail") {
+            const pName = node.rail === "vcc" ? "VCC" : "GND";
+            const pt = trainerPinMap.get(pinKey({ node: node.id, pin: pName })) ?? trainerPinMap.get(`${node.id}:${pName}`);
+            if (pt) return pt;
+          }
         }
       }
     }
@@ -2308,11 +2733,19 @@ function Jumper({
         <path d={d} fill="none" stroke={color} strokeWidth={8} opacity={0.25} />
       )}
 
-      {/* 4. Dark crossing halo (bridge overpass effect for intersecting jumpers) */}
+      {/* 4. Crossing halo (bridge overpass effect for intersecting jumpers) */}
       <path
         d={d}
         fill="none"
-        stroke="#0b0f17"
+        stroke={
+          color === "#000000" ||
+          color === "#1f2937" ||
+          color === "#0f172a" ||
+          color === "#1e293b" ||
+          color === "#0b0f17"
+            ? "#475569"
+            : "#0b0f17"
+        }
         strokeWidth={isSelected ? 6.5 : 5.5}
         strokeLinecap="round"
         strokeLinejoin="round"

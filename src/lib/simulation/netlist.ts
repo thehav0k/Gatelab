@@ -155,6 +155,7 @@ export interface ClockNode extends NodeBase {
 
 export interface LedNode extends NodeBase {
   readonly kind: "led";
+  readonly color?: string | undefined;
 }
 
 /** A power rail symbol. Drives at `supply` strength. */

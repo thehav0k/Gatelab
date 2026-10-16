@@ -24,6 +24,27 @@ export interface ViewBox {
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 4;
 
+/** Convert client coordinates directly into SVG viewBox coordinates using inverse CTM. */
+export function clientToSvgPoint(
+  svg: SVGSVGElement,
+  clientX: number,
+  clientY: number,
+): { x: number; y: number } {
+  const ctm = svg.getScreenCTM();
+  if (ctm) {
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const res = pt.matrixTransform(ctm.inverse());
+    return { x: res.x, y: res.y };
+  }
+  const r = svg.getBoundingClientRect();
+  return {
+    x: clientX - r.left,
+    y: clientY - r.top,
+  };
+}
+
 /**
  * The caller owns the ref and passes it in, rather than the hook handing one back.
  * Returning a ref object from a hook and then spreading it onto `ref=` reads, to
@@ -61,6 +82,14 @@ export function useViewBox(
     (clientX: number, clientY: number) => {
       const svg = svgRef.current;
       if (!svg) return { x: 0, y: 0 };
+      const ctm = svg.getScreenCTM();
+      if (ctm) {
+        const pt = svg.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        const res = pt.matrixTransform(ctm.inverse());
+        return { x: res.x, y: res.y };
+      }
       const r = svg.getBoundingClientRect();
       return {
         x: view.x + ((clientX - r.left) / r.width) * view.w,

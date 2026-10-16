@@ -7,8 +7,10 @@ import {
   type HoleRef,
 } from "./breadboard";
 import {
+  asNodeId,
   asWireId,
   holeEnd,
+  pinEnd,
   pinKey,
   type CircuitDocument,
   type CircuitNode,
@@ -40,6 +42,18 @@ export interface PlacementResult {
   readonly unplaced: readonly string[];
 }
 
+export interface PlaceBreadboardOptions {
+  /**
+   * When true, seats circuit for the Digital Logic Trainer Board:
+   * - Power rails are fed from panel VCC and GND terminals.
+   * - Top and bottom rails are bridged so power is distributed.
+   * - All seated ICs are auto-powered with jumpers from rails to pin 14 (VCC) and pin 7 (GND).
+   * - Inputs (switches/clocks) and outputs (LEDs) stay in the trainer chassis panels,
+   *   with wires connecting directly between panel sockets and the IC strip holes.
+   */
+  readonly panelMode?: boolean;
+}
+
 /** The five rows of each half, in board order. */
 const LOWER_FREE: BoardRow[] = ["A", "B", "C", "D", "E"];
 const UPPER_FREE: BoardRow[] = ["J", "I", "H", "G", "F"];
@@ -65,7 +79,9 @@ function nearestRows(leg: BoardRow): BoardRow[] {
 export function placeOnBreadboard(
   source: CircuitDocument,
   spec: BreadboardSpec = DEFAULT_BOARD,
+  options: PlaceBreadboardOptions = {},
 ): PlacementResult {
+  const panelMode = options.panelMode ?? false;
   const nodes: Record<string, CircuitNode> = {};
   const wires: Record<string, Wire> = {};
   const unplaced: string[] = [];
@@ -110,52 +126,6 @@ export function placeOnBreadboard(
     col += span + 2; // a two-column gutter so jumpers have somewhere to land
   }
 
-  // --- 2. rails ------------------------------------------------------------
-  for (const rail of rails) {
-    const row: BoardRow = rail.rail === "vcc" ? "+top" : "-top";
-    const hole: HoleRef = { col: 1, row };
-    nodes[rail.id] = { ...rail, pos: { x: 1, y: 0 }, boardRow: row };
-    for (const spec_ of pinsOf(rail)) {
-      holeOfPin.set(pinKey({ node: rail.id, pin: spec_.name }), hole);
-    }
-    occupy(hole);
-  }
-
-  // --- 3. switches along the bottom, LEDs along the top --------------------
-  const seatSingle = (node: CircuitNode, at: number, row: BoardRow): void => {
-    // A part seated past the last column is not "somewhere off to the right" — it
-    // is NOWHERE. Report it, rather than let its pin silently float and present as
-    // a mysterious dead output.
-    if (at < 1 || at > spec.columns) {
-      unplaced.push(node.id);
-      return;
-    }
-    const hole: HoleRef = { col: at, row };
-    nodes[node.id] = { ...node, pos: { x: at, y: 0 }, boardRow: row };
-    for (const spec_ of pinsOf(node)) {
-      holeOfPin.set(pinKey({ node: node.id, pin: spec_.name }), hole);
-    }
-    occupy(hole);
-  };
-
-  // CRITICALLY, these go in columns to the RIGHT of every chip.
-  //
-  // Seating them from column 2 (as the chips are) put switch A on column 2 row E —
-  // the very strip the chip's pin 1 leg is in — and the LED on 2F, which is the
-  // Vcc strip. The switch drove the chip's input directly and the LED shorted the
-  // supply. A strip is a strip: two parts in one column are WIRED TOGETHER,
-  // whether you meant it or not. That is the whole hazard of a real breadboard,
-  // and the placer has to respect it.
-  switches.forEach((sw, i) => seatSingle(sw, col + i * 2, "A"));
-  col += switches.length * 2 + 1;
-  leds.forEach((led, i) => seatSingle(led, col + i * 2, "J"));
-  col += leds.length * 2 + 1;
-
-  // --- 4. every schematic wire becomes a jumper between two FREE holes ------
-  //
-  // This is the physical step. A wire connected pin X to pin Y; on the board, X's
-  // leg is in some hole, and the jumper must go into a DIFFERENT hole on the same
-  // strip. Four remain per strip, and we hand them out here.
   const freeHoleOn = (hole: HoleRef): HoleRef | null => {
     const strip = stripOf(spec, hole);
 
@@ -178,35 +148,206 @@ export function placeOnBreadboard(
   };
 
   let w = 0;
-  const jumper = (a: HoleRef, b: HoleRef): void => {
+  const jumper = (a: HoleRef, b: HoleRef, color?: string): void => {
     const id = asWireId(`bb${++w}`);
     occupy(a);
     occupy(b);
-    wires[id] = { id, a: holeEnd(a), b: holeEnd(b) };
+    wires[id] = { id, a: holeEnd(a), b: holeEnd(b), ...(color ? { color } : {}) };
   };
 
-  const endpointHole = (end: Endpoint): HoleRef | null =>
-    end.kind === "hole" ? end.ref : (holeOfPin.get(pinKey(end.ref)) ?? null);
+  const wirePinToHole = (pin: PinRef, hole: HoleRef, color?: string): void => {
+    const id = asWireId(`bb${++w}`);
+    occupy(hole);
+    wires[id] = { id, a: pinEnd(pin), b: holeEnd(hole), ...(color ? { color } : {}) };
+  };
 
-  for (const wire of Object.values(source.wires)) {
-    const legA = endpointHole(wire.a);
-    const legB = endpointHole(wire.b);
-    if (!legA || !legB) {
-      unplaced.push(wire.id);
-      continue;
+  if (panelMode) {
+    // --- 2. In Trainer Panel mode: VCC and GND from DC Power Supply ---
+    let vccNode = rails.find((r) => r.rail === "vcc");
+    let gndNode = rails.find((r) => r.rail === "gnd");
+    if (!vccNode) {
+      vccNode = { id: asNodeId("vcc"), kind: "rail", rail: "vcc", label: "+5V", pos: { x: 0, y: 0 } };
+    }
+    if (!gndNode) {
+      gndNode = { id: asNodeId("gnd"), kind: "rail", rail: "gnd", label: "GND", pos: { x: 0, y: 0 } };
+    }
+    nodes[vccNode.id] = vccNode;
+    nodes[gndNode.id] = gndNode;
+
+    // Connect +5V socket to top positive rail (col 1, +top) and bridge to +bottom
+    const vccTop: HoleRef = { col: 1, row: "+top" };
+    const vccBottom: HoleRef = { col: 1, row: "+bottom" };
+    wirePinToHole({ node: vccNode.id, pin: "VCC" }, vccTop, "#ef4444");
+    jumper(vccTop, vccBottom, "#ef4444");
+
+    // Connect GND socket to bottom ground rail (col 1, -bottom) and bridge to -top
+    const gndTop: HoleRef = { col: 1, row: "-top" };
+    const gndBottom: HoleRef = { col: 1, row: "-bottom" };
+    wirePinToHole({ node: gndNode.id, pin: "GND" }, gndBottom, "#3b82f6");
+    jumper(gndTop, gndBottom, "#3b82f6");
+
+    // Bridge power rails across segment boundaries if split
+    if (spec.railSegments > 1) {
+      const perSegment = Math.ceil(spec.columns / spec.railSegments);
+      for (let seg = 1; seg < spec.railSegments; seg++) {
+        const cLeft = seg * perSegment;
+        const cRight = cLeft + 1;
+        if (cRight <= spec.columns) {
+          jumper({ col: cLeft, row: "+top" }, { col: cRight, row: "+top" }, "#ef4444");
+          jumper({ col: cLeft, row: "-top" }, { col: cRight, row: "-top" }, "#3b82f6");
+          jumper({ col: cLeft, row: "+bottom" }, { col: cRight, row: "+bottom" }, "#ef4444");
+          jumper({ col: cLeft, row: "-bottom" }, { col: cRight, row: "-bottom" }, "#3b82f6");
+        }
+      }
     }
 
-    // Two legs already on the same strip are ALREADY connected — the metal does it.
-    // A jumper would be redundant, and a jumper from a hole to itself is nonsense.
-    if (stripOf(spec, legA) === stripOf(spec, legB)) continue;
+    // Auto-power every seated IC (Pin 14 to +top, Pin 7 to -bottom)
+    for (const ic of ics) {
+      if (unplaced.includes(ic.id)) continue;
+      const def = getIc(ic.part);
+      const pinTotal = def ? def.pins.length : 14;
+      const span = pinTotal / 2;
+      const icCol = Math.round(nodes[ic.id]!.pos.x);
 
-    const a = freeHoleOn(legA);
-    const b = freeHoleOn(legB);
-    if (!a || !b) {
-      unplaced.push(wire.id);
-      continue;
+      // Pin 14 is in row F at icCol. Find free hole on icCol upper strip (row J).
+      const vccHole = freeHoleOn({ col: icCol, row: "F" });
+      const vccRail = freeHoleOn({ col: icCol, row: "+top" });
+      if (vccHole && vccRail) {
+        jumper(vccHole, vccRail, "#ef4444");
+      }
+
+      // Pin 7 is in row E at icCol + span - 1. Find free hole on lower strip (row A).
+      const gndHole = freeHoleOn({ col: icCol + span - 1, row: "E" });
+      const gndRail = freeHoleOn({ col: icCol + span - 1, row: "-bottom" }) ?? freeHoleOn({ col: icCol + span - 1, row: "-top" });
+      if (gndHole && gndRail) {
+        jumper(gndHole, gndRail, "#3b82f6");
+      }
     }
-    jumper(a, b);
+
+    // Switches and LEDs stay in the trainer chassis panels (pos {0, 0}, no boardRow)
+    for (const sw of switches) {
+      nodes[sw.id] = { ...sw, pos: { x: 0, y: 0 } };
+    }
+    for (const led of leds) {
+      nodes[led.id] = { ...led, pos: { x: 0, y: 0 } };
+    }
+
+    // Schematic wires: route between panel sockets and IC pin strips
+    for (const wire of Object.values(source.wires)) {
+      const pinA = wire.a.kind === "pin" ? wire.a.ref : null;
+      const pinB = wire.b.kind === "pin" ? wire.b.ref : null;
+      const isSwitchA = pinA !== null && switches.some((s) => s.id === pinA.node);
+      const isSwitchB = pinB !== null && switches.some((s) => s.id === pinB.node);
+      const isLedA = pinA !== null && leds.some((l) => l.id === pinA.node);
+      const isLedB = pinB !== null && leds.some((l) => l.id === pinB.node);
+
+      if (isSwitchA && !isSwitchB && pinA) {
+        const targetLeg = wire.b.kind === "hole" ? wire.b.ref : (pinB ? (holeOfPin.get(pinKey(pinB)) ?? null) : null);
+        if (!targetLeg) { unplaced.push(wire.id); continue; }
+        const targetHole = freeHoleOn(targetLeg);
+        if (!targetHole) { unplaced.push(wire.id); continue; }
+        wirePinToHole(pinA, targetHole, wire.color || "#38bdf8");
+        continue;
+      }
+      if (isSwitchB && !isSwitchA && pinB) {
+        const targetLeg = wire.a.kind === "hole" ? wire.a.ref : (pinA ? (holeOfPin.get(pinKey(pinA)) ?? null) : null);
+        if (!targetLeg) { unplaced.push(wire.id); continue; }
+        const targetHole = freeHoleOn(targetLeg);
+        if (!targetHole) { unplaced.push(wire.id); continue; }
+        wirePinToHole(pinB, targetHole, wire.color || "#38bdf8");
+        continue;
+      }
+      if (isLedA && !isLedB && pinA) {
+        const sourceLeg = wire.b.kind === "hole" ? wire.b.ref : (pinB ? (holeOfPin.get(pinKey(pinB)) ?? null) : null);
+        if (!sourceLeg) { unplaced.push(wire.id); continue; }
+        const sourceHole = freeHoleOn(sourceLeg);
+        if (!sourceHole) { unplaced.push(wire.id); continue; }
+        wirePinToHole(pinA, sourceHole, wire.color || "#10b981");
+        continue;
+      }
+      if (isLedB && !isLedA && pinB) {
+        const sourceLeg = wire.a.kind === "hole" ? wire.a.ref : (pinA ? (holeOfPin.get(pinKey(pinA)) ?? null) : null);
+        if (!sourceLeg) { unplaced.push(wire.id); continue; }
+        const sourceHole = freeHoleOn(sourceLeg);
+        if (!sourceHole) { unplaced.push(wire.id); continue; }
+        wirePinToHole(pinB, sourceHole, wire.color || "#10b981");
+        continue;
+      }
+
+      // Check if wire was to an IC pin or rail
+      const endpointHole = (end: typeof wire.a): HoleRef | null =>
+        end.kind === "hole" ? end.ref : (holeOfPin.get(pinKey(end.ref)) ?? null);
+
+      const legA = endpointHole(wire.a);
+      const legB = endpointHole(wire.b);
+      if (!legA || !legB) {
+        unplaced.push(wire.id);
+        continue;
+      }
+      if (stripOf(spec, legA) === stripOf(spec, legB)) continue;
+
+      const a = freeHoleOn(legA);
+      const b = freeHoleOn(legB);
+      if (!a || !b) {
+        unplaced.push(wire.id);
+        continue;
+      }
+      jumper(a, b, wire.color);
+    }
+  } else {
+    // Legacy standalone breadboard mode (for place.test.ts)
+    // --- 2. rails ------------------------------------------------------------
+    for (const rail of rails) {
+      const row: BoardRow = rail.rail === "vcc" ? "+top" : "-top";
+      const hole: HoleRef = { col: 1, row };
+      nodes[rail.id] = { ...rail, pos: { x: 1, y: 0 }, boardRow: row };
+      for (const spec_ of pinsOf(rail)) {
+        holeOfPin.set(pinKey({ node: rail.id, pin: spec_.name }), hole);
+      }
+      occupy(hole);
+    }
+
+    // --- 3. switches along the bottom, LEDs along the top --------------------
+    const seatSingle = (node: CircuitNode, at: number, row: BoardRow): void => {
+      if (at < 1 || at > spec.columns) {
+        unplaced.push(node.id);
+        return;
+      }
+      const hole: HoleRef = { col: at, row };
+      nodes[node.id] = { ...node, pos: { x: at, y: 0 }, boardRow: row };
+      for (const spec_ of pinsOf(node)) {
+        holeOfPin.set(pinKey({ node: node.id, pin: spec_.name }), hole);
+      }
+      occupy(hole);
+    };
+
+    switches.forEach((sw, i) => seatSingle(sw, col + i * 2, "A"));
+    col += switches.length * 2 + 1;
+    leds.forEach((led, i) => seatSingle(led, col + i * 2, "J"));
+    col += leds.length * 2 + 1;
+
+    // --- 4. every schematic wire becomes a jumper between two FREE holes ------
+    const endpointHole = (end: Endpoint): HoleRef | null =>
+      end.kind === "hole" ? end.ref : (holeOfPin.get(pinKey(end.ref)) ?? null);
+
+    for (const wire of Object.values(source.wires)) {
+      const legA = endpointHole(wire.a);
+      const legB = endpointHole(wire.b);
+      if (!legA || !legB) {
+        unplaced.push(wire.id);
+        continue;
+      }
+
+      if (stripOf(spec, legA) === stripOf(spec, legB)) continue;
+
+      const a = freeHoleOn(legA);
+      const b = freeHoleOn(legB);
+      if (!a || !b) {
+        unplaced.push(wire.id);
+        continue;
+      }
+      jumper(a, b, wire.color);
+    }
   }
 
   return { doc: { nodes, wires, board: spec }, unplaced };

@@ -284,4 +284,42 @@ describe("seating a part onto a board that is already built", () => {
     const doc = placeOnBreadboard(circuit().ic("U1", "7486").build(), tiny).doc;
     expect(seatOnBoard(doc, node({ kind: "ic", part: "7400" }), tiny)).toBeNull();
   });
+
+  describe("panelMode", () => {
+    it("wires breadboard rails to VCC and GND without proxy switch/LED on-board holes", () => {
+      const schematic = realize(
+        technologyMap(
+          synthesize(minimize(fnOf("F(A,B,C) = A'B + BC"), "sop").expression, ["A", "B", "C"]),
+          "mixed",
+        ),
+      );
+      const { doc } = placeOnBreadboard(schematic, DEFAULT_BOARD, { panelMode: true });
+
+      // No switches or LEDs should have boardRow set (they live in trainer panels)
+      for (const n of Object.values(doc.nodes)) {
+        if (n.kind === "switch" || n.kind === "led") {
+          expect(n.boardRow).toBeUndefined();
+        }
+      }
+
+      // Wires from switches and to LEDs connect via pinEnd
+      const pinWires = Object.values(doc.wires).filter(
+        (w) => w.a.kind === "pin" || w.b.kind === "pin",
+      );
+      expect(pinWires.length).toBeGreaterThan(0);
+
+      // ICs are auto-powered
+      const ics = Object.values(doc.nodes).filter((n) => n.kind === "ic");
+      expect(ics.length).toBeGreaterThan(0);
+
+      // Verify the circuit computes correctly and ICs are powered without UNPOWERED_IC faults
+      const { index, netlist } = elaborate(doc);
+      const state = evaluate(netlist, netlist.inputs.map(() => 0 as const));
+      const unpowered = diagnose(doc, index, netlist, state).filter(
+        (d) => d.code === "UNPOWERED_IC",
+      );
+      expect(unpowered).toHaveLength(0);
+    });
+  });
 });
+
