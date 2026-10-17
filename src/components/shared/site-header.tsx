@@ -87,8 +87,15 @@ export function SiteHeader() {
           {/* --- mobile --- */}
           <Sheet open={menu} onOpenChange={setMenu}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="md:hidden">
-                <Menu />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden min-h-[44px] min-w-[44px]"
+                aria-label="Navigation menu"
+                aria-expanded={menu}
+                aria-controls="mobile-nav-menu"
+              >
+                <Menu className="size-5" />
                 <span className="sr-only">Menu</span>
               </Button>
             </SheetTrigger>
@@ -106,8 +113,8 @@ export function SiteHeader() {
                 </SheetTitle>
               </SheetHeader>
 
-              <nav className="flex flex-col gap-1 px-4">
-                {NAV.map(({ href, label }) => (
+              <nav id="mobile-nav-menu" className="flex flex-col gap-1 px-4">
+                {NAV.slice(0, 4).map(({ href, label }) => (
                   <Link
                     key={href}
                     href={href}
@@ -116,13 +123,29 @@ export function SiteHeader() {
                     className={cn(
                       "rounded-md px-3 py-2 text-sm transition-colors",
                       isActive(href)
-                        ? "bg-secondary text-secondary-foreground"
+                        ? "bg-secondary text-secondary-foreground font-medium"
                         : "text-muted-foreground hover:text-foreground",
                     )}
                   >
                     {label}
                   </Link>
                 ))}
+
+                <Separator className="my-1.5" />
+
+                <Link
+                  href="/manual"
+                  aria-current={isActive("/manual") ? "page" : undefined}
+                  onClick={() => setMenu(false)}
+                  className={cn(
+                    "rounded-md px-3 py-2 text-sm transition-colors",
+                    isActive("/manual")
+                      ? "bg-secondary text-secondary-foreground font-medium"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Manual
+                </Link>
 
                 {/* Do NOT close the sheet here: this dialog is a child of it, and
                     unmounting the sheet would take the open dialog with it. */}

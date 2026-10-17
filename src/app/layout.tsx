@@ -10,7 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { PrecisionCursor } from "@/components/shared/precision-cursor";
 import { ReadingProgress } from "@/components/shared/reading-progress";
-import { KEYWORDS, SITE, jsonLd } from "@/lib/site";
+import { SITE, jsonLd } from "@/lib/site";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" });
@@ -25,7 +25,6 @@ export const metadata: Metadata = {
    */
   title: { default: SITE.title, template: "%s · Gatelab" },
   description: SITE.description,
-  keywords: [...KEYWORDS],
   applicationName: SITE.name,
   authors: [{ name: "thehav0k", url: "https://github.com/thehav0k" }],
   creator: "thehav0k",

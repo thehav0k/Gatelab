@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CircuitBoard, FileText, Printer, Sparkles, TriangleAlert } from "lucide-react";
+import { CircuitBoard, FileCheck, FileText, Printer, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { KMapGrid } from "@/components/theory/kmap-grid";
 import { TruthTable } from "@/components/theory/truth-table";
@@ -93,7 +93,7 @@ export default function ReportPage() {
             <Link href="/lab">2. Go to Lab</Link>
           </Button>
           <Button variant="secondary" onClick={() => setShowSample(true)} className="gap-1.5">
-            <Sparkles className="size-3.5 text-logic-high" /> View Sample Report
+            <FileCheck className="size-3.5 text-logic-high" /> View Sample Report
           </Button>
         </div>
       </div>
@@ -106,7 +106,7 @@ export default function ReportPage() {
       {isSample && (
         <div className="print:hidden no-print mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-logic-high/30 bg-logic-high/10 p-3.5 text-xs">
           <div className="flex items-center gap-2">
-            <Sparkles className="size-4 shrink-0 text-logic-high" />
+            <FileCheck className="size-4 shrink-0 text-logic-high" />
             <div>
               <span className="font-semibold text-logic-high">Viewing Sample Worked Report</span>
               <span className="text-muted-foreground ml-1.5">

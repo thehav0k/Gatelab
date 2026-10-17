@@ -266,15 +266,36 @@ export function CircuitCanvas() {
       </svg>
 
       <div className="no-print absolute right-2 bottom-2 flex items-center gap-1">
-        <span className="text-muted-foreground bg-card/80 rounded px-1.5 py-0.5 font-mono text-[10px]">
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-7"
+          onClick={cam.zoomOut}
+          title="Zoom out"
+          aria-label="Zoom out"
+        >
+          -
+        </Button>
+        <span className="text-muted-foreground bg-card/80 rounded px-1.5 py-0.5 font-mono text-[11px]">
           {Math.round(cam.zoom * 100)}%
         </span>
         <Button
           variant="outline"
           size="icon"
           className="size-7"
+          onClick={cam.zoomIn}
+          title="Zoom in"
+          aria-label="Zoom in"
+        >
+          +
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-7"
           onClick={cam.reset}
           title="Fit to circuit"
+          aria-label="Fit to circuit"
         >
           <Maximize2 className="size-3.5" />
         </Button>
@@ -528,8 +549,17 @@ function NodeActionPill({
       />
       {/* Rotate CW */}
       <g
-        className="cursor-pointer hover:opacity-80"
+        role="button"
+        tabIndex={0}
+        aria-label="Rotate 90 degrees clockwise (R)"
+        className="cursor-pointer hover:opacity-80 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary rounded"
         onClick={onRotateCw}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onRotateCw();
+          }
+        }}
         transform="translate(8, 5)"
       >
         <rect width={16} height={16} rx={3} fill="transparent" />
@@ -546,8 +576,17 @@ function NodeActionPill({
 
       {/* Rotate CCW */}
       <g
-        className="cursor-pointer hover:opacity-80"
+        role="button"
+        tabIndex={0}
+        aria-label="Rotate 90 degrees counter-clockwise (Shift+R)"
+        className="cursor-pointer hover:opacity-80 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary rounded"
         onClick={onRotateCcw}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onRotateCcw();
+          }
+        }}
         transform="translate(32, 5)"
       >
         <rect width={16} height={16} rx={3} fill="transparent" />
@@ -564,8 +603,17 @@ function NodeActionPill({
 
       {/* Flip H */}
       <g
-        className="cursor-pointer hover:opacity-80"
+        role="button"
+        tabIndex={0}
+        aria-label="Flip horizontally (H)"
+        className="cursor-pointer hover:opacity-80 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary rounded"
         onClick={onFlipH}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onFlipH();
+          }
+        }}
         transform="translate(56, 5)"
       >
         <rect width={16} height={16} rx={3} fill="transparent" />
@@ -582,8 +630,17 @@ function NodeActionPill({
 
       {/* Flip V */}
       <g
-        className="cursor-pointer hover:opacity-80"
+        role="button"
+        tabIndex={0}
+        aria-label="Flip vertically (V)"
+        className="cursor-pointer hover:opacity-80 focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-primary rounded"
         onClick={onFlipV}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onFlipV();
+          }
+        }}
         transform="translate(78, 5)"
       >
         <rect width={16} height={16} rx={3} fill="transparent" />
@@ -600,8 +657,17 @@ function NodeActionPill({
 
       {/* Delete */}
       <g
-        className="cursor-pointer group/del"
+        role="button"
+        tabIndex={0}
+        aria-label="Delete component (Delete/Backspace)"
+        className="cursor-pointer group/del focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-destructive rounded"
         onClick={onDelete}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onDelete();
+          }
+        }}
         transform="translate(100, 4)"
       >
         <rect
@@ -615,7 +681,7 @@ function NodeActionPill({
           y={13}
           textAnchor="middle"
           fill="#ffffff"
-          className="font-bold text-[11px] pointer-events-none"
+          className="font-bold text-[11px] pointer-events-none select-none"
         >
           ×
         </text>
@@ -673,8 +739,17 @@ function NodeView({
   return (
     <g
       ref={ref}
+      tabIndex={0}
+      role="group"
+      aria-label={`${node.label ?? node.kind} component`}
       transform={`translate(${node.pos.x} ${node.pos.y})`}
-      className="cursor-move"
+      className="cursor-move group focus-visible:outline-hidden"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
       onPointerDown={(e) => {
         // Pins handle their own clicks; dragging from a pin would fight wiring.
         if ((e.target as Element).closest("[data-pin]")) return;
@@ -683,8 +758,8 @@ function NodeView({
         if (ref.current) onDragStart(ref.current, e);
       }}
     >
-      {/* Selection Border */}
-      {selected && (
+      {/* Selection Border & Focus Ring */}
+      {selected ? (
         <rect
           x={-4}
           y={-4}
@@ -696,6 +771,18 @@ function NodeView({
           strokeWidth={1.5}
           strokeDasharray="4 3"
           className="pointer-events-none"
+        />
+      ) : (
+        <rect
+          x={-4}
+          y={-4}
+          width={wRot + 8}
+          height={hRot + 8}
+          rx={6}
+          fill="none"
+          stroke="var(--color-primary, #38bdf8)"
+          strokeWidth={1.5}
+          className="pointer-events-none opacity-0 group-focus-visible:opacity-100"
         />
       )}
 

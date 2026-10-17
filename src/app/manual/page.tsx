@@ -129,13 +129,22 @@ const FAULTS = [
 const SHORTCUTS = [
   { keys: "Click pin, click pin", does: "Wire two pins together" },
   { keys: "Alt+Click or Delete/Backspace", does: "Delete a wire" },
-  { keys: "Click a switch", does: "Toggle it between 0 and 1" },
-  { keys: "Esc", does: "Cancel a half-drawn wire" },
+  { keys: "Click a switch / Space", does: "Toggle it between 0 and 1" },
+  { keys: "Tab / Shift+Tab", does: "Focus next / previous component or control" },
+  { keys: "Space / Enter", does: "Select focused part or toggle focused switch" },
+  { keys: "R / Shift+R", does: "Rotate selected gate 90° CW / CCW" },
+  { keys: "H / V", does: "Flip selected gate horizontally / vertically" },
+  { keys: "Esc", does: "Cancel wire drawing or exit Zen mode" },
   { keys: "Backspace / Delete", does: "Delete the selected part" },
   { keys: "⌘Z / Ctrl-Z", does: "Undo" },
   { keys: "⇧⌘Z / Ctrl-Shift-Z", does: "Redo" },
+  { keys: "F", does: "Toggle Zen fullscreen mode" },
+  { keys: "[ or B", does: "Toggle Parts palette sidebar" },
+  { keys: "]", does: "Toggle Faults & Verification inspector" },
+  { keys: "A", does: "Toggle Airwires guide on breadboard" },
+  { keys: "X", does: "Toggle DIP-14 internal gate X-Ray view" },
   { keys: "Scroll / pinch", does: "Zoom the canvas" },
-  { keys: "Drag the background", does: "Pan" },
+  { keys: "Drag the background", does: "Pan the canvas" },
 ] as const;
 
 function Section({

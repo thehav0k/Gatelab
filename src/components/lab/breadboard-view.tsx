@@ -498,6 +498,7 @@ export function BreadboardView() {
               unpoweredNodes.forEach((n) => autoWireIcPower(n.id));
               toast.success(`Auto-powered ${unpoweredNodes.length} IC${unpoweredNodes.length > 1 ? "s" : ""}`);
             }}
+            aria-label={`Auto-wire VCC and GND to power rails for ${unpoweredNodes.length} ICs`}
             title="Auto-wire VCC and GND to power rails for all unpowered ICs"
           >
             <Zap className="size-3.5 mr-1 fill-amber-500" />
@@ -509,39 +510,43 @@ export function BreadboardView() {
           size="sm"
           className="h-7 text-xs gap-1 shadow-xs"
           onClick={() => setShowXRay((v) => !v)}
+          aria-label="Toggle DIP-14 Internal Gate X-Ray View"
           title="Toggle DIP-14 Internal Gate X-Ray View (Hotkey X)"
         >
           {showXRay ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5 text-muted-foreground" />}
           <span>X-Ray</span>
-          <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[9px] font-mono">X</kbd>
+          <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[11px] font-mono">X</kbd>
         </Button>
         <Button
           variant={showAirwires ? "default" : "outline"}
           size="sm"
           className="h-7 text-xs gap-1 shadow-xs"
           onClick={() => setShowAirwires((v) => !v)}
+          aria-label="Toggle Unrouted Schematic Airwires Guide"
           title="Toggle Unrouted Schematic Airwires Guide (Hotkey A)"
         >
           <Radio className="size-3.5" />
           <span>Airwires</span>
-          <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[9px] font-mono">A</kbd>
+          <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[11px] font-mono">A</kbd>
         </Button>
         <div className="flex items-center rounded-md border bg-card/90 shadow-xs h-7 px-1 text-xs font-mono">
           <button
             type="button"
             className="px-1.5 py-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
             onClick={cam.zoomOut}
+            aria-label="Zoom Out"
             title="Zoom Out"
           >
             -
           </button>
-          <span className="px-1 min-w-[38px] text-center text-[10px] select-none text-muted-foreground">
+          <span className="px-1 min-w-[38px] text-center text-[11px] select-none text-muted-foreground">
             {Math.round(cam.zoom * 100)}%
           </span>
           <button
             type="button"
             className="px-1.5 py-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
             onClick={cam.zoomIn}
+            aria-label="Zoom In"
             title="Zoom In"
           >
             +
@@ -552,6 +557,7 @@ export function BreadboardView() {
           size="sm"
           className="h-7 text-xs gap-1 shadow-xs"
           onClick={() => cam.reset()}
+          aria-label="Fit Breadboard Trainer to Screen"
           title="Fit Breadboard Trainer to Screen"
         >
           <Maximize2 className="size-3.5" />

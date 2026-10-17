@@ -93,10 +93,9 @@ export function PresetMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Blocks />
+        <Button variant="outline" size="sm" aria-label="Circuit presets">
+          <Blocks className="size-3.5" />
           <span className="hidden sm:inline">Presets</span>
-          <span className="sr-only sm:hidden">Presets</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-72 p-0">

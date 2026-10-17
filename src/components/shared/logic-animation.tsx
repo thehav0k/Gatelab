@@ -19,7 +19,22 @@ import { cn } from "@/lib/utils";
 export function LogicAnimation({ className }: { className?: string }) {
   const [inputA, setInputA] = useState<0 | 1>(0);
   const [inputB, setInputB] = useState<0 | 1>(0);
-  const [isAuto, setIsAuto] = useState(true);
+  const [isAuto, setIsAuto] = useState(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return false;
+    }
+    return true;
+  });
+
+  // Listen for prefers-reduced-motion changes
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) setIsAuto(false);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   // Auto-cycle through states when auto is enabled
   useEffect(() => {
@@ -70,7 +85,7 @@ export function LogicAnimation({ className }: { className?: string }) {
         viewBox="0 0 450 195"
         className="w-full overflow-visible"
         role="img"
-        aria-label="Interactive digital logic circuit demonstration"
+        aria-label="Interactive circuit: F = A' + A·B"
       >
         <defs>
           <filter id="glow-led" x="-50%" y="-50%" width="200%" height="200%">
@@ -132,7 +147,7 @@ export function LogicAnimation({ className }: { className?: string }) {
 
         {/* --- INTERACTIVE SWITCH A ----------------------------------------- */}
         <g
-          className="cursor-pointer group"
+          className="cursor-pointer group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary rounded"
           onClick={toggleA}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -141,8 +156,9 @@ export function LogicAnimation({ className }: { className?: string }) {
             }
           }}
           tabIndex={0}
-          role="button"
-          aria-label={`Toggle input A, currently ${inputA}`}
+          role="switch"
+          aria-checked={inputA === 1}
+          aria-label={`Switch A, currently ${inputA === 1 ? "HIGH" : "LOW"}`}
         >
           {/* Switch base plate */}
           <rect
@@ -151,7 +167,7 @@ export function LogicAnimation({ className }: { className?: string }) {
             width={34}
             height={30}
             rx={5}
-            className="fill-card stroke-border transition-colors group-hover:stroke-logic-high/70"
+            className="fill-card stroke-border transition-colors group-hover:stroke-logic-high/70 group-focus-visible:stroke-primary"
             strokeWidth={1.5}
           />
           {/* Rocker lever */}
@@ -173,7 +189,8 @@ export function LogicAnimation({ className }: { className?: string }) {
             x={23}
             y={49}
             textAnchor="middle"
-            className="font-mono text-[9px] font-bold pointer-events-none fill-foreground"
+            aria-hidden="true"
+            className="font-mono text-[9px] font-bold pointer-events-none fill-foreground select-none"
           >
             {inputA}
           </text>
@@ -181,7 +198,8 @@ export function LogicAnimation({ className }: { className?: string }) {
             x={23}
             y={22}
             textAnchor="middle"
-            className="font-mono text-[10px] font-semibold fill-muted-foreground group-hover:fill-logic-high transition-colors"
+            aria-hidden="true"
+            className="font-mono text-[10px] font-semibold fill-muted-foreground group-hover:fill-logic-high select-none transition-colors"
           >
             A
           </text>
@@ -189,7 +207,7 @@ export function LogicAnimation({ className }: { className?: string }) {
 
         {/* --- INTERACTIVE SWITCH B ----------------------------------------- */}
         <g
-          className="cursor-pointer group"
+          className="cursor-pointer group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary rounded"
           onClick={toggleB}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -198,8 +216,9 @@ export function LogicAnimation({ className }: { className?: string }) {
             }
           }}
           tabIndex={0}
-          role="button"
-          aria-label={`Toggle input B, currently ${inputB}`}
+          role="switch"
+          aria-checked={inputB === 1}
+          aria-label={`Switch B, currently ${inputB === 1 ? "HIGH" : "LOW"}`}
         >
           {/* Switch base plate */}
           <rect
@@ -208,7 +227,7 @@ export function LogicAnimation({ className }: { className?: string }) {
             width={34}
             height={30}
             rx={5}
-            className="fill-card stroke-border transition-colors group-hover:stroke-logic-high/70"
+            className="fill-card stroke-border transition-colors group-hover:stroke-logic-high/70 group-focus-visible:stroke-primary"
             strokeWidth={1.5}
           />
           {/* Rocker lever */}
@@ -230,7 +249,8 @@ export function LogicAnimation({ className }: { className?: string }) {
             x={23}
             y={139}
             textAnchor="middle"
-            className="font-mono text-[9px] font-bold pointer-events-none fill-foreground"
+            aria-hidden="true"
+            className="font-mono text-[9px] font-bold pointer-events-none fill-foreground select-none"
           >
             {inputB}
           </text>
@@ -238,7 +258,8 @@ export function LogicAnimation({ className }: { className?: string }) {
             x={23}
             y={112}
             textAnchor="middle"
-            className="font-mono text-[10px] font-semibold fill-muted-foreground group-hover:fill-logic-high transition-colors"
+            aria-hidden="true"
+            className="font-mono text-[10px] font-semibold fill-muted-foreground group-hover:fill-logic-high select-none transition-colors"
           >
             B
           </text>
@@ -285,8 +306,9 @@ export function LogicAnimation({ className }: { className?: string }) {
             x={0}
             y={3.5}
             textAnchor="middle"
+            aria-hidden="true"
             className={cn(
-              "font-mono text-[10px] font-bold pointer-events-none",
+              "font-mono text-[10px] font-bold pointer-events-none select-none",
               outputF === 1 ? "fill-background" : "fill-muted-foreground",
             )}
           >
@@ -298,7 +320,8 @@ export function LogicAnimation({ className }: { className?: string }) {
             x={0}
             y={30}
             textAnchor="middle"
-            className="font-mono text-[11px] font-bold fill-foreground"
+            aria-hidden="true"
+            className="font-mono text-[11px] font-bold fill-foreground select-none"
           >
             F
           </text>
@@ -309,7 +332,8 @@ export function LogicAnimation({ className }: { className?: string }) {
           x={162}
           y={22}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-muted-foreground/75"
+          aria-hidden="true"
+          className="font-mono text-[9px] fill-muted-foreground/75 select-none"
         >
           NOT A: {notA}
         </text>
@@ -317,7 +341,8 @@ export function LogicAnimation({ className }: { className?: string }) {
           x={162}
           y={102}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-muted-foreground/75"
+          aria-hidden="true"
+          className="font-mono text-[9px] fill-muted-foreground/75 select-none"
         >
           A·B: {andOut}
         </text>
@@ -471,7 +496,8 @@ function GateSymbolSvg({
         x={kind === "or" ? 22 : kind === "and" ? 15 : 14}
         y={24}
         textAnchor="middle"
-        className="fill-muted-foreground pointer-events-none font-mono text-[8px] font-semibold"
+        aria-hidden="true"
+        className="fill-muted-foreground pointer-events-none font-mono text-[8px] font-semibold select-none"
       >
         {kind.toUpperCase()}
       </text>

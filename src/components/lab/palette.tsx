@@ -131,7 +131,7 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
       {constraint.id !== "none" && (
         <div className="bg-muted/60 rounded-md border p-2">
           <p className="text-xs font-medium">{constraint.name}</p>
-          <p className="text-muted-foreground mt-0.5 text-[10px] leading-snug">
+          <p className="text-muted-foreground mt-0.5 text-[11px] leading-snug">
             {constraint.description}
           </p>
         </div>
@@ -141,7 +141,7 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
       <Section title="Gates">
         {/* Input count for the next gate placed. */}
         <div className="mb-2 flex items-center gap-1.5">
-          <span className="text-muted-foreground text-[10px]">inputs</span>
+          <span className="text-muted-foreground text-[11px]">inputs</span>
           <div className="flex gap-1">
             {INPUT_CHOICES.map((k) => (
               <button
@@ -149,6 +149,7 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
                 type="button"
                 onClick={() => setGateInputs(k)}
                 aria-pressed={gateInputs === k}
+                aria-label={`Set default gate inputs to ${k}`}
                 className={cn(
                   "size-6 rounded border font-mono text-xs transition-colors",
                   gateInputs === k
@@ -170,6 +171,11 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
               size="sm"
               className="font-mono text-xs"
               onClick={() => addNode(gateNode(op, nextDrop(), gateInputs))}
+              aria-label={
+                isVariadic(op)
+                  ? `Place ${gateInputs}-input ${GATE_LABELS[op]} gate`
+                  : `Place ${GATE_LABELS[op]} gate`
+              }
               title={
                 isVariadic(op)
                   ? `${gateInputs}-input ${GATE_LABELS[op]}`
@@ -178,12 +184,12 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
             >
               {GATE_LABELS[op]}
               {isVariadic(op) && gateInputs !== 2 && (
-                <span className="text-muted-foreground ml-0.5 text-[9px]">×{gateInputs}</span>
+                <span className="text-muted-foreground ml-0.5 text-[11px]">×{gateInputs}</span>
               )}
             </Button>
           ))}
         </div>
-        <p className="text-muted-foreground mt-1.5 text-[10px] leading-snug">
+        <p className="text-muted-foreground mt-1.5 text-[11px] leading-snug">
           NOT is always 1-input. Select a gate on the canvas to change its inputs.
         </p>
       </Section>
@@ -202,6 +208,7 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
                 variant="outline"
                 size="sm"
                 className="text-xs"
+                aria-label={`Place ${entry.label}`}
                 onClick={() => addNode(entry.node)}
               >
                 {entry.label}
@@ -214,6 +221,7 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
                     variant="outline"
                     size="sm"
                     className="col-span-2 text-xs"
+                    aria-label="Place Clock source"
                     onClick={() => addNode({ kind: "clock", state: 0, pos: nextDrop() })}
                   >
                     Clock
@@ -245,7 +253,7 @@ export function Palette({ onPlace }: { onPlace?: () => void }) {
           <Separator />
           <Section title="Flip-flops & registers">
             <PartGrid parts={flopPacks} onAdd={addNode} />
-            <p className="text-muted-foreground mt-1.5 text-[10px] leading-snug">
+            <p className="text-muted-foreground mt-1.5 text-[11px] leading-snug">
               These remember. Wire a Clock to CLK, and a clear to CLR — a flip-flop
               powers up unknown, which is why every counter has one.
             </p>
@@ -279,7 +287,7 @@ function SelectedGateInputs() {
           {node.label} · {GATE_LABELS[node.op]}
         </p>
         <div className="flex items-center gap-1.5">
-          <span className="text-muted-foreground text-[10px]">inputs</span>
+          <span className="text-muted-foreground text-[11px]">inputs</span>
           <div className="flex gap-1">
             {INPUT_CHOICES.map((k) => (
               <button
@@ -287,6 +295,7 @@ function SelectedGateInputs() {
                 type="button"
                 onClick={() => setGateArity(node.id, k)}
                 aria-pressed={node.arity === k}
+                aria-label={`Change selected gate to ${k} inputs`}
                 className={cn(
                   "size-6 rounded border font-mono text-xs transition-colors",
                   node.arity === k
@@ -332,6 +341,7 @@ function PartGrid({
                 variant="outline"
                 size="sm"
                 className="font-mono text-[11px]"
+                aria-label={`Place ${def.part} (${def.name})`}
                 onClick={() => onAdd({ kind: "ic", part: def.part, pos: nextIcDrop() })}
               >
                 {def.part}

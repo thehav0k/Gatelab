@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Boxes, BookOpen, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
+import { Boxes, BookOpen, ChevronDown, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
 
 import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { BreadboardView } from "@/components/lab/breadboard-view";
@@ -267,7 +267,7 @@ export default function LabPage() {
         >
           <Minimize2 className="size-3.5 text-foreground" />
           <span className="font-medium text-foreground">Exit Zen</span>
-          <kbd className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+          <kbd className="inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
             Esc
           </kbd>
         </Button>
@@ -285,7 +285,7 @@ export default function LabPage() {
               type="button"
               onClick={() => setHeaderCollapsed(true)}
               title="Compact Toolbar (Hide Banner)"
-              className="text-[10px] text-muted-foreground hover:text-foreground hidden sm:inline-block cursor-pointer px-1 rounded border"
+              className="text-[11px] text-muted-foreground hover:text-foreground hidden sm:inline-block cursor-pointer px-1 rounded border"
             >
               Compact
             </button>
@@ -304,7 +304,7 @@ export default function LabPage() {
             className="text-xs text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 rounded border flex items-center gap-1"
           >
             <span className="font-semibold text-foreground">Lab</span>
-            <span className="text-[10px]">▼</span>
+            <span className="text-[11px]">▼</span>
           </button>
         )}
 
@@ -319,7 +319,7 @@ export default function LabPage() {
           >
             {isZenMode ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
             <span className="hidden xl:inline">{isZenMode ? "Exit Zen" : "Zen Mode"}</span>
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
               F
             </kbd>
           </Button>
@@ -334,7 +334,7 @@ export default function LabPage() {
           >
             <Boxes className="size-3.5" />
             <span className="hidden xl:inline">Parts</span>
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
               [
             </kbd>
           </Button>
@@ -347,7 +347,7 @@ export default function LabPage() {
               onClick={() => setActiveWireColor(null)}
               title="Automatic Wire Color"
               className={cn(
-                "px-1.5 py-0.5 text-[10px] rounded font-mono font-medium transition-colors",
+                "px-1.5 py-0.5 text-[11px] rounded font-mono font-medium transition-colors",
                 activeWireColor === null
                   ? "bg-primary text-primary-foreground font-semibold"
                   : "text-muted-foreground hover:text-foreground",
@@ -419,11 +419,11 @@ export default function LabPage() {
             <Stethoscope className="size-3.5" />
             <span className="hidden xl:inline">Inspect</span>
             {errorCount > 0 && (
-              <Badge variant="destructive" className="ml-0.5 px-1.5 text-[10px]">
+              <Badge variant="destructive" className="ml-0.5 px-1.5 text-[11px]">
                 {errorCount}
               </Badge>
             )}
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
               ]
             </kbd>
           </Button>
@@ -535,7 +535,9 @@ export default function LabPage() {
               <button
                 type="button"
                 onClick={() => setTimingChoice(!showTiming)}
-                className="hover:bg-accent/50 flex w-full items-center gap-2.5 px-3.5 py-1.5 text-left cursor-pointer h-7 select-none"
+                aria-expanded={showTiming}
+                aria-controls="timing-diagram-content"
+                className="hover:bg-accent/50 flex w-full items-center gap-2.5 px-3.5 py-1.5 text-left cursor-pointer h-7 select-none transition-colors"
               >
                 <div className="flex items-center gap-1.5">
                   <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -544,17 +546,23 @@ export default function LabPage() {
                 <span className="text-muted-foreground hidden text-[11px] sm:inline font-mono">
                   Engine: {hasFlops ? "clock-driven" : "unit-delay, Gray-code sweep"}
                 </span>
-                <span className="text-muted-foreground ml-auto text-[11px] font-medium">
-                  {showTiming ? "▲ Hide" : "▼ Show Timing Diagram"}
+                <span className="text-muted-foreground ml-auto flex items-center gap-1 text-[11px] font-medium">
+                  <span>{showTiming ? "Hide Timing Diagram" : "Show Timing Diagram"}</span>
+                  <ChevronDown
+                    className={cn(
+                      "size-3.5 transition-transform duration-200 [transition-timing-function:var(--ease-out-expo)]",
+                      showTiming && "rotate-180",
+                    )}
+                  />
                 </span>
               </button>
               {showTiming && (
-                <>
+                <div id="timing-diagram-content">
                   <Separator />
                   <CardContent className="max-h-[160px] overflow-auto px-0 sm:max-h-[220px]">
                     <WaveformPanel />
                   </CardContent>
-                </>
+                </div>
               )}
             </Card>
           )}

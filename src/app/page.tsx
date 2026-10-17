@@ -189,10 +189,11 @@ export default function Home() {
             <motion.div key={href} {...scrollRise(i * 0.05)} className="flex">
               <Link
                 href={href}
-                className="group hover:border-foreground/20 hover:bg-accent/40 flex w-full flex-col rounded-xl border p-5 transition-colors"
+                data-cursor="link"
+                className="group hover:border-foreground/20 hover:bg-accent/40 flex w-full flex-col rounded-xl border p-5 transition-[transform,box-shadow,border-color,background-color] duration-200 [transition-timing-function:var(--ease-out-expo)] hover:-translate-y-1 hover:shadow-md active:translate-y-0 active:scale-[0.98] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
               >
                 <div className="flex items-center gap-2">
-                  <Icon className="text-logic-high size-5" />
+                  <Icon className="text-logic-high size-5 transition-transform duration-200 group-hover:scale-110" />
                   <span className="text-muted-foreground/60 ml-auto font-mono text-xs">
                     {step}
                   </span>
@@ -220,9 +221,9 @@ export default function Home() {
 
                 {/* Pinned to the bottom, so four cards of different lengths still
                     line their links up. */}
-                <span className="mt-auto flex items-center gap-1 pt-4 text-sm font-medium">
+                <span className="mt-auto flex items-center gap-1 pt-4 text-sm font-medium text-primary">
                   Open
-                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />
                 </span>
               </Link>
             </motion.div>
@@ -261,11 +262,18 @@ export default function Home() {
               ["Derived", "F = A·B′ + B·C"],
               ["Built", "7408 + 7432 + 7404"],
               ["Checked", "8 of 8 rows agree"],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-lg border px-3 py-2">
-                <p className="text-[10px] tracking-wide uppercase">{label}</p>
-                <p className="text-foreground mt-0.5 font-mono text-xs">{value}</p>
-              </div>
+            ].map(([label, value], i) => (
+              <motion.div
+                key={label}
+                initial={{ opacity: 0, x: 12 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.35, delay: 0.15 + i * 0.12, ease: [0.16, 1, 0.3, 1] }}
+                className="rounded-lg border px-3 py-2 bg-background/50 hover:border-primary/40 transition-colors"
+              >
+                <p className="text-[11px] font-medium tracking-wide uppercase text-muted-foreground">{label}</p>
+                <p className="text-foreground mt-0.5 font-mono text-xs font-semibold">{value}</p>
+              </motion.div>
             ))}
           </div>
         </div>
