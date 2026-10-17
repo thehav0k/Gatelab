@@ -99,15 +99,17 @@ export default function DiagramBuilderPage() {
         </aside>
       </div>
 
-      <footer className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 border-t px-3 py-1.5 text-[11px]">
-        <span>Drag a pin to another pin to wire</span>
-        <span>Drag empty space to select</span>
-        <span>⌥ or middle-drag to pan · ⌘scroll to zoom</span>
-        <span>R rotates · ⇧R the other way</span>
-        <span>Arrows nudge · ⌘drag ignores the grid</span>
-        <span>G groups · ⇧G ungroups</span>
-        <span>Equation tab builds from a truth table or Σm</span>
-        <span className="ml-auto">
+      <footer className="text-muted-foreground hidden sm:flex items-center justify-between gap-x-4 overflow-hidden border-t px-3 py-1.5 text-[11px] shrink-0">
+        <div className="flex items-center gap-x-4 overflow-hidden truncate">
+          <span className="truncate">Drag a pin to another pin to wire</span>
+          <span className="hidden md:inline truncate">Drag empty space to select</span>
+          <span className="hidden lg:inline truncate">⌥ or middle-drag to pan · ⌘scroll to zoom</span>
+          <span className="hidden xl:inline truncate">R rotates · ⇧R reverse</span>
+          <span className="hidden xl:inline truncate">Arrows nudge · ⌘drag ignores grid</span>
+          <span className="hidden 2xl:inline truncate">G groups · ⇧G ungroups</span>
+          <span className="hidden 2xl:inline truncate">Equation tab builds from truth table or Σm</span>
+        </div>
+        <span className="shrink-0 text-right">
           Building an assignment answer?{" "}
           <Link href="/solutions" className="text-foreground underline underline-offset-4">
             Worked solutions

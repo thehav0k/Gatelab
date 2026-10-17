@@ -1458,7 +1458,7 @@ function TrainerSocket({
           x={0}
           y={20}
           textAnchor="middle"
-          className="fill-muted-foreground font-mono text-[7.5px] font-medium pointer-events-none select-none"
+          className="fill-muted-foreground font-mono text-[8.5px] font-semibold pointer-events-none select-none"
         >
           {sublabel}
         </text>
@@ -1576,7 +1576,7 @@ function TrainerLed({
         y={14}
         textAnchor="middle"
         fill={lit ? chosenColor : isFault ? "#ef4444" : "#94a3b8"}
-        className="font-mono text-[7.5px] font-bold pointer-events-none select-none"
+        className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
       >
         {value === 1 ? "1" : value === 0 ? "0" : value === 2 ? "Z" : "X"}
       </text>
@@ -1692,7 +1692,7 @@ function TrainerSwitch({
           y={-14}
           textAnchor="middle"
           fill="#94a3b8"
-          className="font-mono text-[7px] font-semibold pointer-events-none select-none"
+          className="font-mono text-[8px] font-bold pointer-events-none select-none"
         >
           OUT
         </text>
@@ -2284,30 +2284,36 @@ function SeatedIc({
     return (
       <g>
         {/* Part & instance text label with opaque pill */}
-        <g
-          transform={`translate(${(a.x + b.x) / 2}, ${midY + (showXRay ? -22 : 4)})`}
-          className="pointer-events-none"
-        >
-          <rect
-            x={-38}
-            y={-9}
-            width={76}
-            height={18}
-            rx={4}
-            fill="#090d16"
-            stroke="#334155"
-            strokeWidth={0.75}
-          />
-          <text
-            x={0}
-            y={3.5}
-            textAnchor="middle"
-            fill="#f8fafc"
-            className="font-mono text-[9.5px] font-bold select-none"
-          >
-            {node.part} · {node.label}
-          </text>
-        </g>
+        {(() => {
+          const pillText = `${node.part} · ${node.label}`;
+          const pillW = Math.max(82, pillText.length * 6.5 + 16);
+          return (
+            <g
+              transform={`translate(${(a.x + b.x) / 2}, ${midY + (showXRay ? -22 : 4)})`}
+              className="pointer-events-none"
+            >
+              <rect
+                x={-pillW / 2}
+                y={-10}
+                width={pillW}
+                height={20}
+                rx={4}
+                fill="#090d16"
+                stroke="#334155"
+                strokeWidth={0.75}
+              />
+              <text
+                x={0}
+                y={3.5}
+                textAnchor="middle"
+                fill="#f8fafc"
+                className="font-mono text-[10px] font-bold select-none tracking-tight"
+              >
+                {pillText}
+              </text>
+            </g>
+          );
+        })()}
 
         {/* Floating Action Pill on Selected IC */}
         {isSelected && (
@@ -2530,9 +2536,9 @@ function SeatedIc({
             <IcLeg hole={hole} isNc={isNc} />
             <text
               x={pt.x}
-              y={isUpper ? pt.y + 11 : pt.y - 7}
+              y={isUpper ? pt.y + 11.5 : pt.y - 7.5}
               textAnchor="middle"
-              className={`font-mono text-[7px] font-semibold pointer-events-none ${
+              className={`font-mono text-[8px] font-bold pointer-events-none ${
                 isNc
                   ? "fill-red-400 font-bold"
                   : pinName === "VCC"
@@ -2541,7 +2547,7 @@ function SeatedIc({
                   ? "fill-blue-400 font-bold"
                   : showXRay
                   ? "fill-muted-foreground"
-                  : "fill-background/80"
+                  : "fill-background/90"
               }`}
             >
               {isNc ? "NC" : pinName}
@@ -2686,7 +2692,7 @@ function IcXRay({
               y={boxY + 10.5}
               textAnchor="middle"
               fill="#f8fafc"
-              className="font-mono text-[6.5px] font-bold"
+              className="font-mono text-[7.5px] font-bold"
             >
               {flop.kind.toUpperCase()}
               {flop.slot}
@@ -2764,7 +2770,7 @@ function XRayGate({
         x={cx}
         y={cy + 3}
         textAnchor="middle"
-        className="fill-foreground/80 font-mono text-[7px] font-bold"
+        className="fill-foreground/80 font-mono text-[8px] font-bold"
       >
         {slot}
       </text>

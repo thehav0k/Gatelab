@@ -2,10 +2,14 @@ import { test, expect } from '@playwright/test';
 
 const ROUTES = ['/', '/theory', '/diagram', '/lab', '/report', '/manual'];
 const VIEWPORTS = [
-  { width: 375, height: 812, name: 'mobile' },
+  { width: 375, height: 812, name: 'mobile-small' },
+  { width: 390, height: 844, name: 'mobile-390' },
   { width: 768, height: 1024, name: 'tablet' },
-  { width: 1280, height: 800, name: 'laptop' },
-  { width: 1920, height: 1080, name: 'desktop' },
+  { width: 1280, height: 800, name: 'laptop-1280' },
+  { width: 1400, height: 900, name: 'laptop-1400' },
+  { width: 1456, height: 900, name: 'laptop-1456' },
+  { width: 1495, height: 900, name: 'laptop-1495' },
+  { width: 1920, height: 1080, name: 'desktop-1920' },
 ];
 
 for (const route of ROUTES) {

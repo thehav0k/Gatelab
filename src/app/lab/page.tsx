@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Boxes, BookOpen, ChevronDown, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
+import { Boxes, ChevronDown, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
 
 import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { BreadboardView } from "@/components/lab/breadboard-view";
@@ -298,6 +298,7 @@ export default function LabPage() {
               type="button"
               onClick={() => setHeaderCollapsed(true)}
               title="Compact Toolbar (Hide Banner)"
+              aria-label="Compact Toolbar"
               className="text-[11px] text-muted-foreground hover:text-foreground hidden sm:inline-block cursor-pointer px-1 rounded border"
             >
               Compact
@@ -314,6 +315,7 @@ export default function LabPage() {
             type="button"
             onClick={() => setHeaderCollapsed(false)}
             title="Expand Banner"
+            aria-label="Expand Banner"
             className="text-xs text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 rounded border flex items-center gap-1"
           >
             <span className="font-semibold text-foreground">Lab</span>
@@ -328,6 +330,7 @@ export default function LabPage() {
             size="sm"
             onClick={() => setIsZenMode((v) => !v)}
             title="Toggle Zen Fullscreen Mode (Hotkey F or Esc)"
+            aria-label="Toggle Zen Fullscreen Mode"
             className="h-8 gap-1.5 text-xs shadow-xs"
           >
             {isZenMode ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
@@ -343,6 +346,7 @@ export default function LabPage() {
             size="sm"
             onClick={() => setLeftSidebarOpen((v) => !v)}
             title="Toggle Parts Sidebar (B or [)"
+            aria-label="Toggle Parts Sidebar"
             className="hidden lg:flex gap-1.5 h-8 text-xs"
           >
             <Boxes className="size-3.5" />
@@ -359,6 +363,7 @@ export default function LabPage() {
               type="button"
               onClick={() => setActiveWireColor(null)}
               title="Automatic Wire Color"
+              aria-label="Automatic wire color"
               className={cn(
                 "px-1.5 py-0.5 text-[11px] rounded font-mono font-medium transition-colors",
                 activeWireColor === null
@@ -374,6 +379,7 @@ export default function LabPage() {
                 type="button"
                 onClick={() => setActiveWireColor(c.value)}
                 title={c.label}
+                aria-label={c.label}
                 style={{ backgroundColor: c.value }}
                 className={cn(
                   "size-3.5 rounded-full transition-transform duration-150 border border-background/50 hover:scale-125 cursor-pointer",
@@ -384,11 +390,11 @@ export default function LabPage() {
             ))}
           </div>
 
-          {/* --- the two side panels, as sheets, below lg --- */}
+          {/* --- the two side panels, as sheets, below lg / xl --- */}
           <Sheet open={partsOpen} onOpenChange={setPartsOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="lg:hidden">
-                <Boxes /> <span className="hidden sm:inline">Parts</span>
+              <Button variant="outline" size="sm" className="lg:hidden" aria-label="Open parts palette">
+                <Boxes className="size-3.5" /> <span className="hidden sm:inline">Parts</span>
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-[280px] p-0">
@@ -403,8 +409,8 @@ export default function LabPage() {
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="lg:hidden">
-                <Stethoscope />
+              <Button variant="outline" size="sm" className="xl:hidden" aria-label="Open faults and verification drawer">
+                <Stethoscope className="size-3.5" />
                 <span className="hidden sm:inline">Check</span>
                 {errorCount > 0 && (
                   <Badge variant="destructive" className="ml-1 px-1.5">
@@ -427,10 +433,11 @@ export default function LabPage() {
             size="sm"
             onClick={() => setRightSidebarOpen((v) => !v)}
             title="Toggle Faults & Verification Inspector (])"
-            className="hidden lg:flex gap-1.5 h-8 text-xs"
+            aria-label="Toggle Faults & Verification Inspector"
+            className="hidden xl:flex gap-1.5 h-8 text-xs"
           >
             <Stethoscope className="size-3.5" />
-            <span className="hidden xl:inline">Inspect</span>
+            <span className="hidden 2xl:inline">Inspect</span>
             {errorCount > 0 && (
               <Badge variant="destructive" className="ml-0.5 px-1.5 text-[11px]">
                 {errorCount}
@@ -472,11 +479,11 @@ export default function LabPage() {
 
           <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-          <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+          <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
             <Undo2 className="size-3.5" />
             <span className="sr-only">Undo</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
+          <Button variant="outline" size="sm" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
             <Redo2 className="size-3.5" />
             <span className="sr-only">Redo</span>
           </Button>
@@ -503,6 +510,7 @@ export default function LabPage() {
               });
             }}
             title="Clear circuit (Destructive, Undoable with Ctrl+Z)"
+            aria-label="Clear circuit"
             className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
           >
             <Trash2 className="size-3.5" />
@@ -511,15 +519,10 @@ export default function LabPage() {
 
           <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-          <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
-            <Link href="/manual#lab">
-              <BookOpen className="size-3.5" /> Manual
-            </Link>
-          </Button>
-
-          <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs">
+          <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs shadow-xs" title="Export Circuit Report" aria-label="Export Circuit Report">
             <Link href="/report">
-              <FileText className="size-3.5" /> Report
+              <FileText className="size-3.5" />
+              <span className="hidden sm:inline">Report</span>
             </Link>
           </Button>
         </div>
@@ -588,7 +591,7 @@ export default function LabPage() {
         </div>
 
         {rightSidebarOpen && !isZenMode && (
-          <Card className="hidden min-h-0 w-[340px] shrink-0 overflow-hidden py-0 lg:block shadow-xs">
+          <Card className="hidden min-h-0 w-[340px] shrink-0 overflow-hidden py-0 xl:block shadow-xs">
             {inspector}
           </Card>
         )}
