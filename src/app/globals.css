@@ -135,6 +135,15 @@
     --motion-panel: 220ms;
     --ease-ui: cubic-bezier(0.2, 0.8, 0.2, 1);
     --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+    --dur-fast: 120ms;
+    --dur-base: 220ms;
+    --dur-slow: 480ms;
+    --cursor-x: 50vw;
+    --cursor-y: 50vh;
+    --glow-color: oklch(0.75 0.15 200 / 0.18);
+    --signal-1: var(--logic-high);
 }
 
 .dark {
@@ -415,4 +424,200 @@ button[data-slot="button"]:active:not(:disabled) {
     break-before: page;
     page-break-before: always;
   }
+}
+
+/* ==========================================================================
+   MOTION SYSTEM (Tokens, Custom Cursor, Animated Traces, View Transitions)
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .cursor-layer, .bg-trace { display: none !important; }
+}
+
+@keyframes ripple {
+  from {
+    transform: translate(-50%, -50%) scale(0);
+    opacity: 0.5;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes trace-flow {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+
+@keyframes signal-pulse {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes row-shake {
+  0%, 100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+.row-mismatch-shake {
+  animation: row-shake 240ms var(--ease-out-expo);
+}
+
+/* Custom Cursor */
+.has-custom-cursor:not(.cursor-native) *:not(input):not(textarea) {
+  cursor: none !important;
+}
+
+/* Simulator canvases opt back into native cursors for precision */
+.has-custom-cursor [data-native-cursor],
+.has-custom-cursor [data-native-cursor] * {
+  cursor: revert !important;
+}
+
+.cursor-dot {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--color-logic-high, var(--primary));
+  will-change: transform;
+  pointer-events: none;
+  transition: opacity var(--dur-fast);
+  box-shadow: 0 0 6px var(--color-logic-high, var(--primary));
+}
+
+.cursor-ring {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  border: 1px solid color-mix(in oklch, var(--primary) 55%, transparent);
+  will-change: transform;
+  pointer-events: none;
+  transition:
+    width var(--dur-base) var(--ease-out-expo),
+    height var(--dur-base) var(--ease-out-expo),
+    background var(--dur-base),
+    border-color var(--dur-base),
+    opacity var(--dur-base);
+}
+
+.cursor-ring[data-mode="link"] {
+  width: 56px;
+  height: 56px;
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border-color: var(--primary);
+}
+
+.cursor-ring[data-mode="drag"] {
+  width: 48px;
+  height: 48px;
+  border-style: dashed;
+}
+
+.cursor-ring[data-mode="text"] {
+  width: 2px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
+.cursor-ring[data-mode="hidden"] {
+  opacity: 0;
+}
+
+.cursor-ring[data-pressed="1"] {
+  width: 22px;
+  height: 22px;
+  background: color-mix(in oklch, var(--primary) 25%, transparent);
+}
+
+.click-ripple {
+  position: fixed;
+  z-index: 9998;
+  pointer-events: none;
+  width: 90px;
+  height: 90px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--primary);
+  animation: ripple 560ms var(--ease-out-expo) forwards;
+}
+
+/* Ambient Circuit Grid & Spotlight Glow */
+.bg-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 10%, transparent) 1px, transparent 0);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(600px circle at var(--cursor-x) var(--cursor-y), #000 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(600px circle at var(--cursor-x) var(--cursor-y), #000 0%, transparent 70%);
+}
+
+.bg-glow {
+  position: fixed;
+  inset: 0;
+  z-index: -11;
+  pointer-events: none;
+  background: radial-gradient(500px circle at var(--cursor-x) var(--cursor-y), var(--glow-color), transparent 60%);
+}
+
+/* View Transitions API */
+::view-transition-old(root) {
+  animation: 180ms var(--ease-in-out) both fade-out;
+}
+::view-transition-new(root) {
+  animation: 320ms var(--ease-out-expo) both fade-up;
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.site-header {
+  view-transition-name: site-header;
+}
+
+/* Scroll reveals */
+[data-reveal] {
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity var(--dur-slow) var(--ease-out-expo), transform var(--dur-slow) var(--ease-out-expo);
+}
+[data-reveal][data-in="1"] {
+  opacity: 1;
+  transform: none;
 }

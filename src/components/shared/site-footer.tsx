@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { TLink as Link } from "@/components/motion/transition-link";
 import { usePathname } from "next/navigation";
 import { Mail, MessageSquare } from "lucide-react";
 import { GithubIcon } from "@/components/shared/github-icon";

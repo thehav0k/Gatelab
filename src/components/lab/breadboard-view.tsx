@@ -567,6 +567,7 @@ export function BreadboardView() {
 
       <svg
         ref={svgRef}
+        data-native-cursor=""
         viewBox={cam.viewBox}
         preserveAspectRatio="xMidYMid meet"
         className="bg-card h-full w-full touch-none rounded-md border"
@@ -1271,7 +1272,7 @@ export function BreadboardView() {
                 }}
                 style={{ backgroundColor: swatch.value }}
                 className={cn(
-                  "size-4 rounded-full border border-background/50 transition-all hover:scale-125 cursor-pointer",
+                  "size-4 rounded-full border border-background/50 transition-transform duration-150 hover:scale-125 cursor-pointer",
                   (selectedWire.color || "#38bdf8") === swatch.value &&
                     "ring-2 ring-primary ring-offset-1 ring-offset-background scale-110",
                 )}

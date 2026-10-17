@@ -250,7 +250,7 @@ export default function LabPage() {
   return (
     <div
       className={cn(
-        "flex w-full overflow-hidden flex-col bg-background transition-all",
+        "flex w-full overflow-hidden flex-col bg-background transition-[padding,margin] duration-200 [transition-timing-function:var(--ease-out-expo)]",
         isZenMode
           ? "fixed inset-0 z-50 h-screen w-screen p-0 m-0"
           : "h-[calc(100dvh-3.5rem)] px-2 py-2 sm:px-3 sm:py-2.5",
@@ -363,7 +363,7 @@ export default function LabPage() {
                 title={c.label}
                 style={{ backgroundColor: c.value }}
                 className={cn(
-                  "size-3.5 rounded-full transition-all border border-background/50 hover:scale-125 cursor-pointer",
+                  "size-3.5 rounded-full transition-transform duration-150 border border-background/50 hover:scale-125 cursor-pointer",
                   activeWireColor === c.value &&
                     "ring-2 ring-foreground ring-offset-1 ring-offset-background scale-110",
                 )}
@@ -556,14 +556,20 @@ export default function LabPage() {
                   />
                 </span>
               </button>
-              {showTiming && (
-                <div id="timing-diagram-content">
+              <div
+                id="timing-diagram-content"
+                className={cn(
+                  "grid transition-[grid-template-rows] duration-220 [transition-timing-function:var(--ease-out-expo)]",
+                  showTiming ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                )}
+              >
+                <div className="overflow-hidden">
                   <Separator />
                   <CardContent className="max-h-[160px] overflow-auto px-0 sm:max-h-[220px]">
                     <WaveformPanel />
                   </CardContent>
                 </div>
-              )}
+              </div>
             </Card>
           )}
         </div>

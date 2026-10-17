@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { TLink as Link } from "@/components/motion/transition-link";
 import { usePathname } from "next/navigation";
 import { CircuitBoard, Menu, MessageSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,7 +37,7 @@ export function SiteHeader() {
   const isActive = (href: string) => pathname.startsWith(href);
 
   return (
-    <header className="bg-background/80 print:hidden no-print sticky top-0 z-50 border-b backdrop-blur">
+    <header className="site-header bg-background/80 print:hidden no-print sticky top-0 z-50 border-b backdrop-blur">
       <div className="flex h-14 items-center gap-2 px-3 sm:gap-6 sm:px-4">
         <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
           <CircuitBoard className="text-logic-high size-5" />

@@ -295,7 +295,7 @@ export function LogicAnimation({ className }: { className?: string }) {
             cy={0}
             r={11}
             className={cn(
-              "transition-all duration-150",
+              "transition-[fill,filter] duration-150",
               outputF === 1 ? "fill-logic-high" : "fill-muted",
             )}
             filter={outputF === 1 ? "url(#glow-led)" : undefined}
@@ -422,7 +422,7 @@ function WirePath({
         strokeWidth={isHigh ? 2.5 : 1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="transition-all duration-150"
+        className="transition-[stroke,stroke-width,opacity] duration-150"
         opacity={isHigh ? 1 : 0.45}
       />
 

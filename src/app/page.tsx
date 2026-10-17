@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -15,6 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { LogicAnimation } from "@/components/shared/logic-animation";
 import { DURATION, EASE } from "@/components/shared/motion";
+import { TLink as Link } from "@/components/motion/transition-link";
+import { Magnetic } from "@/components/motion/magnetic";
 
 /**
  * The landing page.
@@ -139,19 +140,23 @@ export default function Home() {
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
-            <Button asChild size="lg" className="shadow-sm">
-              <Link href="/theory">
-                <Sigma className="mr-1.5 size-4" />
-                Derive a function
-                <ArrowRight className="ml-1 size-4" />
-              </Link>
-            </Button>
-            <Button asChild size="lg" variant="outline" className="border-border/80 hover:bg-muted/70">
-              <Link href="/lab">
-                <CircuitBoard className="mr-1.5 size-4 text-logic-high" />
-                Open practical lab
-              </Link>
-            </Button>
+            <Magnetic strength={0.25}>
+              <Button asChild size="lg" className="shadow-sm">
+                <Link href="/theory" data-cursor="link">
+                  <Sigma className="mr-1.5 size-4" />
+                  Derive a function
+                  <ArrowRight className="ml-1 size-4" />
+                </Link>
+              </Button>
+            </Magnetic>
+            <Magnetic strength={0.25}>
+              <Button asChild size="lg" variant="outline" className="border-border/80 hover:bg-muted/70">
+                <Link href="/lab" data-cursor="link">
+                  <CircuitBoard className="mr-1.5 size-4 text-logic-high" />
+                  Open practical lab
+                </Link>
+              </Button>
+            </Magnetic>
           </div>
 
           <p className="text-muted-foreground mt-6 text-xs">

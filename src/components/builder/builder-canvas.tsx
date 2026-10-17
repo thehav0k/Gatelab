@@ -373,6 +373,7 @@ export function BuilderCanvas({
   return (
     <div
       ref={host}
+      data-native-cursor=""
       tabIndex={0}
       role="application"
       aria-label="Circuit canvas"

@@ -9,7 +9,7 @@ import {
   useNetValue,
   wirePaint,
 } from "@/stores/sim-store";
-import { LOGIC_NAMES } from "@/lib/simulation/logic";
+import { LOGIC_NAMES, LX } from "@/lib/simulation/logic";
 import { GateSymbol } from "./gate-symbol";
 import {
   IO_H,
@@ -183,6 +183,7 @@ export function CircuitCanvas() {
     <div className="relative h-full w-full">
       <svg
         ref={svgRef}
+        data-native-cursor=""
         viewBox={cam.viewBox}
         className="bg-card h-full w-full touch-none rounded-md border"
         onWheel={cam.onWheel}
@@ -405,7 +406,24 @@ function WireLine({
         strokeLinecap="round"
         strokeDasharray={unrouted ? "5 4" : paint.dashed ? "6 3" : undefined}
         opacity={unrouted ? 0.55 : paint.dim ? 0.62 : 1}
+        className={value === LX ? "animate-[signal-pulse_1.8s_ease-in-out_infinite]" : undefined}
       />
+      {value === 1 && !unrouted && Object.keys(doc.wires).length <= 60 && (
+        <path
+          d={d}
+          fill="none"
+          stroke="var(--signal-1, var(--color-logic-high))"
+          strokeWidth={paint.glow ? 2.6 : 2.2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray={1}
+          style={{
+            strokeDashoffset: 0,
+            transition: "stroke-dashoffset 160ms linear",
+          }}
+        />
+      )}
       {/* A 2px stroke is unclickable. This invisible fat copy is the hit target. */}
       <path
         d={d}
@@ -1030,11 +1048,23 @@ function LedBody({
 
   return (
     <g>
-      {lit && <circle cx={IO_W / 2} cy={IO_H / 2} r={16} fill={color} opacity={0.28} />}
+      {/* Blurred glow circle with animated opacity */}
+      <circle
+        cx={IO_W / 2}
+        cy={IO_H / 2}
+        r={18}
+        fill={color}
+        className="pointer-events-none transition-opacity duration-120"
+        style={{
+          opacity: lit ? 0.35 : 0,
+          filter: "blur(4px)",
+        }}
+      />
       <circle
         cx={IO_W / 2}
         cy={IO_H / 2}
         r={11}
+        className="transition-colors duration-120"
         style={{ fill: lit ? color : "var(--card)", stroke: color }}
         strokeWidth={selected ? 2.5 : 1.5}
       />
@@ -1042,7 +1072,7 @@ function LedBody({
         x={IO_W / 2}
         y={IO_H + 14}
         textAnchor="middle"
-        className="fill-foreground pointer-events-none font-mono text-[11px] font-semibold"
+        className="fill-foreground pointer-events-none font-mono text-[11px] font-semibold select-none"
       >
         {node.label}
       </text>

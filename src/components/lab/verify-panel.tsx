@@ -106,12 +106,13 @@ export function VerifyPanel() {
               </tr>
             </thead>
             <tbody>
-              {result.rows.map((row) => (
+              {result.rows.map((row, idx) => (
                 <tr
                   key={row.minterm}
+                  style={{ animationDelay: `${idx * 40}ms` }}
                   className={cn(
-                    "border-b last:border-0",
-                    !row.ok && "bg-destructive/15",
+                    "border-b last:border-0 animate-in fade-in duration-200 fill-mode-both",
+                    !row.ok && "bg-destructive/15 row-mismatch-shake",
                   )}
                 >
                   {row.inputs.map((bit, i) => (

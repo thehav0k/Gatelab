@@ -127,9 +127,28 @@ export function useViewBox(
   );
 
   const pan = useRef<{ x: number; y: number; from: ViewBox } | null>(null);
+  const velocity = useRef<{ vx: number; vy: number; lastTime: number; lastX: number; lastY: number }>({
+    vx: 0,
+    vy: 0,
+    lastTime: 0,
+    lastX: 0,
+    lastY: 0,
+  });
+  const inertiaRaf = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (inertiaRaf.current) cancelAnimationFrame(inertiaRaf.current);
+    };
+  }, []);
 
   const startPan = useCallback(
     (clientX: number, clientY: number) => {
+      if (inertiaRaf.current) {
+        cancelAnimationFrame(inertiaRaf.current);
+        inertiaRaf.current = null;
+      }
+      velocity.current = { vx: 0, vy: 0, lastTime: performance.now(), lastX: clientX, lastY: clientY };
       pan.current = { x: clientX, y: clientY, from: { ...view } };
     },
     [view],
@@ -145,12 +164,50 @@ export function useViewBox(
       const dx = ((clientX - p.x) / r.width) * p.from.w;
       const dy = ((clientY - p.y) / r.height) * p.from.h;
 
+      // Track pan velocity for inertia
+      const now = performance.now();
+      const dt = Math.max(1, now - velocity.current.lastTime);
+      const moveDx = ((clientX - velocity.current.lastX) / r.width) * p.from.w;
+      const moveDy = ((clientY - velocity.current.lastY) / r.height) * p.from.h;
+      velocity.current = {
+        vx: (moveDx / dt) * 16.67,
+        vy: (moveDy / dt) * 16.67,
+        lastTime: now,
+        lastX: clientX,
+        lastY: clientY,
+      };
+
       touched.current = true;
       setView({ ...p.from, x: p.from.x - dx, y: p.from.y - dy });
       return true;
     },
     [svgRef],
   );
+
+  const endPan = useCallback((): boolean => {
+    const was = pan.current !== null;
+    pan.current = null;
+
+    if (
+      was &&
+      typeof window !== "undefined" &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      let vx = velocity.current.vx;
+      let vy = velocity.current.vy;
+      if (Math.hypot(vx, vy) > 0.5) {
+        const step = () => {
+          vx *= 0.92;
+          vy *= 0.92;
+          if (Math.hypot(vx, vy) < 0.05) return;
+          setView((v) => ({ ...v, x: v.x - vx, y: v.y - vy }));
+          inertiaRaf.current = requestAnimationFrame(step);
+        };
+        inertiaRaf.current = requestAnimationFrame(step);
+      }
+    }
+    return was;
+  }, []);
 
   const zoomBy = useCallback(
     (factor: number) => {
@@ -222,12 +279,6 @@ export function useViewBox(
     },
     [nw, nh, toView, svgRef],
   );
-
-  const endPan = useCallback((): boolean => {
-    const was = pan.current !== null;
-    pan.current = null;
-    return was;
-  }, []);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     activePointers.current.delete(e.pointerId);
