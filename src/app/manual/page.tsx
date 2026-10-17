@@ -9,7 +9,6 @@ import {
   CircuitBoard,
   Cpu,
   Keyboard,
-  Mail,
   MessageSquare,
   Network,
   Search,
@@ -600,23 +599,23 @@ F(A,B,C) = 01101001`}
             </p>
             <p>
               The rest of the <strong>Style</strong> tab changes the background
-              (including fully transparent, for dark slides), the grid, the wire colours
+              (including fully transparent, for dark slides), the grid, the wire colors
               and widths, the
-              corner radii, the type sizes, and the colour of each category of block.
+              corner radii, the type sizes, and the color of each category of block.
               It applies to the canvas and to the export together — there is one
               renderer, and the canvas is showing you the same bytes the file will
               contain.
             </p>
             <p className="text-muted-foreground">
-              Per-signal wire colouring gives every net its own hue and every branch of
-              one fan-out the same one. Real jumper wire is multicoloured for exactly
+              Per-signal wire coloring gives every net its own hue and every branch of
+              one fan-out the same one. Real jumper wire is multicolored for exactly
               this reason: so that a connection can be traced across a crowded drawing.
               The hues are handed out in order and the palette is arranged so that
               consecutive ones are far apart — two signals side by side have to look
               like two signals.
             </p>
             <p className="text-muted-foreground">
-              Select a wire and you can give it a colour of its own, which is what you
+              Select a wire and you can give it a color of its own, which is what you
               want when the reader has to be shown <em>that</em> wire: the carry chain,
               the enable, the one line the paragraph underneath is about. Auto puts it
               back.
@@ -645,9 +644,9 @@ F(A,B,C) = 01101001`}
               quiet.
             </p>
             <p>
-              Wires are coloured <strong>by net</strong>, cycling through eight hues,
-              for the same reason real jumper wire is multicoloured — so you can trace
-              one. But Z and X keep their own unmistakable colour and dashing. A broken
+              Wires are colored <strong>by net</strong>, cycling through eight hues,
+              for the same reason real jumper wire is multicolored — so you can trace
+              one. But Z and X keep their own unmistakable color and dashing. A broken
               wire must never be able to look like a working one.
             </p>
             <p>
@@ -1038,13 +1037,15 @@ F(A,B,C) = 01101001`}
                   </Button>
                 </FeedbackDialog>
                 <div className="text-muted-foreground flex flex-col gap-2 text-sm sm:flex-row sm:gap-6">
-                  <a
-                    href={`mailto:${CONTACT.email}`}
-                    className="hover:text-foreground flex items-center gap-2 underline underline-offset-4"
-                  >
-                    <Mail className="size-4" />
-                    {CONTACT.email}
-                  </a>
+                  <FeedbackDialog>
+                    <button
+                      type="button"
+                      className="hover:text-foreground flex items-center gap-2 underline underline-offset-4 cursor-pointer"
+                    >
+                      <MessageSquare className="size-4" />
+                      Open feedback form
+                    </button>
+                  </FeedbackDialog>
                   <a
                     href={CONTACT.githubUrl}
                     target="_blank"

@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { SITE } from "@/lib/site";
 
-const title = "Printable lab report — truth table, K-map, circuit & verification";
+const title = "Printable Digital Logic Lab Report & Verification";
 const description =
-  "The whole derivation on one printable page: truth table, K-map, the Quine–McCluskey reduction, the circuit you built, and the row-by-row verification against your algebra.";
+  "Export complete digital logic derivations on one printable sheet: truth tables, K-maps, Quine–McCluskey steps, schematic drawings, and formal verification.";
 const url = `${SITE.url}/report`;
 
 export const metadata: Metadata = {

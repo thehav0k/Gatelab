@@ -2,7 +2,7 @@
 
 import { TLink as Link } from "@/components/motion/transition-link";
 import { usePathname } from "next/navigation";
-import { Mail, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import { GithubIcon } from "@/components/shared/github-icon";
 import { FeedbackDialog } from "@/components/shared/feedback-dialog";
 import { CONTACT } from "@/lib/feedback";
@@ -34,20 +34,12 @@ export function SiteFooter() {
           <FeedbackDialog>
             <button
               type="button"
-              className="hover:text-foreground flex items-center gap-1.5 transition-colors"
+              className="hover:text-foreground flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <MessageSquare className="size-3.5" />
               Feedback
             </button>
           </FeedbackDialog>
-
-          <a
-            href={`mailto:${CONTACT.email}`}
-            className="hover:text-foreground flex items-center gap-1.5 transition-colors"
-          >
-            <Mail className="size-3.5" />
-            {CONTACT.email}
-          </a>
 
           <a
             href={CONTACT.githubUrl}

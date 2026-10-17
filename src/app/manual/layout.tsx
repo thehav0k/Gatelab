@@ -6,9 +6,9 @@ import { SITE } from "@/lib/site";
  * rules straight out of the engine), and a client component cannot export
  * `metadata`. So the title lives in a layout beside it.
  */
-const title = "User manual — notation, K-maps, breadboard wiring & fault codes";
+const title = "User Manual — Logic Notation, Wiring & Fault Codes";
 const description =
-  "How to drive Gatelab: Boolean notation, simplifying a function, gate rules, building and exporting block diagrams, wiring 74xx TTL chips on a breadboard, what every fault code means, and verifying a circuit against its algebra.";
+  "Complete guide to Gatelab: Boolean algebra notation, Karnaugh maps, TTL IC pinouts, breadboard jumper wiring, hardware fault codes, and formal verification.";
 const url = `${SITE.url}/manual`;
 
 export const metadata: Metadata = {

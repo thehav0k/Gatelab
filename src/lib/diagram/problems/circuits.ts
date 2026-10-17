@@ -144,7 +144,7 @@ export const CIRCUIT_PROBLEMS: readonly Problem[] = [
         expressions: [sigmaOf(spec), ...minimalExpressions([spec])],
         steps: [
           "Read the sentence as rows, not as algebra. “P is 0” is every row with P = 0 — rows 0 to 3. “Q = R = 1” is rows 3 and 7. The union is Σm(0, 1, 2, 3, 7).",
-          "Minimising gives F = P' + QR. Notice it is already obvious from the sentence: the word “or” in the question IS the OR in the expression.",
+          "Minimizing gives F = P' + QR. Notice it is already obvious from the sentence: the word “or” in the question IS the OR in the expression.",
           strategyNote(rule),
           rule === "nand-only"
             ? `In NAND form: F = P' + QR = (P · (QR)')' = NAND(P, NAND(Q, R)). Two gates, and both fit in one 7400 with two slots to spare — note that P is used DIRECTLY, with no inverter, because the outer NAND supplies the complement itself.`
@@ -222,7 +222,7 @@ export const CIRCUIT_PROBLEMS: readonly Problem[] = [
             : "0 is NOT counted here. It divides by everything trivially, and most textbooks start the count at 1 — but say which convention you used, because it changes row 0.",
           `The rows are ${sigmaOf(spec)}. Feed that to a K-map or to Quine–McCluskey and the minimal sum falls out.`,
           strategyNote(rule),
-          "There is no arithmetic in the circuit at all. “Divisible by 3” is not a division — it is a set of eight specific rows, and once they are listed the problem is an ordinary minimisation.",
+          "There is no arithmetic in the circuit at all. “Divisible by 3” is not a division — it is a set of eight specific rows, and once they are listed the problem is an ordinary minimization.",
         ],
       };
     },
@@ -266,7 +266,7 @@ export const CIRCUIT_PROBLEMS: readonly Problem[] = [
             id: "q7",
             title: `Square of ${article(bits)} ${bits}-bit number`,
             strategy: strategyOf(rule),
-            caption: `${bits} inputs, ${outBits} outputs — one minimisation per output bit, sharing the input rail.`,
+            caption: `${bits} inputs, ${outBits} outputs — one minimization per output bit, sharing the input rail.`,
           }),
         ],
         tables: [
@@ -285,7 +285,7 @@ export const CIRCUIT_PROBLEMS: readonly Problem[] = [
         expressions: minimalExpressions(specs),
         steps: [
           `${bits} input bits reach ${max} at most, whose square is ${max * max} — so the output needs ${outBits} bits. Getting this count wrong is the commonest error in the question, and it costs the whole answer.`,
-          "A multi-output circuit is not one problem. It is one minimisation PER OUTPUT BIT, all sharing the same inputs — and any gate that appears in two of them is built once.",
+          "A multi-output circuit is not one problem. It is one minimization PER OUTPUT BIT, all sharing the same inputs — and any gate that appears in two of them is built once.",
           trivial.length > 0
             ? `${trivial.map((s) => s.name).join(", ")} ${trivial.length === 1 ? "is" : "are"} identically 0 — no square of an integer ever sets ${trivial.length === 1 ? "that bit" : "those bits"}, so ${trivial.length === 1 ? "it needs" : "they need"} no gates at all. Tie ${trivial.length === 1 ? "it" : "them"} to ground.`
             : "Every output bit needs real logic here.",
@@ -666,11 +666,11 @@ export const CIRCUIT_PROBLEMS: readonly Problem[] = [
         steps: [
           "A decoder output IS a minterm — output k is high exactly on row k. So a decoder computes ALL 2^n minterms of the variables, once, and hands them to you.",
           "Any function is a sum of the minterms where it is 1. With the minterms already generated, implementing a function is just an OR gate over the right decoder outputs.",
-          "This is why one decoder plus a few gates beats three separate minimisations when several functions share the same variables: the expensive part (generating the minterms) is paid for once and shared.",
+          "This is why one decoder plus a few gates beats three separate minimizations when several functions share the same variables: the expensive part (generating the minterms) is paid for once and shared.",
           low
             ? "With active-LOW outputs the decoder gives you complemented minterms, so the collecting gate is a NAND, not an OR — NAND of the complements is the OR of the originals. Using an OR here inverts every output, which is the classic way to lose the marks on this question."
             : "With active-HIGH outputs the collecting gate is a plain OR.",
-          "It does not use minimisation at all, and that is deliberate. The circuit is bigger in gate count than three minimised SOPs would be, and smaller in chip count — which is the trade the question is really about.",
+          "It does not use minimization at all, and that is deliberate. The circuit is bigger in gate count than three minimized SOPs would be, and smaller in chip count — which is the trade the question is really about.",
         ],
       };
     },
@@ -888,7 +888,7 @@ export const CIRCUIT_PROBLEMS: readonly Problem[] = [
           "Everything the circuit does is in those two equations plus the output equation. Change them and both the drawing and the state table below follow, because both are computed from the same text.",
           "The wires that run round underneath are the state feedback: each flip-flop's Q is an input to the next-state logic. Without them the circuit would be combinational and would have no state at all.",
           "Y depends on P as well as on the state, which makes this a MEALY machine — the output can change between clock edges when an input changes. A Moore machine's output would depend on A and B only, and would be glitch-free at the cost of one extra state.",
-          "To read the behaviour, start from AB = 00 and walk the table. Any state that cannot be reached from the reset state is an orphan, and if the circuit can ever land in one it must still be able to get out — which is why the asynchronous CLEAR is drawn.",
+          "To read the behavior, start from AB = 00 and walk the table. Any state that cannot be reached from the reset state is an orphan, and if the circuit can ever land in one it must still be able to get out — which is why the asynchronous CLEAR is drawn.",
         ],
       };
     },
@@ -1255,7 +1255,7 @@ export const CIRCUIT_PROBLEMS: readonly Problem[] = [
         steps: [
           "Read the multiplexer as a table of cases. When the select lines hold a particular code, the output IS whatever is tied to that data input — nothing else in the circuit matters.",
           `So each data input contributes a block of ${1 << data.length} rows to the truth table: the rows where ${sel.join("")} equals that input's index.`,
-          "Write those blocks out in select order and you have the whole truth table. Minimise it and you have the function.",
+          "Write those blocks out in select order and you have the whole truth table. Minimize it and you have the function.",
           `Here that gives F = ${readout.minimal}.`,
           "The reverse direction is the same operation: to IMPLEMENT a function this way, split its truth table into blocks of consecutive rows and read off what each block is as a function of the remaining variables.",
         ],

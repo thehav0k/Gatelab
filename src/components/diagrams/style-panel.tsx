@@ -142,7 +142,7 @@ export function StylePanel({ theme }: { theme: DiagramTheme }) {
         </Row>
         {theme.grid !== "none" && (
           <ColorRow
-            label="Grid colour"
+            label="Grid color"
             value={theme.gridColor}
             onChange={(gridColor) => patch({ gridColor })}
           />
@@ -165,7 +165,7 @@ export function StylePanel({ theme }: { theme: DiagramTheme }) {
 
       {/* --- wires ------------------------------------------------------ */}
       <Group title="Wiring">
-        <Row label="Colouring">
+        <Row label="Coloring">
           <ToggleGroup
             type="single"
             size="sm"
@@ -176,7 +176,7 @@ export function StylePanel({ theme }: { theme: DiagramTheme }) {
             className="justify-start"
           >
             <ToggleGroupItem value="mono" className="px-2.5 text-xs">
-              One colour
+              One color
             </ToggleGroupItem>
             <ToggleGroupItem value="source" className="px-2.5 text-xs">
               Per signal
@@ -184,19 +184,19 @@ export function StylePanel({ theme }: { theme: DiagramTheme }) {
           </ToggleGroup>
         </Row>
         <p className="text-muted-foreground -mt-1 text-[11px] text-pretty">
-          Per-signal colouring gives every net its own hue, and every branch of one
-          fan-out the same one — which is why real jumper wire is multicoloured, and
+          Per-signal coloring gives every net its own hue, and every branch of one
+          fan-out the same one — which is why real jumper wire is multicolored, and
           for the same reason: so a connection can be traced.
         </p>
         {theme.wireColoring === "mono" && (
           <ColorRow
-            label="Wire colour"
+            label="Wire color"
             value={theme.wireColor}
             onChange={(wireColor) => patch({ wireColor })}
           />
         )}
         <ColorRow
-          label="Bus colour"
+          label="Bus color"
           value={theme.busColor}
           onChange={(busColor) => patch({ busColor })}
         />
@@ -281,12 +281,12 @@ export function StylePanel({ theme }: { theme: DiagramTheme }) {
             <AccordionTrigger className="py-2 text-xs">
               <span className="flex items-center gap-2">
                 <Palette className="size-3.5" />
-                Colour by block type
+                Color by block type
               </span>
             </AccordionTrigger>
             <AccordionContent className="space-y-3 pt-1">
               <p className="text-muted-foreground text-[11px] text-pretty">
-                Each category is coloured as a group, so a decoder is never mistaken
+                Each category is colored as a group, so a decoder is never mistaken
                 for a register.
               </p>
               {(Object.keys(TONE_LABELS) as BlockTone[])
@@ -508,7 +508,7 @@ function PaletteRow({
           <Swatch
             key={i}
             value={c}
-            title={`Colour ${i + 1}`}
+            title={`Color ${i + 1}`}
             onChange={(v) => onChange(palette.map((old, k) => (k === i ? v : old)))}
           />
         ))}

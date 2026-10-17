@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { SITE } from "@/lib/site";
 
-const title = "74xx TTL logic gate, flip-flop & breadboard simulator";
+const title = "74xx TTL Logic Gates & Breadboard Simulator";
 const description =
-  "Wire real 74xx TTL chips on a schematic or a breadboard and simulate them in four-state logic (0, 1, Z, X) — so a floating input stays floating and a forgotten Vcc is reported instead of silently working. The board is a real board: a five-hole strip is a short, and the power rails break at the middle. Edge-triggered D and J-K flip-flops with a clock you can pulse or run, so ripple counters, synchronous counters, registers and shift registers all work.";
+  "Simulate 74xx TTL logic gates, flip-flops, and counters on virtual breadboards with 4-state logic. Detect faults and verify circuits against Boolean specs.";
 const url = `${SITE.url}/lab`;
 
 export const metadata: Metadata = {

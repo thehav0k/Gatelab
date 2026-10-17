@@ -413,8 +413,8 @@ function Report({ report }: { report: LabReport }) {
               </div>
               <figcaption className="text-muted-foreground mt-2 text-xs">
                 {report.onBoard
-                  ? "Seated on a breadboard. Each jumper takes its own colour so a connection can be traced; every hole on a strip is one net."
-                  : "Schematic. Each net takes its own colour; a lit wire is carrying a 1."}
+                  ? "Seated on a breadboard. Each jumper takes its own color so a connection can be traced; every hole on a strip is one net."
+                  : "Schematic. Each net takes its own color; a lit wire is carrying a 1."}
               </figcaption>
             </figure>
             {report.billOfMaterials.length > 0 && (

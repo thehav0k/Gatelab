@@ -267,14 +267,14 @@ function WireColor({ id }: { id: string }) {
 
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs">Colour</Label>
+      <Label className="text-xs">Color</Label>
       <div className="flex flex-wrap items-center gap-1.5">
         <button
           type="button"
           onClick={() => set(undefined)}
-          aria-label="Automatic colour"
+          aria-label="Automatic color"
           aria-pressed={link.color === undefined}
-          title="Automatic — this signal's own colour"
+          title="Automatic — this signal's own color"
           className={cn(
             "flex h-6 items-center gap-1 rounded border px-1.5 text-[10px]",
             link.color === undefined ? "border-foreground" : "border-border",
@@ -292,7 +292,7 @@ function WireColor({ id }: { id: string }) {
             key={c}
             type="button"
             onClick={() => set(c)}
-            aria-label={`Colour ${c}`}
+            aria-label={`Color ${c}`}
             aria-pressed={link.color === c}
             title={c}
             className={cn(
@@ -305,8 +305,8 @@ function WireColor({ id }: { id: string }) {
 
         <input
           type="color"
-          aria-label="Custom wire colour"
-          title="Any other colour"
+          aria-label="Custom wire color"
+          title="Any other color"
           value={link.color ?? automatic}
           onChange={(e) => set(e.target.value)}
           className="size-6 cursor-pointer rounded border bg-transparent p-0"
@@ -314,8 +314,8 @@ function WireColor({ id }: { id: string }) {
       </div>
       {theme.wireColoring === "mono" && link.color === undefined && (
         <p className="text-muted-foreground text-[11px] text-pretty">
-          The theme is drawing every wire in one colour. Pick one here to make this
-          wire the exception, or switch to per-signal colouring in Style.
+          The theme is drawing every wire in one color. Pick one here to make this
+          wire the exception, or switch to per-signal coloring in Style.
         </p>
       )}
     </div>

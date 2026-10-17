@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { SITE } from "@/lib/site";
 
-const title = "Boolean simplifier, K-map solver & Quine–McCluskey calculator";
+const title = "Boolean Simplifier, K-Map Solver & Quine–McCluskey";
 const description =
-  "Simplify a Boolean expression, solve a Karnaugh map, or convert a truth table into an equation — with every Quine–McCluskey step shown: the combining rounds, the prime implicant chart, the essential PIs, and Petrick's method. Free, and runs in your browser.";
+  "Simplify Boolean algebra expressions, solve Karnaugh maps, and view full Quine–McCluskey step-by-step minimization with prime implicant tables online.";
 const url = `${SITE.url}/theory`;
 
 export const metadata: Metadata = {

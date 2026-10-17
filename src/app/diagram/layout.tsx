@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { SITE } from "@/lib/site";
 
-const title = "Diagram — drag-and-drop logic block diagram editor";
+const title = "Logic Block Diagram Editor — Drag & Drop Circuits";
 const description =
-  "Build any digital logic block diagram by dragging blocks onto a canvas: gates, decoders, multiplexers, adders, comparators, flip-flops, counters, registers and memory. Group a selection into a reusable block, rotate blocks, drop junctions, auto-arrange, and export as SVG, PNG or LaTeX (TikZ) in your own colours.";
+  "Design digital logic block diagrams with gates, multiplexers, decoders, and flip-flops. Auto-route connections and export to SVG, PNG, or LaTeX TikZ.";
 const url = `${SITE.url}/diagram`;
 
 export const metadata: Metadata = {

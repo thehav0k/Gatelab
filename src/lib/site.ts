@@ -17,9 +17,9 @@
 export const SITE = {
   name: "Gatelab",
   url: "https://gatelab-online.vercel.app",
-  title: "Gatelab — Boolean minimizer, K-map solver & logic circuit simulator",
+  title: "Gatelab — Boolean Minimizer & Logic Circuit Simulator",
   description:
-    "Free online Boolean algebra simplifier, Karnaugh map solver and Quine–McCluskey calculator, a drag-and-drop block diagram builder that exports SVG, PNG and LaTeX, and a 74xx TTL gate, flip-flop and breadboard simulator with clocked counters and registers that verifies the circuit you built against the equation you derived. Runs entirely in your browser.",
+    "Free Boolean algebra simplifier, K-map solver, block diagram editor, and 74xx TTL breadboard circuit simulator. Design, simulate, and verify logic online.",
   locale: "en_US",
 } as const;
 

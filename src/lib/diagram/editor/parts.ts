@@ -667,7 +667,7 @@ export const PARTS: readonly PartDefinition[] = [
       { key: "bottom", label: "Bottom pins", kind: "text", initial: "" },
       {
         key: "tone",
-        label: "Colour category",
+        label: "Color category",
         kind: "choice",
         choices: [
           { value: "msi", label: "MSI block" },

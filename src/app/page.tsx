@@ -58,7 +58,7 @@ const MODULES = [
     points: [
       "Drag decoders, muxes, adders, counters",
       "Or type the equation and have it built",
-      "Export SVG, PNG or LaTeX in your colours",
+      "Export SVG, PNG or LaTeX in your colors",
     ],
   },
   {
@@ -98,7 +98,7 @@ const FACTS = [
   {
     icon: Cpu,
     title: "The chips are real chips",
-    body: "7400, 7402, 7404, 7474, 74LS76A, 74175 — pinouts transcribed from the datasheets. The 7402's output really is on pin 1, the 74LS76A's supply really is on pins 5 and 13, and forgetting pin 14 really does stop the board.",
+    body: "7400, 7402, 7404, 7474, 74LS76A, 74LS107A, 74175, and more — pinouts transcribed from the datasheets. The 7402's output really is on pin 1, the 74LS76A's supply really is on pins 5 and 13, and forgetting pin 14 really does stop the board.",
   },
   {
     icon: Cpu,
