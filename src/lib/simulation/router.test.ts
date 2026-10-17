@@ -12,7 +12,7 @@ import {
   type OccupancyGrid,
 } from "./router";
 import { elaborate } from "./elaborate";
-import { buildNetIndex, endpointKey, type CircuitDocument, type NodeId, type Point, type Wire } from "./netlist";
+import { asWireId, buildNetIndex, endpointKey, pinEnd, type CircuitDocument, type NodeId, type Point, type Wire } from "./netlist";
 import { pinsOf } from "./parts";
 import { circuit } from "./testing/build";
 import { realize, synthesize, technologyMap } from "./synth";
@@ -313,4 +313,24 @@ describe("routeAll — on real boards", () => {
     const p180 = pinPoint(rot180, "Y");
     expect(p180).toEqual({ x: 100, y: 124 });
   });
+
+  it("routes to rotated gate pins orthogonally without air-wire (LAB-06)", () => {
+    const doc: CircuitDocument = {
+      nodes: {
+        sw: { id: "sw" as NodeId, kind: "switch", label: "SW", state: 0, pos: { x: 40, y: 100 } },
+        g1: { id: "g1" as NodeId, kind: "gate", op: "and", label: "AND", pos: { x: 180, y: 100 }, arity: 2, rotation: 90 },
+      },
+      wires: {
+        w1: { id: asWireId("w1"), a: pinEnd({ node: "sw" as NodeId, pin: "Y" }), b: pinEnd({ node: "g1" as NodeId, pin: "A" }) },
+      },
+    };
+    const { paths, failed } = routeAll(doc, () => 1);
+    const path = paths.get(asWireId("w1"));
+    expect(path).toBeDefined();
+    expect(path).not.toBeNull();
+    expect(path!.length).toBeGreaterThanOrEqual(2);
+    expect(failed).not.toContain("w1");
+  });
 });
+
+

@@ -15,7 +15,7 @@ import {
   stripOf,
   type HoleRef,
 } from "./breadboard";
-import { buildNetIndex, endpointKey, holeEnd, pinKey } from "./netlist";
+import { asNodeId, asWireId, buildNetIndex, endpointKey, holeEnd, pinEnd, pinKey } from "./netlist";
 import { pinsOf } from "./parts";
 import { elaborate } from "./elaborate";
 import { evaluate } from "./solver";
@@ -463,4 +463,36 @@ describe("nets on a breadboard", () => {
 
     expect(run(doc).atPin("U1", "1Y")).toBe(L0);
   });
+
+  it("resolves a manually wired trainer switch to a gate input via pin Y without drop (LAB-01)", () => {
+    const doc = circuit()
+      .board()
+      .ic("U1", "7408")
+      .seat("U1", 10, "E")
+      .switch("SW1", 1)
+      .build();
+
+    const wireId = asWireId("w_sw_to_gate");
+    const docWithWire: CircuitDocument = {
+      ...doc,
+      wires: {
+        ...doc.wires,
+        [wireId]: {
+          id: wireId,
+          a: pinEnd({ node: asNodeId("SW1"), pin: "Y" }),
+          b: holeEnd(h(10, "A")),
+        },
+      },
+    };
+
+    const index = buildNetIndex(docWithWire, pinsOf);
+    const swNet = index.netOfPin.get(pinKey({ node: asNodeId("SW1"), pin: "Y" }));
+    const pin1Net = index.netOfPin.get(pinKey(ref("U1", "1A")));
+    const holeNet = index.netOfEndpoint.get(endpointKey(holeEnd(h(10, "A"))));
+
+    expect(swNet).toBeDefined();
+    expect(swNet).toBe(holeNet);
+    expect(swNet).toBe(pin1Net);
+  });
 });
+

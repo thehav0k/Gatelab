@@ -346,7 +346,36 @@ describe("seating a part onto a board that is already built", () => {
       }
       expect(counts).toEqual(["01", "10", "11", "00"]);
     });
+
+    it("auto-powers 14-pin and 16-pin chips correctly without assuming corner pins (LAB-02)", () => {
+      // 74LS76A has VCC on pin 5 (row E) and GND on pin 13 (row F)
+      const doc76 = circuit().ic("U1", "74LS76A").build();
+      const { doc: placed76 } = placeOnBreadboard(doc76, DEFAULT_BOARD, { panelMode: true });
+      const { index: idx76, netlist: nl76 } = elaborate(placed76);
+      const st76 = evaluate(nl76, nl76.inputs.map(() => 0 as const));
+      const unpowered76 = diagnose(placed76, idx76, nl76, st76).filter((d) => d.code === "UNPOWERED_IC");
+      expect(unpowered76).toHaveLength(0);
+
+      // Verify 14-pin 7400
+      const doc00 = circuit().ic("U1", "7400").build();
+      const { doc: placed00 } = placeOnBreadboard(doc00, DEFAULT_BOARD, { panelMode: true });
+      const { index: idx00, netlist: nl00 } = elaborate(placed00);
+      const st00 = evaluate(nl00, nl00.inputs.map(() => 0 as const));
+      const unpowered00 = diagnose(placed00, idx00, nl00, st00).filter((d) => d.code === "UNPOWERED_IC");
+      expect(unpowered00).toHaveLength(0);
+
+      // Verify 16-pin 74174 and 74175
+      for (const part of ["74174", "74175"]) {
+        const doc = circuit().ic("U1", part).build();
+        const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
+        const { index, netlist } = elaborate(placed);
+        const st = evaluate(netlist, netlist.inputs.map(() => 0 as const));
+        const unpowered = diagnose(placed, index, netlist, st).filter((d) => d.code === "UNPOWERED_IC");
+        expect(unpowered).toHaveLength(0);
+      }
+    });
   });
 });
+
 
 
