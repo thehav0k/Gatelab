@@ -107,127 +107,31 @@ export function BgTraces() {
 
   return (
     <svg
-      className={`bg-trace fixed inset-0 -z-10 h-full w-full pointer-events-none opacity-85 dark:opacity-80 select-none ${
+      className={`bg-trace fixed inset-0 -z-20 h-full w-full pointer-events-none opacity-25 dark:opacity-30 select-none ${
         paused ? "traces-paused" : ""
       }`}
       aria-hidden="true"
       preserveAspectRatio="xMidYMid slice"
       viewBox="0 0 1600 1000"
     >
-      <defs>
-        {/* Soft neon bloom filter for glowing pulse streams */}
-        <filter id="circuit-glow" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="3" result="blur" />
-          <feMerge>
-            <feMergeNode in="blur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-
-      {/* Silkscreen Digital Hardware Silhouettes */}
-      <g opacity="0.65" className="text-border">
-        {/* DIP-14 Logic IC Silhouette at junction (74LS08 Quad AND) */}
-        <g transform="translate(710, 290)">
-          <rect
-            x="0"
-            y="0"
-            width="60"
-            height="32"
-            rx="2.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          {/* Chip orientation notch */}
-          <path d="M 0 12 A 4 4 0 0 1 0 20" fill="none" stroke="currentColor" strokeWidth="1.2" />
-          {/* IC Designation label */}
-          <text
-            x="32"
-            y="19"
-            textAnchor="middle"
-            fill="currentColor"
-            fontSize="8.5"
-            fontFamily="var(--font-mono, monospace)"
-            fontWeight="600"
-            letterSpacing="0.08em"
-            opacity="0.8"
-          >
-            74LS08
-          </text>
-          {/* 7 top pins & 7 bottom pins */}
-          {[6, 14, 22, 30, 38, 46, 54].map((px, idx) => (
-            <g key={idx}>
-              <line x1={px} y1="-3" x2={px} y2="0" stroke="currentColor" strokeWidth="1.2" />
-              <line x1={px} y1="32" x2={px} y2="35" stroke="currentColor" strokeWidth="1.2" />
-            </g>
-          ))}
-        </g>
-
-        {/* Master Clock Crystal Oscillator Footprint */}
-        <g transform="translate(1300, 256)">
-          <rect
-            x="0"
-            y="0"
-            width="34"
-            height="22"
-            rx="3"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.2"
-          />
-          <text
-            x="17"
-            y="14"
-            textAnchor="middle"
-            fill="currentColor"
-            fontSize="7.5"
-            fontFamily="var(--font-mono, monospace)"
-            fontWeight="600"
-            letterSpacing="0.06em"
-            opacity="0.8"
-          >
-            CLK
-          </text>
-        </g>
-      </g>
-
       {/* Routed Copper Traces & Flowing Electric Signals */}
       {TRACES.map((trace, i) => (
         <g key={i}>
-          {/* Static copper track underlay */}
+          {/* Subtle static copper track underlay */}
           <path
             d={trace.d}
             fill="none"
             stroke="var(--border)"
-            strokeWidth="1.25"
-            strokeOpacity="0.75"
+            strokeWidth="1"
+            opacity="0.45"
           />
 
-          {/* Blurred neon glow pulse layer */}
+          {/* Clean, high-performance vector pulse */}
           <path
             d={trace.d}
             fill="none"
             stroke="var(--logic-high)"
-            strokeWidth={trace.pulseWidth || 4.5}
-            strokeLinecap="round"
-            strokeDasharray={trace.dashArray || "50 180"}
-            filter="url(#circuit-glow)"
-            opacity="0.75"
-            className="circuit-trace-pulse"
-            style={{
-              animation: `trace-flow ${trace.dur} linear infinite`,
-              animationDelay: trace.delay,
-              animationPlayState: paused ? "paused" : "running",
-            }}
-          />
-
-          {/* Crisp, high-energy core pulse */}
-          <path
-            d={trace.d}
-            fill="none"
-            stroke="var(--logic-high)"
-            strokeWidth="2"
+            strokeWidth="1.5"
             strokeLinecap="round"
             strokeDasharray={trace.dashArray || "50 180"}
             className="circuit-trace-pulse"
@@ -247,23 +151,24 @@ export function BgTraces() {
           <circle
             cx={via.cx}
             cy={via.cy}
-            r="4.5"
+            r="3.5"
             fill="none"
             stroke="var(--border)"
-            strokeWidth="1.2"
+            strokeWidth="1"
+            opacity="0.6"
           />
           {/* Center drill hole with logic-high micro pad */}
-          <circle cx={via.cx} cy={via.cy} r="2" fill="var(--logic-high)" opacity="0.8" />
+          <circle cx={via.cx} cy={via.cy} r="1.5" fill="var(--logic-high)" opacity="0.75" />
 
           {/* Rhythmic via pulse wave (expanding ripple when signals pass) */}
           {via.ping && (
             <circle
               cx={via.cx}
               cy={via.cy}
-              r="4.5"
+              r="3.5"
               fill="none"
               stroke="var(--logic-high)"
-              strokeWidth="1.5"
+              strokeWidth="1"
               className="via-ping"
               style={{
                 animationDelay: via.pingDelay || "0s",
