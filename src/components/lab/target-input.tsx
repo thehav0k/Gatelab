@@ -86,23 +86,28 @@ export function TargetInput() {
         />
         <Button
           size="sm"
-          className="shrink-0"
+          className="shrink-0 gap-1 text-xs"
+          aria-label="Set target function"
+          title="Set target function"
           disabled={!parsed?.ok}
           onClick={() => {
             setSpec(draft.trim());
             setEditing(false);
           }}
         >
-          <Check />
+          <Check className="size-3.5" />
+          <span>Set</span>
         </Button>
         {source && (
           <Button
             size="sm"
             variant="ghost"
             className="shrink-0"
+            aria-label="Cancel editing target function"
+            title="Cancel"
             onClick={() => setEditing(false)}
           >
-            <X />
+            <X className="size-3.5" />
           </Button>
         )}
       </div>

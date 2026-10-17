@@ -103,7 +103,7 @@ export default function RootLayout({
               <main className="flex flex-1 flex-col">{children}</main>
               <SiteFooter />
             </div>
-            <Toaster position="bottom-left" offset={16} />
+            <Toaster position="top-right" offset={16} closeButton duration={4000} richColors />
           </TooltipProvider>
         </ThemeProvider>
         <Analytics />

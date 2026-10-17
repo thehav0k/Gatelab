@@ -949,9 +949,9 @@ export function BreadboardView() {
           <g>
             <rect
               x={905}
-              y={14}
+              y={8}
               width={CHASSIS_W - 925}
-              height={82}
+              height={88}
               rx={6}
               fill="#090d16"
               stroke="#1e293b"
@@ -960,9 +960,9 @@ export function BreadboardView() {
             {/* Header row */}
             <text
               x={918}
-              y={29}
-              fill="#f8fafc"
-              className="font-mono text-[9px] font-bold pointer-events-none select-none"
+              y={21}
+              fill="#94a3b8"
+              className="font-mono text-[8px] font-bold tracking-wider pointer-events-none select-none uppercase"
             >
               LOGIC INDICATORS (OUTPUT MONITOR)
             </text>
@@ -970,30 +970,30 @@ export function BreadboardView() {
             <g
               className="cursor-pointer group"
               onClick={handleAddLed}
-              transform={`translate(${CHASSIS_W - 82}, 18)`}
+              transform={`translate(${CHASSIS_W - 82}, 12)`}
             >
               <rect
                 width={54}
-                height={20}
+                height={17}
                 rx={4}
                 className="fill-slate-800 hover:fill-slate-700 stroke-slate-700 transition-colors"
                 strokeWidth={1}
               />
               <text
                 x={27}
-                y={13.5}
+                y={11.5}
                 textAnchor="middle"
                 fill="#f8fafc"
-                className="font-mono text-[8.5px] font-semibold pointer-events-none select-none"
+                className="font-mono text-[8px] font-semibold pointer-events-none select-none"
               >
                 + LED
               </text>
             </g>
             <line
               x1={905}
-              y1={36}
+              y1={25}
               x2={CHASSIS_W - 20}
-              y2={36}
+              y2={25}
               stroke="#1e293b"
               strokeWidth={0.75}
             />

@@ -332,9 +332,11 @@ export function routeWire(
       if (occupant === -1 && !isTarget) continue;
 
       let stepCost = cost.step;
-      // Cells already carrying THIS net are free to reuse; foreign nets are a
-      // crossing, which is allowed (jumpers cross over in 3D) but discouraged.
-      if (occupant > 0 && occupant !== net) stepCost += cost.crossNet;
+      // Cells already carrying THIS net have slight penalty to avoid exact parallel overlaps;
+      // foreign nets are crossings, which are discouraged.
+      if (occupant > 0) {
+        stepCost += occupant !== net ? cost.crossNet : 4;
+      }
       // Give the chips a little breathing room, so routes do not run across the
       // printed pin numbers.
       if (grid.near[ni] === 1) stepCost += cost.nearBody;

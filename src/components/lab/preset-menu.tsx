@@ -98,44 +98,48 @@ export function PresetMenu() {
           <span className="hidden sm:inline">Presets</span>
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72 p-0">
-        <ScrollArea className="max-h-[70vh]">
-          <div className="p-1">
-            <DropdownMenuLabel>Building blocks</DropdownMenuLabel>
-            {blocks.map((p) => (
-              <Item key={p.id} name={p.name} desc={p.description} onClick={() => openPreset(p)} />
-            ))}
+      <DropdownMenuContent align="end" className="w-72 p-0 overflow-hidden">
+        <div className="relative">
+          <ScrollArea className="max-h-[70vh] overflow-y-auto">
+            <div className="p-1 pb-6">
+              <DropdownMenuLabel>Building blocks</DropdownMenuLabel>
+              {blocks.map((p) => (
+                <Item key={p.id} name={p.name} desc={p.description} onClick={() => openPreset(p)} />
+              ))}
 
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Built from smaller blocks</DropdownMenuLabel>
-            {built.map((c) => (
-              <Item key={c.id} name={c.name} desc={c.description} onClick={() => openComposite(c)} />
-            ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Built from smaller blocks</DropdownMenuLabel>
+              {built.map((c) => (
+                <Item key={c.id} name={c.name} desc={c.description} onClick={() => openComposite(c)} />
+              ))}
 
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Large circuits</DropdownMenuLabel>
-            {scaled.map((c) => (
-              <Item key={c.id} name={c.name} desc={c.description} onClick={() => openComposite(c)} />
-            ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Large circuits</DropdownMenuLabel>
+              {scaled.map((c) => (
+                <Item key={c.id} name={c.name} desc={c.description} onClick={() => openComposite(c)} />
+              ))}
 
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Clocked — flip-flops, counters, registers</DropdownMenuLabel>
-            {SEQUENTIAL_PRESETS.map((p) => (
-              <Item
-                key={p.id}
-                name={p.name}
-                desc={p.description}
-                onClick={() => openSequential(p)}
-              />
-            ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Clocked — flip-flops, counters, registers</DropdownMenuLabel>
+              {SEQUENTIAL_PRESETS.map((p) => (
+                <Item
+                  key={p.id}
+                  name={p.name}
+                  desc={p.description}
+                  onClick={() => openSequential(p)}
+                />
+              ))}
 
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Minimal is not hazard-free</DropdownMenuLabel>
-            {lessons.map((p) => (
-              <Item key={p.id} name={p.name} desc={p.description} onClick={() => openPreset(p)} />
-            ))}
-          </div>
-        </ScrollArea>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Minimal is not hazard-free</DropdownMenuLabel>
+              {lessons.map((p) => (
+                <Item key={p.id} name={p.name} desc={p.description} onClick={() => openPreset(p)} />
+              ))}
+            </div>
+          </ScrollArea>
+          {/* Visible bottom scroll cue fade */}
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-popover to-transparent opacity-90" />
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

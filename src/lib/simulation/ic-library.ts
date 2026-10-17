@@ -454,7 +454,7 @@ export const IC_74LS107A = defineSeqDip(
   "Negative edge, clear only — no preset. The usual ripple-counter part.",
   [
     "1J", "1QN", "1Q", "1K", "2Q", "2QN", "GND",      // pins 1-7
-    "2J", "2CLK", "2CLR", "2K", "1CLK", "1CLR", "VCC", // pins 8-14
+    "2K", "2CLK", "2CLR", "2J", "1CLK", "1CLR", "VCC", // pins 8-14
   ],
 );
 

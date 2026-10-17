@@ -315,16 +315,38 @@ export function CircuitCanvas() {
 /** Corner radius on wire bends. Purely cosmetic; real jumpers do not fold sharp. */
 const BEND_R = 5;
 
-/** Round the corners of an orthogonal polyline. */
-function orthPath(points: readonly Point[]): string {
+function wireOffset(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return ((Math.abs(h) % 3) - 1) * 2.5; // -2.5, 0, or 2.5 px
+}
+
+/** Round the corners of an orthogonal polyline with subtle parallel offset. */
+function orthPath(points: readonly Point[], offset = 0): string {
   if (points.length < 2) return "";
-  const first = points[0] as Point;
+
+  // Apply subtle parallel offset to intermediate path points
+  const pts = points.map((p, i) => {
+    if (i === 0 || i === points.length - 1 || offset === 0) return p;
+    const prev = points[i - 1]!;
+    const next = points[i + 1]!;
+    const isHorizIn = Math.abs(p.y - prev.y) < 2;
+    const isHorizOut = Math.abs(next.y - p.y) < 2;
+    if (isHorizIn && isHorizOut) return { x: p.x, y: p.y + offset };
+    if (!isHorizIn && !isHorizOut) return { x: p.x + offset, y: p.y };
+    return {
+      x: isHorizIn ? p.x : p.x + offset,
+      y: isHorizIn ? p.y + offset : p.y,
+    };
+  });
+
+  const first = pts[0] as Point;
   let d = `M ${first.x} ${first.y}`;
 
-  for (let i = 1; i < points.length - 1; i++) {
-    const prev = points[i - 1] as Point;
-    const cur = points[i] as Point;
-    const next = points[i + 1] as Point;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const prev = pts[i - 1] as Point;
+    const cur = pts[i] as Point;
+    const next = pts[i + 1] as Point;
 
     const inLen = Math.hypot(cur.x - prev.x, cur.y - prev.y);
     const outLen = Math.hypot(next.x - cur.x, next.y - cur.y);
@@ -342,7 +364,7 @@ function orthPath(points: readonly Point[]): string {
     d += ` L ${ax} ${ay} Q ${cur.x} ${cur.y} ${bx} ${by}`;
   }
 
-  const last = points[points.length - 1] as Point;
+  const last = pts[pts.length - 1] as Point;
   return `${d} L ${last.x} ${last.y}`;
 }
 
@@ -375,7 +397,8 @@ function WireLine({
   if (!a || !b) return null;
 
   const unrouted = !route;
-  const d = route ? orthPath(route) : `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+  const offset = wireOffset(wire.id);
+  const d = route ? orthPath(route, offset) : `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
 
   const paint = wirePaint(value, ordinal);
   const color = wire.color || paint.color;
@@ -391,14 +414,14 @@ function WireLine({
           d={d}
           fill="none"
           stroke="var(--color-primary, #38bdf8)"
-          strokeWidth={7}
-          opacity={0.4}
+          strokeWidth={4}
+          opacity={0.35}
           strokeDasharray="6 4"
         />
       )}
 
       {paint.glow && !unrouted && !isSelected && (
-        <path d={d} fill="none" stroke={color} strokeWidth={7} opacity={0.28} />
+        <path d={d} fill="none" stroke={color} strokeWidth={4.5} opacity={0.25} />
       )}
       <path
         d={d}
@@ -551,7 +574,7 @@ function NodeActionPill({
   const pillW = 120;
   const pillH = 26;
   const pillX = wRot / 2 - pillW / 2;
-  const pillY = -34;
+  const pillY = -44;
 
   return (
     <g
@@ -1180,6 +1203,8 @@ function IcBody({
       {/* Pin numbers and names, printed on the package like the real thing. */}
       {pins.map((spec) => {
         const bottom = spec.offset.y > 0;
+        const isNegative = spec.name.includes("CLR") || spec.name.includes("PRE");
+        const displayName = spec.name.replace(/QN$/, "Q̄").replace(/^QN$/, "Q̄");
         return (
           <g key={spec.name} className="pointer-events-none">
             <text
@@ -1199,21 +1224,25 @@ function IcBody({
             */}
             <text
               x={spec.offset.x}
-              y={bottom ? height + 14 : -6}
+              y={bottom ? height + 13 : -6}
               textAnchor="middle"
               stroke="var(--card)"
-              strokeWidth={2.5}
+              strokeWidth={2}
               strokeLinejoin="round"
-              style={{ paintOrder: "stroke" }}
+              style={{
+                paintOrder: "stroke",
+                textDecoration: isNegative ? "overline" : undefined,
+              }}
               className={cn(
-                "font-mono text-[8px]",
+                "font-mono tracking-tight",
+                displayName.length >= 4 ? "text-[6.5px]" : "text-[7.5px]",
                 spec.dir === "pwr" && "fill-logic-high",
                 spec.dir === "gnd" && "fill-logic-low",
                 spec.dir === "out" && "fill-foreground/80",
                 spec.dir === "in" && "fill-muted-foreground",
               )}
             >
-              {spec.name}
+              {displayName}
             </text>
           </g>
         );

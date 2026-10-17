@@ -90,13 +90,6 @@ export function KMapGrid({ fn, layout, loops, highlighted, onHighlight }: Props)
               >
                 {GLYPH[value]}
               </text>
-              <text
-                x={PAD + c * CELL + 5}
-                y={PAD + r * CELL + 13}
-                className="fill-muted-foreground/75 font-mono text-[9px]"
-              >
-                {m}
-              </text>
             </g>
           );
         }),
@@ -141,6 +134,25 @@ export function KMapGrid({ fn, layout, loops, highlighted, onHighlight }: Props)
           </g>
         );
       })}
+
+      {/* Cell minterm index numbers rendered on top of loops with background halo so loops never clip them */}
+      <g className="pointer-events-none select-none">
+        {layout.cellIndex.map((row, r) =>
+          row.map((m, c) => (
+            <text
+              key={`idx-${m}`}
+              x={PAD + c * CELL + 5}
+              y={PAD + r * CELL + 12}
+              stroke="var(--card)"
+              strokeWidth={2}
+              style={{ paintOrder: "stroke" }}
+              className="fill-muted-foreground font-mono text-[8.5px] font-medium"
+            >
+              {m}
+            </text>
+          )),
+        )}
+      </g>
     </svg>
   );
 }

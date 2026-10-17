@@ -12,6 +12,7 @@ import {
   IC_7430,
   IC_7432,
   IC_7486,
+  IC_74LS107A,
   IC_LIBRARY,
   COMBINATIONAL_LIBRARY,
   getIc,
@@ -78,6 +79,16 @@ describe("pinouts — transcribed, then verified pin by pin", () => {
     expect(pinNamed(IC_7402, 8)?.name).toBe("3A");
     expect(pinNamed(IC_7402, 10)?.name).toBe("3Y");
     expect(pinNamed(IC_7402, 10)?.dir).toBe("out");
+  });
+
+  it("74LS107A pinout matches TI datasheet: pin 8 is 2K and pin 11 is 2J", () => {
+    expect(pinNamed(IC_74LS107A, 8)?.name).toBe("2K");
+    expect(pinNamed(IC_74LS107A, 9)?.name).toBe("2CLK");
+    expect(pinNamed(IC_74LS107A, 10)?.name).toBe("2CLR");
+    expect(pinNamed(IC_74LS107A, 11)?.name).toBe("2J");
+    expect(pinNamed(IC_74LS107A, 12)?.name).toBe("1CLK");
+    expect(pinNamed(IC_74LS107A, 13)?.name).toBe("1CLR");
+    expect(pinNamed(IC_74LS107A, 14)?.name).toBe("VCC");
   });
 
   it("7400 gate 1 IS the inputs-first shape — the contrast that makes 7402 a trap", () => {

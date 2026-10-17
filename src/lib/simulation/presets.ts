@@ -165,7 +165,25 @@ export function buildPreset(
     column += 1;
   }
 
-  return { nodes, wires, board: null };
+  return ensureUniqueDesignators({ nodes, wires, board: null });
+}
+
+export function ensureUniqueDesignators(doc: CircuitDocument): CircuitDocument {
+  const nextNodes = { ...doc.nodes };
+  let u = 0;
+  let g = 0;
+
+  for (const [id, node] of Object.entries(nextNodes)) {
+    if (node.kind === "ic") {
+      u += 1;
+      nextNodes[id] = { ...node, label: `U${u}` };
+    } else if (node.kind === "gate") {
+      g += 1;
+      nextNodes[id] = { ...node, label: `G${g}` };
+    }
+  }
+
+  return { ...doc, nodes: nextNodes };
 }
 
 export const getPreset = (id: string): Preset | undefined =>

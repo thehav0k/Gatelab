@@ -42,6 +42,7 @@ import {
   type HoleRef,
 } from "@/lib/simulation/breadboard";
 import { getIc } from "@/lib/simulation/ic-library";
+import { ensureUniqueDesignators } from "@/lib/simulation/presets";
 import { simStore } from "./sim-store";
 
 /**
@@ -183,13 +184,18 @@ function defaultLabel(doc: CircuitDocument, node: NewNode): string {
   }
 
   if (node.kind === "led") {
-    const n = existing.filter((x) => x.kind === "led").length;
-    return n === 0 ? "Q" : `Q${n}`;
+    const used = new Set(existing.filter((x) => x.kind === "led").map((x) => x.label));
+    if (!used.has("Q")) return "Q";
+    let n = 1;
+    while (used.has(`Q${n}`)) n++;
+    return `Q${n}`;
   }
 
   const prefix =
     node.kind === "ic" ? "U" : node.kind === "rail" ? (node.rail === "vcc" ? "V" : "GND") : "G";
-  const n = existing.filter((x) => x.kind === node.kind).length + 1;
+  const used = new Set(existing.filter((x) => x.kind === node.kind).map((x) => x.label));
+  let n = 1;
+  while (used.has(`${prefix}${n}`)) n++;
   return `${prefix}${n}`;
 }
 
@@ -981,11 +987,12 @@ export const useCircuitStore = create<CircuitState>()(
 
     load: (doc, origin = null) => {
       clearAllPulseTimers();
+      const normalizedDoc = ensureUniqueDesignators(doc);
       // A freshly loaded circuit has not been clocked. Carrying the old state in
       // would have its flip-flops start at values from a different circuit.
-      const { index, diagnostics, routes, flopState } = simulate(doc, {});
+      const { index, diagnostics, routes, flopState } = simulate(normalizedDoc, {});
       set({
-        doc,
+        doc: normalizedDoc,
         origin,
         flopState,
         index,

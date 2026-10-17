@@ -171,8 +171,21 @@ export default function LabPage() {
       }
       const unplaced = toBreadboard();
       if (unplaced.length > 0) {
+        const schematicDoc = useCircuitStore.getState().schematic;
+        const partNames = unplaced
+          .map((id) => schematicDoc?.nodes[id]?.label || id)
+          .join(", ");
         toast.warning(
-          `${unplaced.length} part${unplaced.length === 1 ? "" : "s"} did not fit on the board`,
+          `${unplaced.length} part${unplaced.length === 1 ? "" : "s"} did not fit: ${partNames}`,
+          {
+            description:
+              "The breadboard ran out of space. You can switch back to schematic or simplify the circuit.",
+            duration: 8000,
+            action: {
+              label: "Back to schematic",
+              onClick: () => switchView("schematic"),
+            },
+          },
         );
       } else {
         toast.success("Seated on a breadboard", {
