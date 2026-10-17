@@ -1,48 +1,77 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 type Mode = "default" | "link" | "drag" | "text" | "hidden";
 
+let lastRippleTime = 0;
+let lastRipplePos = { x: 0, y: 0 };
+
+function spawnRipple(x: number, y: number) {
+  const now = performance.now();
+  if (now - lastRippleTime < 80 && Math.hypot(x - lastRipplePos.x, y - lastRipplePos.y) < 15) {
+    return;
+  }
+  lastRippleTime = now;
+  lastRipplePos = { x, y };
+
+  const r = document.createElement("span");
+  r.className = "click-ripple";
+  r.style.left = `${x}px`;
+  r.style.top = `${y}px`;
+  document.body.appendChild(r);
+  r.addEventListener("animationend", () => r.remove(), { once: true });
+}
+
 export function CustomCursor() {
-  const pathname = usePathname();
+  const isFine = useMediaQuery("(pointer: fine) and (hover: hover)");
+  const prefersReduced = useMediaQuery("(prefers-reduced-motion: reduce)");
+  const active = isFine && !prefersReduced;
+
   const dot = useRef<HTMLDivElement>(null);
   const ring = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Custom cursor only mounts on the marketing home page; canvases maintain 100% native cursors
-    if (pathname !== "/") {
+    if (active) {
+      document.documentElement.classList.add("has-custom-cursor");
+    } else {
       document.documentElement.classList.remove("has-custom-cursor");
-      return;
     }
 
-    const fine = window.matchMedia("(pointer: fine) and (hover: hover)").matches;
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!fine || reduce) {
-      document.documentElement.classList.remove("has-custom-cursor");
-      return;
-    }
-
-    document.documentElement.classList.add("has-custom-cursor");
-
-    const target = { x: innerWidth / 2, y: innerHeight / 2 };
+    const target = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     const ringPos = { x: target.x, y: target.y };
     const vel = { x: 0, y: 0 };
     let raf = 0;
     let mode: Mode = "default";
 
-    const onMove = (e: PointerEvent) => {
-      target.x = e.clientX;
-      target.y = e.clientY;
-      // Background glow follows pointer (read by CSS)
-      document.documentElement.style.setProperty("--cursor-x", `${e.clientX}px`);
-      document.documentElement.style.setProperty("--cursor-y", `${e.clientY}px`);
+    const updateCoordinates = (x: number, y: number) => {
+      target.x = x;
+      target.y = y;
+      document.documentElement.style.setProperty("--cursor-x", `${x}px`);
+      document.documentElement.style.setProperty("--cursor-y", `${y}px`);
+    };
+
+    const nextMode = (m: Mode) => {
+      if (m !== mode) {
+        mode = m;
+        if (ring.current) ring.current.dataset.mode = mode;
+        if (dot.current) {
+          dot.current.style.opacity = mode === "hidden" ? "0" : "1";
+        }
+      }
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      updateCoordinates(e.clientX, e.clientY);
+
+      if (!active) return;
+
       const el = (e.target as Element | null)?.closest?.(
-        "[data-cursor], a, button, [role=button], input, textarea, select, [data-native-cursor]",
+        "[data-cursor], a, button, [role=button], input, textarea, select, [data-native-cursor], .builder-canvas, .diagram-viewport",
       ) as HTMLElement | null;
 
-      if (el?.closest("[data-native-cursor]")) {
+      if (el?.closest("[data-native-cursor], .builder-canvas, .diagram-viewport")) {
         nextMode("hidden");
         return;
       }
@@ -57,23 +86,31 @@ export function CustomCursor() {
       nextMode(next);
     };
 
-    const nextMode = (m: Mode) => {
-      if (m !== mode) {
-        mode = m;
-        if (ring.current) ring.current.dataset.mode = mode;
-        if (dot.current) {
-          dot.current.style.opacity = mode === "hidden" ? "0" : "1";
-        }
+    const onPointerDown = (e: PointerEvent) => {
+      updateCoordinates(e.clientX, e.clientY);
+      if (active && ring.current) {
+        ring.current.dataset.pressed = "1";
       }
-    };
-
-    const onDown = (e: PointerEvent) => {
-      if (ring.current) ring.current.dataset.pressed = "1";
       spawnRipple(e.clientX, e.clientY);
     };
 
-    const onUp = () => {
+    const onPointerUp = () => {
       if (ring.current) delete ring.current.dataset.pressed;
+    };
+
+    const onTouchStart = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (touch) {
+        updateCoordinates(touch.clientX, touch.clientY);
+        spawnRipple(touch.clientX, touch.clientY);
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (touch) {
+        updateCoordinates(touch.clientX, touch.clientY);
+      }
     };
 
     const onLeave = () => {
@@ -87,13 +124,13 @@ export function CustomCursor() {
     };
 
     const tick = () => {
-      // critically-damped spring (stiffness 0.14, damping 0.78) — smooth, no overshoot
+      if (!active) return;
+
       vel.x = (vel.x + (target.x - ringPos.x) * 0.14) * 0.78;
       vel.y = (vel.y + (target.y - ringPos.y) * 0.14) * 0.78;
       ringPos.x += vel.x;
       ringPos.y += vel.y;
 
-      // squash/stretch along velocity (clamped), tiny and tasteful
       const speed = Math.min(Math.hypot(vel.x, vel.y) / 40, 0.25);
       const angle = Math.atan2(vel.y, vel.x);
 
@@ -106,25 +143,34 @@ export function CustomCursor() {
       raf = requestAnimationFrame(tick);
     };
 
-    window.addEventListener("pointermove", onMove, { passive: true });
-    window.addEventListener("pointerdown", onDown, { passive: true });
-    window.addEventListener("pointerup", onUp, { passive: true });
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerdown", onPointerDown, { passive: true });
+    window.addEventListener("pointerup", onPointerUp, { passive: true });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
     document.documentElement.addEventListener("pointerleave", onLeave);
     document.documentElement.addEventListener("pointerenter", onEnter);
-    raf = requestAnimationFrame(tick);
+
+    if (active) {
+      raf = requestAnimationFrame(tick);
+    }
 
     return () => {
-      cancelAnimationFrame(raf);
+      if (raf) cancelAnimationFrame(raf);
       document.documentElement.classList.remove("has-custom-cursor");
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerdown", onDown);
-      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
       document.documentElement.removeEventListener("pointerleave", onLeave);
       document.documentElement.removeEventListener("pointerenter", onEnter);
     };
-  }, [pathname]);
+  }, [active]);
 
-  if (pathname !== "/") return null;
+  if (!active) {
+    return null;
+  }
 
   return (
     <div className="cursor-layer pointer-events-none fixed inset-0 z-[9999]" aria-hidden>
@@ -132,13 +178,4 @@ export function CustomCursor() {
       <div ref={dot} className="cursor-dot" />
     </div>
   );
-}
-
-function spawnRipple(x: number, y: number) {
-  const r = document.createElement("span");
-  r.className = "click-ripple";
-  r.style.left = `${x}px`;
-  r.style.top = `${y}px`;
-  document.body.appendChild(r);
-  r.addEventListener("animationend", () => r.remove(), { once: true });
 }

@@ -9,6 +9,7 @@ import { SiteFooter } from "@/components/shared/site-footer";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { CustomCursor } from "@/components/motion/custom-cursor";
+import { MotionBackground } from "@/components/motion/motion-background";
 import { ReadingProgress } from "@/components/shared/reading-progress";
 import { SITE, jsonLd } from "@/lib/site";
 
@@ -98,6 +99,7 @@ export default function RootLayout({
           <TooltipProvider>
             <ReadingProgress />
             <CustomCursor />
+            <MotionBackground />
             <div className="flex min-h-dvh flex-col">
               <SiteHeader />
               <main className="flex flex-1 flex-col">{children}</main>
