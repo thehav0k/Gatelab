@@ -141,7 +141,11 @@ export default function Home() {
 
           <div className="mt-8 flex flex-wrap gap-3">
             <Magnetic strength={0.25}>
-              <Button asChild size="lg" className="shadow-sm">
+              <Button
+                asChild
+                size="lg"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:text-zinc-950 font-semibold shadow-sm transition-colors border-0"
+              >
                 <Link href="/theory" data-cursor="link">
                   <Sigma className="mr-1.5 size-4" />
                   Derive a function
@@ -168,13 +172,9 @@ export default function Home() {
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }}
-          className="bg-card/50 rounded-xl border p-4 shadow-xs"
+          className="relative w-full"
         >
           <LogicAnimation className="w-full" />
-          <p className="text-muted-foreground mt-2 text-center text-xs text-pretty">
-            Interactive logic circuit: click switch A or B to toggle inputs and trace
-            signal propagation through real gates.
-          </p>
         </motion.div>
       </section>
 

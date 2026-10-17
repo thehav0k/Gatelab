@@ -90,7 +90,7 @@ export default function RootLayout({
       suppressHydrationWarning
       className={cn("font-sans", geist.variable, geistMono.variable)}
     >
-      <body className="min-h-dvh antialiased">
+      <body className="min-h-dvh antialiased" suppressHydrationWarning>
         {/* Structured data, rendered on the SERVER — a crawler that runs no
             JavaScript still gets a full description of what this app is. */}
         <script

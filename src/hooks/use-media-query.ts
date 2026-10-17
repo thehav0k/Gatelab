@@ -34,3 +34,6 @@ export function useMediaQuery(query: string): boolean {
 
 /** Below `lg` — where the lab collapses its side columns into sheets. */
 export const useIsCompact = () => useMediaQuery("(max-width: 1023px)");
+
+/** User prefers reduced motion. */
+export const usePrefersReducedMotion = () => useMediaQuery("(prefers-reduced-motion: reduce)");

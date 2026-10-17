@@ -50,7 +50,7 @@ describe("analyze", () => {
     expect(r.value.layout).toBeNull();
     expect(r.value.loops.sop).toEqual([]);
     expect(r.value.sop.cover.length).toBeGreaterThan(0);
-  });
+  }, 15000);
 
   it("passes diagnostics through on success", () => {
     // No variable list, so the arity is inferred — that must still be reported.

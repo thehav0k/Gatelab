@@ -1,95 +1,268 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { Play, Pause, RotateCcw } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Activity,
+  Zap,
+  CheckCircle2,
+  Terminal,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/hooks/use-hydrated";
+import { usePrefersReducedMotion } from "@/hooks/use-media-query";
 
 /**
- * An interactive, live logic circuit demonstration in the hero.
+ * Gatelab Core — Ambient Read-Only Logic Engine Showcase.
  *
- * Click inputs A or B to flip physical rocker switches and watch the signals
- * propagate through real gates:
- *   - Inverter computes A'
- *   - AND gate computes A · B
- *   - OR gate computes F = A' + (A · B) = A' + B
- *
- * Real 4-state aware rendering, real wire levels, and real output glow.
+ * Designed with React Bits / GSAP / Lenis aesthetic:
+ * - Fluid, momentum-based easing and continuous 60fps ambient micro-animations.
+ * - Deep glassmorphism with neon phosphor glows (cyan, emerald, amber, violet).
+ * - Full light & dark mode support with crisp contrast across both themes.
+ * - 100% Read-Only: zero manual buttons/inputs; runs as an ambient high-tech showcase.
+ * - Cycles smoothly through 3 core architectural phases:
+ *     1. SYNTHESIS: Dynamic beam routing with traveling laser comets across logic gates.
+ *     2. SILICON: Hyper-detailed 74LS TTL DIP-14 package with live binary LED countdown.
+ *     3. ANALYZER: Phosphor digital logic oscilloscope with real-time waveform sweeps.
  */
-export function LogicAnimation({ className }: { className?: string }) {
-  const [inputA, setInputA] = useState<0 | 1>(0);
-  const [inputB, setInputB] = useState<0 | 1>(0);
-  const [isAuto, setIsAuto] = useState(() => {
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return false;
-    }
-    return true;
-  });
 
-  // Listen for prefers-reduced-motion changes
+type PhaseId = "synthesis" | "silicon" | "analyzer";
+
+interface PhaseDef {
+  id: PhaseId;
+  index: string;
+  badge: string;
+  title: string;
+  subtitle: string;
+  telemetry: string;
+}
+
+const PHASES: PhaseDef[] = [
+  {
+    id: "synthesis",
+    index: "01",
+    badge: "BEAM SYNTHESIS",
+    title: "Canonical Logic Routing",
+    subtitle: "Quine–McCluskey prime implicants compiled into 4-state gate networks",
+    telemetry: "TOPOLOGY: O(n·α) UNION-FIND · DELTA FIXPOINT: CONVERGED · NETS: 8",
+  },
+  {
+    id: "silicon",
+    index: "02",
+    badge: "74xx TTL SILICON",
+    title: "Hardware Silicon Runtime",
+    subtitle: "DIP-14 physical pinout mapped to breadboard rails with Vcc/GND verification",
+    telemetry: "IC: SN74LS161AN · VCC: +5.00V · I_CC: 18.2mA · FAN-OUT: 10 LSTTL",
+  },
+  {
+    id: "analyzer",
+    index: "03",
+    badge: "TIMING PHOSPHOR",
+    title: "Digital Logic Analyzer",
+    subtitle: "Multi-channel synchronized sweep with propagation delay & glitch isolation",
+    telemetry: "CLOCK: 10.0 MHz · SKEW: 1.2ns · GLITCH SUPPRESSION: ACTIVE · TRACE: CH1-4",
+  },
+];
+
+const PHASE_DURATION_MS = 7500;
+
+export function LogicAnimation({ className }: { className?: string }) {
+  const [phaseIdx, setPhaseIdx] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [tick, setTick] = useState(0);
+  const isHydrated = useHydrated();
+  const prefersReduced = usePrefersReducedMotion();
+  const reducedMotion = isHydrated ? prefersReduced : false;
+
+  const currentPhase = PHASES[phaseIdx]!;
+
+  // Smooth progress bar and phase auto-cycling
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onChange = (e: MediaQueryListEvent) => {
-      if (e.matches) setIsAuto(false);
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
+    if (reducedMotion) return;
+
+    const intervalMs = 40;
+    const step = (intervalMs / PHASE_DURATION_MS) * 100;
+
+    const timer = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 100) {
+          setPhaseIdx((current) => (current + 1) % PHASES.length);
+          return 0;
+        }
+        return prev + step;
+      });
+    }, intervalMs);
+
+    return () => clearInterval(timer);
+  }, [reducedMotion]);
+
+  // Ambient logical clock tick (1.6Hz counter for live signals and LED binary display)
+  useEffect(() => {
+    const clock = setInterval(() => {
+      setTick((t) => (t + 1) % 64);
+    }, 625);
+    return () => clearInterval(clock);
   }, []);
 
-  // Auto-cycle through states when auto is enabled
-  useEffect(() => {
-    if (!isAuto) return;
-    const sequence: [0 | 1, 0 | 1][] = [
-      [0, 0],
-      [0, 1],
-      [1, 1],
-      [1, 0],
-    ];
-    let idx = sequence.findIndex(([a, b]) => a === inputA && b === inputB);
-    if (idx < 0) idx = 0;
+  return (
+    <div
+      className={cn(
+        "relative flex flex-col w-full rounded-2xl border border-zinc-200/90 dark:border-white/10 bg-white/95 dark:bg-zinc-950/90 text-zinc-900 dark:text-zinc-100 shadow-xl dark:shadow-2xl backdrop-blur-2xl overflow-hidden select-none",
+        className
+      )}
+    >
+      {/* Top Ambient Phosphor Glow Beam */}
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-emerald-500/50 dark:via-emerald-400/60 to-transparent" />
+      <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-28 bg-emerald-500/10 dark:bg-emerald-500/10 blur-3xl pointer-events-none" />
 
-    const interval = setInterval(() => {
-      idx = (idx + 1) % sequence.length;
-      const [nextA, nextB] = sequence[idx]!;
-      setInputA(nextA);
-      setInputB(nextB);
-    }, 2400);
+      {/* Header Bar */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200/80 dark:border-white/5 bg-zinc-50/80 dark:bg-zinc-900/40 text-xs font-mono">
+        <div className="flex items-center gap-2">
+          <span className="relative flex size-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+            <span className="relative inline-flex rounded-full size-2 bg-emerald-600 dark:bg-emerald-500" />
+          </span>
+          <span className="font-semibold text-zinc-800 dark:text-zinc-200 tracking-wider">
+            GATELAB CORE
+          </span>
+          <span className="hidden sm:inline-block text-zinc-500 dark:text-zinc-400">·</span>
+          <span className="hidden sm:inline-block text-zinc-600 dark:text-zinc-400">
+            SIMULATION RUNTIME
+          </span>
+        </div>
 
-    return () => clearInterval(interval);
-  }, [isAuto, inputA, inputB]);
+        {/* Phase Badges */}
+        <div className="flex items-center gap-1.5 bg-zinc-100/90 dark:bg-zinc-900/80 px-2 py-1 rounded-full border border-zinc-200 dark:border-white/5">
+          {PHASES.map((p, idx) => {
+            const isActive = idx === phaseIdx;
+            return (
+              <div
+                key={p.id}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-all duration-300",
+                  isActive
+                    ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 shadow-xs"
+                    : "text-zinc-600 dark:text-zinc-400"
+                )}
+              >
+                <span>{p.index}</span>
+                <span className="hidden md:inline">{p.badge}</span>
+              </div>
+            );
+          })}
+        </div>
 
-  // Derived gate outputs
-  const notA: 0 | 1 = inputA === 0 ? 1 : 0;
-  const andOut: 0 | 1 = inputA === 1 && inputB === 1 ? 1 : 0;
-  const outputF: 0 | 1 = notA === 1 || andOut === 1 ? 1 : 0;
+        <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
+          <Zap className="size-3 text-emerald-600 dark:text-emerald-400/80" />
+          <span className="hidden lg:inline text-[11px] text-zinc-600 dark:text-zinc-400">
+            READ-ONLY STREAM
+          </span>
+        </div>
+      </div>
 
-  const toggleA = () => {
-    setIsAuto(false);
-    setInputA((v) => (v === 0 ? 1 : 0));
-  };
+      {/* Continuous Luminescent Progress Bar */}
+      <div className="w-full h-0.5 bg-zinc-200 dark:bg-zinc-900 overflow-hidden relative">
+        <motion.div
+          className="h-full bg-gradient-to-r from-emerald-600 via-cyan-500 to-emerald-500 dark:from-emerald-500 dark:via-cyan-400 dark:to-emerald-400"
+          style={{ width: `${progress}%` }}
+          transition={{ ease: "linear" }}
+        />
+      </div>
 
-  const toggleB = () => {
-    setIsAuto(false);
-    setInputB((v) => (v === 0 ? 1 : 0));
-  };
+      {/* Main Canvas Showcase Area */}
+      <div className="relative w-full aspect-[16/9] min-h-[300px] sm:min-h-[340px] flex items-center justify-center p-2 sm:p-4 bg-gradient-to-b from-zinc-50/60 via-white to-zinc-50/80 dark:from-zinc-950 dark:via-zinc-950/80 dark:to-zinc-900/30 overflow-hidden">
+        {/* Subtle grid background */}
+        <div
+          className="absolute inset-0 opacity-[0.05] dark:opacity-[0.07] pointer-events-none"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)",
+            backgroundSize: "20px 20px",
+          }}
+        />
 
-  const reset = () => {
-    setInputA(0);
-    setInputB(0);
-    setIsAuto(true);
-  };
+        <AnimatePresence mode="wait">
+          {currentPhase.id === "synthesis" && (
+            <SynthesisPhase key="synthesis" tick={tick} />
+          )}
+          {currentPhase.id === "silicon" && (
+            <SiliconPhase key="silicon" tick={tick} />
+          )}
+          {currentPhase.id === "analyzer" && (
+            <AnalyzerPhase key="analyzer" tick={tick} />
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Informational Sub-Panel */}
+      <div className="flex flex-col gap-1 px-4 py-2.5 bg-zinc-50/90 dark:bg-zinc-900/50 border-t border-zinc-200/80 dark:border-white/5 font-mono text-xs">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 truncate">
+            <span className="text-emerald-800 dark:text-emerald-300 font-semibold uppercase text-[10px] tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/20">
+              {currentPhase.badge}
+            </span>
+            <span className="text-zinc-900 dark:text-zinc-100 font-medium text-xs truncate">
+              {currentPhase.title}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0 text-[11px] text-zinc-600 dark:text-zinc-400">
+            <Activity className="size-3 text-cyan-600 dark:text-cyan-400 animate-pulse" />
+            <span className="tabular-nums">{(progress * 0.075).toFixed(1)}s</span>
+          </div>
+        </div>
+        <p className="text-[11px] text-zinc-600 dark:text-zinc-400 truncate">
+          {currentPhase.subtitle}
+        </p>
+      </div>
+
+      {/* Bottom Telemetry Bar */}
+      <div className="flex items-center justify-between px-4 py-1.5 bg-zinc-100/80 dark:bg-zinc-950 border-t border-zinc-200/80 dark:border-white/5 text-[10px] font-mono text-zinc-600 dark:text-zinc-400">
+        <div className="flex items-center gap-2 truncate">
+          <Terminal className="size-3 text-zinc-500 dark:text-zinc-500 shrink-0" />
+          <span className="truncate">{currentPhase.telemetry}</span>
+        </div>
+        <div className="hidden sm:flex items-center gap-1 shrink-0 text-emerald-700 dark:text-emerald-400 font-medium">
+          <CheckCircle2 className="size-3" />
+          <span>VERIFIED</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// PHASE 1: SYNTHESIS — Animated Signal Beams & Logic Resolver
+// ============================================================================
+function SynthesisPhase({ tick }: { tick: number }) {
+  // Input signals derived from cyclic tick
+  const sigA = (tick & 1) as 0 | 1;
+  const sigB = ((tick >> 1) & 1) as 0 | 1;
+  const sigC = ((tick >> 2) & 1) as 0 | 1;
+
+  // Intermediate gates
+  const andOut = (sigA & sigB) as 0 | 1;
+  const xorOut = (sigA ^ sigC) as 0 | 1;
+  const norOut = (!(sigB | sigC) ? 1 : 0) as 0 | 1;
+
+  // Output resolved ALU slice: Full Adder (Sum = A ^ B ^ C, Carry = (A & B) | (C & (A ^ B)))
+  const sum = (sigA ^ sigB ^ sigC) as 0 | 1;
+  const carry = (andOut | (sigC & (sigA ^ sigB))) as 0 | 1;
 
   return (
-    <div className={cn("flex flex-col select-none", className)}>
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 1.02 }}
+      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+      className="relative w-full h-full flex items-center justify-center"
+    >
       <svg
-        viewBox="0 0 450 195"
-        className="w-full overflow-visible"
-        role="img"
-        aria-label="Interactive circuit: F = A' + A·B"
+        viewBox="0 0 640 320"
+        className="w-full h-full max-h-[320px] overflow-visible"
       >
         <defs>
-          <filter id="glow-led" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+          <filter id="synth-glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
@@ -97,409 +270,716 @@ export function LogicAnimation({ className }: { className?: string }) {
           </filter>
         </defs>
 
-        {/* --- WIRES -------------------------------------------------------- */}
-        {/* Wire 1: Input A -> NOT gate */}
-        <WirePath
-          d="M 42 45 L 68 45 L 68 28 L 96 28"
-          level={inputA}
-          label="A"
-        />
+        {/* --- Wire traces with animated light comets --- */}
+        {/* A -> AND & XOR */}
+        <BeamWire d="M 80 80 C 160 80, 180 85, 230 85" active={sigA === 1} color="var(--beam-cyan)" />
+        <BeamWire d="M 80 80 C 140 80, 170 145, 230 145" active={sigA === 1} color="var(--beam-cyan)" />
 
-        {/* Wire 2: Input A -> AND gate (input 1) */}
-        <WirePath
-          d="M 42 45 L 68 45 L 68 76 L 96 76"
-          level={inputA}
-          label="A"
-        />
+        {/* B -> AND & NOR */}
+        <BeamWire d="M 80 160 C 150 160, 170 105, 230 105" active={sigB === 1} color="var(--beam-emerald)" />
+        <BeamWire d="M 80 160 C 150 160, 170 215, 230 215" active={sigB === 1} color="var(--beam-emerald)" />
 
-        {/* Wire 3: Input B -> AND gate (input 2) */}
-        <WirePath
-          d="M 42 135 L 68 135 L 68 96 L 96 96"
-          level={inputB}
-          label="B"
-        />
+        {/* C -> XOR & NOR */}
+        <BeamWire d="M 80 240 C 140 240, 170 175, 230 175" active={sigC === 1} color="var(--beam-violet)" />
+        <BeamWire d="M 80 240 C 160 240, 180 235, 230 235" active={sigC === 1} color="var(--beam-violet)" />
 
-        {/* Wire 4: NOT gate out -> OR gate (input 1) */}
-        <WirePath
-          d="M 148 28 L 195 28 L 195 58 L 236 58"
-          level={notA}
-          label="A'"
-        />
+        {/* Gate outputs -> ALU Resolver */}
+        <BeamWire d="M 310 95 C 370 95, 380 135, 420 140" active={andOut === 1} color="var(--beam-cyan)" />
+        <BeamWire d="M 310 160 C 360 160, 380 160, 420 160" active={xorOut === 1} color="var(--beam-violet)" />
+        <BeamWire d="M 310 225 C 370 225, 380 185, 420 180" active={norOut === 1} color="var(--beam-emerald)" />
 
-        {/* Wire 5: AND gate out -> OR gate (input 2) */}
-        <WirePath
-          d="M 142 86 L 195 86 L 195 78 L 236 78"
-          level={andOut}
-          label="A·B"
-        />
+        {/* ALU Resolver Outputs */}
+        <BeamWire d="M 500 140 C 530 140, 540 120, 570 120" active={sum === 1} color="var(--beam-emerald)" />
+        <BeamWire d="M 500 180 C 530 180, 540 200, 570 200" active={carry === 1} color="var(--beam-amber)" />
 
-        {/* Wire 6: OR gate out -> LED */}
-        <WirePath
-          d="M 292 68 L 375 68"
-          level={outputF}
-          label="F"
-        />
+        {/* --- Input Port Nodes --- */}
+        <InputNode x={80} y={80} label="A" val={sigA} color="var(--beam-cyan)" />
+        <InputNode x={80} y={160} label="B" val={sigB} color="var(--beam-emerald)" />
+        <InputNode x={80} y={240} label="C" val={sigC} color="var(--beam-violet)" />
 
-        {/* --- GATES -------------------------------------------------------- */}
-        <GateSymbolSvg x={96} y={8} kind="not" outLevel={notA} />
-        <GateSymbolSvg x={96} y={66} kind="and" outLevel={andOut} />
-        <GateSymbolSvg x={236} y={48} kind="or" outLevel={outputF} />
+        {/* --- Logic Gates (AND, XOR, NOR) --- */}
+        <LogicGateBox x={230} y={70} name="AND" type="74LS08" val={andOut} color="var(--beam-cyan)" />
+        <LogicGateBox x={230} y={135} name="XOR" type="74LS86" val={xorOut} color="var(--beam-violet)" />
+        <LogicGateBox x={230} y={200} name="NOR" type="74LS02" val={norOut} color="var(--beam-emerald)" />
 
-        {/* --- INTERACTIVE SWITCH A ----------------------------------------- */}
-        <g
-          className="cursor-pointer group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary rounded"
-          onClick={toggleA}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              toggleA();
-            }
-          }}
-          tabIndex={0}
-          role="switch"
-          aria-checked={inputA === 1}
-          aria-label={`Switch A, currently ${inputA === 1 ? "HIGH" : "LOW"}`}
-        >
-          {/* Switch base plate */}
+        {/* --- Center ALU / Resolver Engine --- */}
+        <g transform="translate(420, 115)">
           <rect
-            x={6}
-            y={30}
-            width={34}
-            height={30}
-            rx={5}
-            className="fill-card stroke-border transition-colors group-hover:stroke-logic-high/70 group-focus-visible:stroke-primary"
+            width={80}
+            height={90}
+            rx={8}
+            className="fill-white dark:fill-[#090d16] stroke-emerald-700 dark:stroke-emerald-400"
             strokeWidth={1.5}
+            strokeDasharray="4 2"
+            filter="url(#synth-glow)"
           />
-          {/* Rocker lever */}
-          <motion.rect
-            x={10}
-            y={34}
-            width={26}
-            height={22}
-            rx={3}
-            className={cn("transition-colors duration-150", inputA === 1 ? "fill-logic-high" : "fill-muted")}
-            initial={false}
-            animate={{
-              x: inputA === 1 ? 14 : 10,
-            }}
-            transition={{ type: "spring", stiffness: 450, damping: 30 }}
-          />
-          {/* Toggle label */}
           <text
-            x={23}
-            y={49}
+            x={40}
+            y={28}
+            className="fill-emerald-800 dark:fill-emerald-300"
+            fontSize={9}
+            fontWeight="bold"
+            fontFamily="monospace"
             textAnchor="middle"
-            aria-hidden="true"
-            className="font-mono text-[9px] font-bold pointer-events-none fill-foreground select-none"
           >
-            {inputA}
+            4-STATE ALU
           </text>
           <text
-            x={23}
-            y={22}
+            x={40}
+            y={46}
+            className="fill-zinc-600 dark:fill-zinc-400"
+            fontSize={8}
+            fontFamily="monospace"
             textAnchor="middle"
-            aria-hidden="true"
-            className="font-mono text-[10px] font-semibold fill-muted-foreground group-hover:fill-logic-high select-none transition-colors"
           >
-            A
+            SOLVER FIXPOINT
           </text>
-        </g>
-
-        {/* --- INTERACTIVE SWITCH B ----------------------------------------- */}
-        <g
-          className="cursor-pointer group focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary rounded"
-          onClick={toggleB}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              toggleB();
-            }
-          }}
-          tabIndex={0}
-          role="switch"
-          aria-checked={inputB === 1}
-          aria-label={`Switch B, currently ${inputB === 1 ? "HIGH" : "LOW"}`}
-        >
-          {/* Switch base plate */}
           <rect
-            x={6}
-            y={120}
-            width={34}
-            height={30}
-            rx={5}
-            className="fill-card stroke-border transition-colors group-hover:stroke-logic-high/70 group-focus-visible:stroke-primary"
-            strokeWidth={1.5}
+            x={15}
+            y={58}
+            width={50}
+            height={18}
+            rx={4}
+            className="fill-zinc-100 dark:fill-[#18181b] stroke-zinc-300 dark:stroke-zinc-700"
           />
-          {/* Rocker lever */}
-          <motion.rect
-            x={10}
-            y={124}
-            width={26}
-            height={22}
-            rx={3}
-            className={cn("transition-colors duration-150", inputB === 1 ? "fill-logic-high" : "fill-muted")}
-            initial={false}
-            animate={{
-              x: inputB === 1 ? 14 : 10,
-            }}
-            transition={{ type: "spring", stiffness: 450, damping: 30 }}
-          />
-          {/* Toggle label */}
           <text
-            x={23}
-            y={139}
+            x={40}
+            y={71}
+            className="fill-zinc-900 dark:fill-zinc-100"
+            fontSize={9}
+            fontWeight="bold"
+            fontFamily="monospace"
             textAnchor="middle"
-            aria-hidden="true"
-            className="font-mono text-[9px] font-bold pointer-events-none fill-foreground select-none"
           >
-            {inputB}
-          </text>
-          <text
-            x={23}
-            y={112}
-            textAnchor="middle"
-            aria-hidden="true"
-            className="font-mono text-[10px] font-semibold fill-muted-foreground group-hover:fill-logic-high select-none transition-colors"
-          >
-            B
+            O(n·α)
           </text>
         </g>
 
-        {/* --- OUTPUT INDICATOR (LED) --------------------------------------- */}
-        <g transform="translate(390, 68)">
-          {/* Glow halo when ON */}
-          {outputF === 1 && (
-            <motion.circle
-              cx={0}
-              cy={0}
-              r={22}
-              style={{ fill: "var(--logic-high)" }}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 0.28, scale: 1.15 }}
-              transition={{ duration: 0.2 }}
-            />
-          )}
-
-          {/* Outer ring */}
-          <circle
-            cx={0}
-            cy={0}
-            r={14}
-            className="stroke-border fill-card"
-            strokeWidth={2}
-          />
-
-          {/* LED jewel */}
-          <circle
-            cx={0}
-            cy={0}
-            r={11}
-            className={cn(
-              "transition-[fill,filter] duration-150",
-              outputF === 1 ? "fill-logic-high" : "fill-muted",
-            )}
-            filter={outputF === 1 ? "url(#glow-led)" : undefined}
-          />
-
-          {/* Value text inside LED */}
-          <text
-            x={0}
-            y={3.5}
-            textAnchor="middle"
-            aria-hidden="true"
-            className={cn(
-              "font-mono text-[10px] font-bold pointer-events-none select-none",
-              outputF === 1 ? "fill-background" : "fill-muted-foreground",
-            )}
-          >
-            {outputF}
-          </text>
-
-          {/* LED Label */}
-          <text
-            x={0}
-            y={30}
-            textAnchor="middle"
-            aria-hidden="true"
-            className="font-mono text-[11px] font-bold fill-foreground select-none"
-          >
-            F
-          </text>
-        </g>
-
-        {/* Wire logic probe labels on hover / resting */}
-        <text
-          x={162}
-          y={22}
-          textAnchor="middle"
-          aria-hidden="true"
-          className="font-mono text-[9px] fill-muted-foreground/75 select-none"
-        >
-          NOT A: {notA}
-        </text>
-        <text
-          x={162}
-          y={102}
-          textAnchor="middle"
-          aria-hidden="true"
-          className="font-mono text-[9px] fill-muted-foreground/75 select-none"
-        >
-          A·B: {andOut}
-        </text>
+        {/* --- Output Port Nodes --- */}
+        <OutputNode x={570} y={120} label="SUM (Σ)" val={sum} color="var(--beam-emerald)" />
+        <OutputNode x={570} y={200} label="CARRY" val={carry} color="var(--beam-amber)" />
       </svg>
-
-      {/* --- CIRCUIT STATUS BAR & INTERACTIVE CONTROLS ----------------------- */}
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs">
-        <div className="flex items-center gap-2 font-mono">
-          <span className="text-muted-foreground">Function:</span>
-          <span className="font-semibold text-foreground">
-            F = A&apos; + A·B ={" "}
-            <span className={outputF === 1 ? "text-logic-high" : "text-muted-foreground"}>
-              {outputF}
-            </span>
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setIsAuto((v) => !v)}
-            title={isAuto ? "Pause Auto-Cycle" : "Resume Auto-Cycle"}
-            className={cn(
-              "inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors border",
-              isAuto
-                ? "bg-logic-high/15 border-logic-high/40 text-logic-high font-semibold"
-                : "bg-muted text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {isAuto ? <Pause className="size-3" /> : <Play className="size-3" />}
-            {isAuto ? "Auto Cycling" : "Manual (Click A/B)"}
-          </button>
-          {!isAuto && (
-            <button
-              type="button"
-              onClick={reset}
-              title="Reset to initial state"
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-            >
-              <RotateCcw className="size-3" />
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    </motion.div>
   );
 }
 
-/** Individual wire segment that glows and pulses when HIGH. */
-function WirePath({
-  d,
-  level,
-}: {
-  d: string;
-  level: 0 | 1;
-  label: string;
-}) {
-  const isHigh = level === 1;
+// ============================================================================
+// PHASE 2: SILICON — Detailed 74LS TTL DIP-14 Package & LED Array
+// ============================================================================
+function SiliconPhase({ tick }: { tick: number }) {
+  // 4-bit binary counter value: 0..15
+  const count = tick % 16;
+  const q0 = (count & 1) as 0 | 1;
+  const q1 = ((count >> 1) & 1) as 0 | 1;
+  const q2 = ((count >> 2) & 1) as 0 | 1;
+  const q3 = ((count >> 3) & 1) as 0 | 1;
 
   return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 1.02 }}
+      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+      className="relative w-full h-full flex items-center justify-center"
+    >
+      <svg
+        viewBox="0 0 640 320"
+        className="w-full h-full max-h-[320px] overflow-visible"
+      >
+        <defs>
+          <filter id="silicon-glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="3.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Upper VCC (+5V) Rail */}
+        <line x1={30} y1={40} x2={610} y2={40} className="stroke-red-700 dark:stroke-red-400" strokeWidth={2.5} strokeOpacity={0.9} />
+        <text x={40} y={32} className="fill-red-700 dark:fill-red-400 font-bold" fontSize={9} fontFamily="monospace">
+          +5.0V VCC POWER BUS
+        </text>
+
+        {/* Lower GND Rail */}
+        <line x1={30} y1={280} x2={610} y2={280} className="stroke-blue-700 dark:stroke-blue-400" strokeWidth={2.5} strokeOpacity={0.9} />
+        <text x={40} y={296} className="fill-blue-700 dark:fill-blue-400 font-bold" fontSize={9} fontFamily="monospace">
+          0.0V GND SYSTEM GROUND
+        </text>
+
+        {/* Jumper Wires connecting rails to IC */}
+        {/* VCC to Pin 14 (top right) */}
+        <path d="M 410 40 V 90" className="stroke-red-700 dark:stroke-red-400" strokeWidth={2} strokeLinecap="round" fill="none" />
+        <circle cx={410} cy={40} r={3} className="fill-red-700 dark:fill-red-400" />
+
+        {/* GND from Pin 7 (bottom right) */}
+        <path d="M 410 230 V 280" className="stroke-blue-700 dark:stroke-blue-400" strokeWidth={2} strokeLinecap="round" fill="none" />
+        <circle cx={410} cy={280} r={3} className="fill-blue-700 dark:fill-blue-400" />
+
+        {/* Clock input line to Pin 2 */}
+        <path d="M 80 110 H 170" className="stroke-sky-700 dark:stroke-sky-400" strokeWidth={2} strokeDasharray="6 3" fill="none" />
+        <g transform="translate(60, 110)">
+          <circle cx={0} cy={0} r={12} className="fill-white dark:fill-[#0c1322] stroke-sky-700 dark:stroke-sky-400" strokeWidth={1.5} />
+          <path d="M -6 4 H -2 V -4 H 2 V 4 H 6" className="stroke-sky-700 dark:stroke-sky-400" strokeWidth={1.5} fill="none" />
+          <text x={0} y={22} className="fill-sky-700 dark:fill-sky-400 font-bold" fontSize={8} fontFamily="monospace" textAnchor="middle">
+            CLK
+          </text>
+        </g>
+
+        {/* --- 74LS161 DIP-14 IC Ceramic Body --- */}
+        <g transform="translate(170, 90)">
+          {/* Chip Body (Dark matte epoxy package in both themes) */}
+          <rect
+            width={260}
+            height={140}
+            rx={6}
+            fill="#18181b"
+            stroke="#3f3f46"
+            strokeWidth={1.8}
+            filter="drop-shadow(0px 8px 16px rgba(0,0,0,0.4))"
+          />
+
+          {/* Indexing Notch on left edge */}
+          <path
+            d="M 0 58 C 12 58, 12 82, 0 82"
+            fill="#27272a"
+            stroke="#3f3f46"
+            strokeWidth={1.2}
+          />
+          {/* Pin 1 Dot */}
+          <circle cx={22} cy={22} r={3} fill="#a1a1aa" opacity={0.8} />
+
+          {/* Laser-etched Part Number */}
+          <text
+            x={130}
+            y={50}
+            fill="#e4e4e7"
+            fontSize={12}
+            fontFamily="monospace"
+            fontWeight="bold"
+            letterSpacing={2}
+            textAnchor="middle"
+          >
+            SN74LS161AN
+          </text>
+          <text
+            x={130}
+            y={68}
+            fill="#a1a1aa"
+            fontSize={9}
+            fontFamily="monospace"
+            textAnchor="middle"
+          >
+            TEXAS INSTRUMENTS · MALAYSIA
+          </text>
+          <text
+            x={130}
+            y={92}
+            fill="#a1a1aa"
+            fontSize={8}
+            fontFamily="monospace"
+            textAnchor="middle"
+          >
+            4-BIT SYNC BINARY COUNTER
+          </text>
+
+          {/* Active Status Badge inside chip */}
+          <rect
+            x={75}
+            y={106}
+            width={110}
+            height={20}
+            rx={4}
+            fill="#09090b"
+            stroke="#10b981"
+            strokeOpacity={0.6}
+          />
+          <text
+            x={130}
+            y={119}
+            fill="#34d399"
+            fontSize={9}
+            fontFamily="monospace"
+            fontWeight="bold"
+            textAnchor="middle"
+          >
+            STATE: 0x{count.toString(16).toUpperCase()} ({count})
+          </text>
+
+          {/* Lead Pins (Top: 14 to 8, Bottom: 1 to 7) */}
+          {[0, 1, 2, 3, 4, 5, 6].map((i) => {
+            const px = 25 + i * 35;
+            return (
+              <g key={i}>
+                {/* Top Pins */}
+                <rect x={px - 4} y={-10} width={8} height={10} fill="#94a3b8" rx={1} />
+                <circle cx={px} cy={-14} r={2} className="fill-zinc-400 dark:fill-[#3f3f46]" />
+                <text x={px} y={15} fill="#a1a1aa" fontSize={7} fontFamily="monospace" textAnchor="middle">
+                  {14 - i}
+                </text>
+
+                {/* Bottom Pins */}
+                <rect x={px - 4} y={140} width={8} height={10} fill="#94a3b8" rx={1} />
+                <circle cx={px} cy={154} r={2} className="fill-zinc-400 dark:fill-[#3f3f46]" />
+                <text x={px} y={132} fill="#a1a1aa" fontSize={7} fontFamily="monospace" textAnchor="middle">
+                  {1 + i}
+                </text>
+              </g>
+            );
+          })}
+        </g>
+
+        {/* Wires to Output LED Array */}
+        <path d="M 430 115 H 480 V 100 H 510" stroke={q0 ? "var(--beam-emerald)" : undefined} className={q0 ? "" : "stroke-zinc-300 dark:stroke-zinc-700"} strokeWidth={1.8} fill="none" />
+        <path d="M 430 135 H 490 V 135 H 510" stroke={q1 ? "var(--beam-cyan)" : undefined} className={q1 ? "" : "stroke-zinc-300 dark:stroke-zinc-700"} strokeWidth={1.8} fill="none" />
+        <path d="M 430 155 H 490 V 170 H 510" stroke={q2 ? "var(--beam-violet)" : undefined} className={q2 ? "" : "stroke-zinc-300 dark:stroke-zinc-700"} strokeWidth={1.8} fill="none" />
+        <path d="M 430 175 H 480 V 205 H 510" stroke={q3 ? "var(--beam-amber)" : undefined} className={q3 ? "" : "stroke-zinc-300 dark:stroke-zinc-700"} strokeWidth={1.8} fill="none" />
+
+        {/* Output LED Bar Indicator Array */}
+        <g transform="translate(510, 80)">
+          <rect width={85} height={150} rx={8} className="fill-white dark:fill-[#090d16] stroke-zinc-300 dark:stroke-zinc-700" strokeWidth={1.5} />
+          <text x={42} y={20} className="fill-zinc-800 dark:fill-zinc-200" fontSize={8} fontFamily="monospace" fontWeight="bold" textAnchor="middle">
+            OUTPUT BUS
+          </text>
+
+          <LedRow y={40} label="Q0 (LSB)" val={q0} color="var(--beam-emerald)" />
+          <LedRow y={70} label="Q1" val={q1} color="var(--beam-cyan)" />
+          <LedRow y={100} label="Q2" val={q2} color="var(--beam-violet)" />
+          <LedRow y={130} label="Q3 (MSB)" val={q3} color="var(--beam-amber)" />
+        </g>
+      </svg>
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// PHASE 3: ANALYZER — Phosphor Logic Oscilloscope with Timing Waveforms
+// ============================================================================
+function AnalyzerPhase({ tick }: { tick: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.96 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 1.02 }}
+      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+      className="relative w-full h-full flex items-center justify-center"
+    >
+      <svg
+        viewBox="0 0 640 320"
+        className="w-full h-full max-h-[320px] overflow-visible"
+      >
+        <defs>
+          <filter id="scope-glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="2.5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Oscilloscope Inset Screen Frame */}
+        <rect
+          x={30}
+          y={20}
+          width={580}
+          height={280}
+          rx={8}
+          fill="#06090e"
+          stroke="#334155"
+          strokeWidth={1.5}
+          filter="drop-shadow(0px 4px 12px rgba(0,0,0,0.3))"
+        />
+
+        {/* Fine Graticule Matrix Lines */}
+        {[0, 1, 2, 3, 4, 5, 6, 7].map((col) => (
+          <line
+            key={`c-${col}`}
+            x1={100 + col * 60}
+            y1={30}
+            x2={100 + col * 60}
+            y2={290}
+            stroke="#1e293b"
+            strokeWidth={0.8}
+            strokeDasharray="2 4"
+            opacity={0.5}
+          />
+        ))}
+        {[0, 1, 2, 3].map((row) => (
+          <line
+            key={`r-${row}`}
+            x1={100}
+            y1={50 + row * 65}
+            x2={580}
+            y2={50 + row * 65}
+            stroke="#1e293b"
+            strokeWidth={0.8}
+            strokeDasharray="2 4"
+            opacity={0.5}
+          />
+        ))}
+
+        {/* Timing Measurement Zone (Delta-t skew marker) */}
+        <rect
+          x={280}
+          y={30}
+          width={70}
+          height={260}
+          fill="#06b6d4"
+          fillOpacity={0.06}
+        />
+        <line x1={280} y1={30} x2={280} y2={290} stroke="#38bdf8" strokeWidth={1} strokeDasharray="3 3" opacity={0.8} />
+        <line x1={350} y1={30} x2={350} y2={290} stroke="#38bdf8" strokeWidth={1} strokeDasharray="3 3" opacity={0.8} />
+        <text x={315} y={42} fill="#38bdf8" fontSize={8} fontFamily="monospace" textAnchor="middle">
+          Δt = 3.6ns
+        </text>
+
+        {/* --- Channel 1: CLK --- */}
+        <g transform="translate(0, 50)">
+          <text x={45} y={18} fill="#38bdf8" fontSize={9} fontFamily="monospace" fontWeight="bold">
+            CH1 CLK
+          </text>
+          <path
+            d="M 100 25 H 130 V 5 H 160 V 25 H 190 V 5 H 220 V 25 H 250 V 5 H 280 V 25 H 310 V 5 H 340 V 25 H 370 V 5 H 400 V 25 H 430 V 5 H 460 V 25 H 490 V 5 H 520 V 25 H 550 V 5 H 580"
+            fill="none"
+            stroke="#38bdf8"
+            strokeWidth={1.8}
+            filter="url(#scope-glow)"
+          />
+        </g>
+
+        {/* --- Channel 2: DATA_IN --- */}
+        <g transform="translate(0, 115)">
+          <text x={45} y={18} fill="#c084fc" fontSize={9} fontFamily="monospace" fontWeight="bold">
+            CH2 DATA
+          </text>
+          <path
+            d="M 100 25 H 160 V 5 H 250 V 25 H 340 V 5 H 460 V 25 H 520 V 5 H 580"
+            fill="none"
+            stroke="#c084fc"
+            strokeWidth={1.8}
+            filter="url(#scope-glow)"
+          />
+        </g>
+
+        {/* --- Channel 3: PROPAGATION SKEW --- */}
+        <g transform="translate(0, 180)">
+          <text x={45} y={18} fill="#fbbf24" fontSize={9} fontFamily="monospace" fontWeight="bold">
+            CH3 SKEW
+          </text>
+          {/* Glitch spike right at the boundary */}
+          <path
+            d="M 100 25 H 280 V 5 H 292 V 25 H 370 V 5 H 470 V 25 H 580"
+            fill="none"
+            stroke="#fbbf24"
+            strokeWidth={1.8}
+            filter="url(#scope-glow)"
+          />
+          {/* Glitch callout badge */}
+          <rect x={296} y={-2} width={42} height={14} rx={3} fill="#78350f" stroke="#fbbf24" strokeWidth={0.8} />
+          <text x={317} y={8} fill="#fef08a" fontSize={7} fontFamily="monospace" textAnchor="middle">
+            GLITCH
+          </text>
+        </g>
+
+        {/* --- Channel 4: RESOLVED OUTPUT --- */}
+        <g transform="translate(0, 245)">
+          <text x={45} y={18} fill="#34d399" fontSize={9} fontFamily="monospace" fontWeight="bold">
+            CH4 RESOLV
+          </text>
+          {/* Clean glitch-free output cured by consensus term */}
+          <path
+            d="M 100 25 H 280 V 25 H 370 V 5 H 470 V 25 H 580"
+            fill="none"
+            stroke="#34d399"
+            strokeWidth={2}
+            filter="url(#scope-glow)"
+          />
+          <text x={380} y={18} fill="#34d399" fontSize={7} fontFamily="monospace">
+            [CURED: CONSENSUS TERM COVERAGE]
+          </text>
+        </g>
+
+        {/* Live Hex Bus Telemetry */}
+        <g transform="translate(100, 275)">
+          <rect x={0} y={-10} width={480} height={18} rx={3} fill="#0b111e" stroke="#1e293b" />
+          <text x={10} y={3} fill="#94a3b8" fontSize={8} fontFamily="monospace">
+            BUS [7..0] STREAM:
+          </text>
+          <text x={120} y={3} fill="#38bdf8" fontSize={8} fontFamily="monospace" fontWeight="bold">
+            0x{((tick * 17 + 0x2A) & 0xFF).toString(16).toUpperCase().padStart(2, "0")}
+          </text>
+          <text x={170} y={3} fill="#34d399" fontSize={8} fontFamily="monospace">
+            FIXPOINT: DETERMINISTIC
+          </text>
+          <text x={380} y={3} fill="#c084fc" fontSize={8} fontFamily="monospace">
+            SCAN: 60 FPS
+          </text>
+        </g>
+
+        {/* Sweeping Phosphor Line (Laser Scanline) */}
+        <g className="animate-pulse">
+          <line x1={450} y1={25} x2={450} y2={295} stroke="#38bdf8" strokeWidth={1.5} opacity={0.6} />
+        </g>
+      </svg>
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// SVG Micro-Components for Smooth Synthesis Beams
+// ============================================================================
+function BeamWire({
+  d,
+  active,
+  color,
+}: {
+  d: string;
+  active: boolean;
+  color: string;
+}) {
+  return (
     <g>
-      {/* Background wire track */}
+      {/* Base Wire Track */}
       <path
         d={d}
         fill="none"
-        className="stroke-muted-foreground/25"
-        strokeWidth={2}
+        className={active ? "" : "stroke-zinc-300 dark:stroke-zinc-800"}
+        stroke={active ? color : undefined}
+        strokeWidth={active ? 2 : 1.2}
+        strokeOpacity={active ? 1 : 0.6}
         strokeLinecap="round"
-        strokeLinejoin="round"
       />
-
-      {/* Live logic state wire overlay */}
-      <path
-        d={d}
-        fill="none"
-        stroke={isHigh ? "var(--logic-high)" : "var(--logic-low)"}
-        strokeWidth={isHigh ? 2.5 : 1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="transition-[stroke,stroke-width,opacity] duration-150"
-        opacity={isHigh ? 1 : 0.45}
-      />
-
-      {/* Traveling signal pulse when line is HIGH */}
-      {isHigh && (
-        <motion.path
+      {/* Animated Glowing Comet Pulse */}
+      {active && (
+        <path
           d={d}
           fill="none"
-          stroke="var(--logic-high)"
+          stroke={color}
           strokeWidth={3}
           strokeLinecap="round"
-          initial={{ pathLength: 0.25, pathOffset: 0 }}
-          animate={{ pathOffset: [0, 1] }}
-          transition={{
-            duration: 1.2,
-            repeat: Infinity,
-            ease: "linear",
+          strokeDasharray="28 140"
+          style={{
+            animation: "beam-flow 2.2s linear infinite",
           }}
-          style={{ opacity: 0.85 }}
+          className="dark:opacity-90 opacity-75"
+          filter="url(#synth-glow)"
         />
       )}
     </g>
   );
 }
 
-/** Standard ANSI/IEC logic gate drawing. */
-function GateSymbolSvg({
+function InputNode({
   x,
   y,
-  kind,
-  outLevel,
+  label,
+  val,
+  color,
 }: {
   x: number;
   y: number;
-  kind: "not" | "and" | "or";
-  outLevel: 0 | 1;
+  label: string;
+  val: 0 | 1;
+  color: string;
 }) {
-  const body =
-    kind === "and"
-      ? "M0,0 H26 A20,20 0 0 1 26,40 H0 Z"
-      : kind === "or"
-        ? "M0,0 Q30,2 56,20 Q30,38 0,40 Q16,20 0,0 Z"
-        : "M0,0 L42,20 L0,40 Z";
-
-  const isHigh = outLevel === 1;
-
   return (
-    <g transform={`translate(${x} ${y})`}>
-      <path
-        d={body}
+    <g transform={`translate(${x}, ${y})`}>
+      <circle
+        cx={0}
+        cy={0}
+        r={18}
         className={cn(
-          "fill-card stroke-foreground/75 transition-colors",
-          isHigh && "stroke-logic-high/70",
+          "fill-white dark:fill-[#090d16]",
+          val === 1 ? "" : "stroke-zinc-300 dark:stroke-zinc-700"
         )}
+        stroke={val === 1 ? color : undefined}
         strokeWidth={1.8}
-        strokeLinejoin="round"
+        filter={val === 1 ? "url(#synth-glow)" : undefined}
       />
-      {kind === "not" && (
-        <circle
-          cx={47}
-          cy={20}
-          r={5}
-          className={cn(
-            "fill-card stroke-foreground/75 transition-colors",
-            isHigh && "stroke-logic-high/70",
-          )}
-          strokeWidth={1.8}
-        />
-      )}
       <text
-        x={kind === "or" ? 22 : kind === "and" ? 15 : 14}
-        y={24}
+        x={0}
+        y={-3}
+        className="fill-zinc-700 dark:fill-zinc-300"
+        fontSize={8}
+        fontWeight="bold"
+        fontFamily="monospace"
         textAnchor="middle"
-        aria-hidden="true"
-        className="fill-muted-foreground pointer-events-none font-mono text-[8px] font-semibold select-none"
       >
-        {kind.toUpperCase()}
+        {label}
+      </text>
+      <text
+        x={0}
+        y={8}
+        fill={val === 1 ? color : undefined}
+        className={val === 1 ? "" : "fill-zinc-600 dark:fill-zinc-400"}
+        fontSize={10}
+        fontWeight="bold"
+        fontFamily="monospace"
+        textAnchor="middle"
+      >
+        {val}
+      </text>
+    </g>
+  );
+}
+
+function OutputNode({
+  x,
+  y,
+  label,
+  val,
+  color,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  val: 0 | 1;
+  color: string;
+}) {
+  return (
+    <g transform={`translate(${x}, ${y})`}>
+      <rect
+        x={-24}
+        y={-14}
+        width={68}
+        height={28}
+        rx={6}
+        className={cn(
+          "fill-white dark:fill-[#090d16]",
+          val === 1 ? "" : "stroke-zinc-300 dark:stroke-zinc-700"
+        )}
+        stroke={val === 1 ? color : undefined}
+        strokeWidth={1.5}
+        filter={val === 1 ? "url(#synth-glow)" : undefined}
+      />
+      <text
+        x={10}
+        y={-2}
+        className="fill-zinc-700 dark:fill-zinc-300"
+        fontSize={7}
+        fontWeight="bold"
+        fontFamily="monospace"
+        textAnchor="middle"
+      >
+        {label}
+      </text>
+      <text
+        x={10}
+        y={9}
+        fill={val === 1 ? color : undefined}
+        className={val === 1 ? "" : "fill-zinc-600 dark:fill-zinc-400"}
+        fontSize={9}
+        fontWeight="bold"
+        fontFamily="monospace"
+        textAnchor="middle"
+      >
+        OUT: {val}
+      </text>
+    </g>
+  );
+}
+
+function LogicGateBox({
+  x,
+  y,
+  name,
+  type,
+  val,
+  color,
+}: {
+  x: number;
+  y: number;
+  name: string;
+  type: string;
+  val: 0 | 1;
+  color: string;
+}) {
+  return (
+    <g transform={`translate(${x}, ${y})`}>
+      <rect
+        width={80}
+        height={50}
+        rx={6}
+        className={cn(
+          "fill-white dark:fill-[#090d16]",
+          val === 1 ? "" : "stroke-zinc-300 dark:stroke-zinc-700"
+        )}
+        stroke={val === 1 ? color : undefined}
+        strokeWidth={1.5}
+        filter={val === 1 ? "url(#synth-glow)" : undefined}
+      />
+      <text
+        x={40}
+        y={18}
+        fill={val === 1 ? color : undefined}
+        className={val === 1 ? "" : "fill-zinc-800 dark:fill-zinc-200"}
+        fontSize={11}
+        fontWeight="bold"
+        fontFamily="monospace"
+        textAnchor="middle"
+      >
+        {name}
+      </text>
+      <text
+        x={40}
+        y={30}
+        className="fill-zinc-600 dark:fill-zinc-400"
+        fontSize={8}
+        fontFamily="monospace"
+        textAnchor="middle"
+      >
+        {type}
+      </text>
+      <text
+        x={40}
+        y={42}
+        fill={val === 1 ? color : undefined}
+        className={val === 1 ? "" : "fill-zinc-600 dark:fill-zinc-400"}
+        fontSize={8}
+        fontWeight="bold"
+        fontFamily="monospace"
+        textAnchor="middle"
+      >
+        Y = {val}
+      </text>
+    </g>
+  );
+}
+
+function LedRow({
+  y,
+  label,
+  val,
+  color,
+}: {
+  y: number;
+  label: string;
+  val: 0 | 1;
+  color: string;
+}) {
+  return (
+    <g transform={`translate(12, ${y})`}>
+      <circle
+        cx={8}
+        cy={0}
+        r={5}
+        fill={val === 1 ? color : "currentColor"}
+        className={val === 1 ? "" : "fill-zinc-200 dark:fill-zinc-800 stroke-zinc-300 dark:stroke-zinc-700"}
+        stroke={val === 1 ? color : undefined}
+        strokeWidth={1.2}
+        filter={val === 1 ? "url(#silicon-glow)" : undefined}
+      />
+      <text
+        x={22}
+        y={3}
+        className={val === 1 ? "fill-zinc-900 dark:fill-zinc-100 font-bold" : "fill-zinc-600 dark:fill-zinc-400"}
+        fontSize={8}
+        fontWeight="bold"
+        fontFamily="monospace"
+      >
+        {label}: {val}
       </text>
     </g>
   );

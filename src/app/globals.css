@@ -144,6 +144,12 @@
     --cursor-y: 50vh;
     --glow-color: color-mix(in oklch, var(--logic-high) 22%, transparent);
     --signal-1: var(--logic-high);
+
+    /* Ambient showcase beam tokens (high contrast > 5.2:1 in light mode, luminous neon glow in dark mode) */
+    --beam-cyan: #0369a1;
+    --beam-emerald: #047857;
+    --beam-violet: #6d28d9;
+    --beam-amber: #b45309;
 }
 
 .dark {
@@ -200,6 +206,12 @@
     --wire-7: oklch(0.72 0.18 305);
     --wire-8: oklch(0.74 0.17 350);
     --glow-color: color-mix(in oklch, var(--logic-high) 30%, transparent);
+
+    /* Ambient showcase beam tokens for dark mode (luminous phosphor, > 8.0:1 contrast) */
+    --beam-cyan: #38bdf8;
+    --beam-emerald: #34d399;
+    --beam-violet: #c084fc;
+    --beam-amber: #fbbf24;
 }
 
 @layer base {
@@ -461,6 +473,15 @@ button[data-slot="button"]:active:not(:disabled) {
 @keyframes trace-flow {
   to {
     stroke-dashoffset: -48;
+  }
+}
+
+@keyframes beam-flow {
+  from {
+    stroke-dashoffset: 168;
+  }
+  to {
+    stroke-dashoffset: 0;
   }
 }
 
