@@ -128,7 +128,7 @@ const FAULTS = [
 
 const SHORTCUTS = [
   { keys: "Click pin, click pin", does: "Wire two pins together" },
-  { keys: "Click a wire", does: "Delete it" },
+  { keys: "Alt+Click or Delete/Backspace", does: "Delete a wire" },
   { keys: "Click a switch", does: "Toggle it between 0 and 1" },
   { keys: "Esc", does: "Cancel a half-drawn wire" },
   { keys: "Backspace / Delete", does: "Delete the selected part" },

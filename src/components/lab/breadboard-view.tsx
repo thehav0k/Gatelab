@@ -3107,8 +3107,7 @@ function Jumper({
             const onPointerMove = (ev: PointerEvent) => {
               if (toView) {
                 const pt = toView(ev.clientX, ev.clientY);
-                // Snap wire bend channel to breadboard 12px grid
-                const snappedY = Math.round((pt.y - BOARD_OFFSET_Y) / 12) * 12 + BOARD_OFFSET_Y;
+                const snappedY = Math.round(pt.y / 2) * 2;
                 onChannelDrag(snappedY);
               }
             };

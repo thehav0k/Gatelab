@@ -436,4 +436,41 @@ describe("evaluate — sequential feedback memory (SEQ-01 & SEQ-04)", () => {
     expect(step4.values[qOrd]).toBe(L0);
     expect(step4.values[qnOrd]).toBe(L1);
   });
+
+  it("retains flip-flop driven output values and does not drop to Z during combinational loop oscillation (LAB-08)", () => {
+    // A circuit with a D flip-flop (7474) and an oscillating NOT ring
+    const doc = circuit()
+      .ic("U1", "7474")
+      .switch("CLR", 1)
+      .switch("PRE", 0) // Assert active-low PRE -> forces Q=1
+      .switch("D", 0)
+      .clock("CLK", 0)
+      .rail("VCC", "vcc")
+      .rail("GND", "gnd")
+      .wire("VCC", "VCC", "U1", "VCC")
+      .wire("GND", "GND", "U1", "GND")
+      .wire("CLR", "Y", "U1", "1CLR")
+      .wire("PRE", "Y", "U1", "1PRE")
+      .wire("D", "Y", "U1", "1D")
+      .wire("CLK", "Y", "U1", "1CLK")
+      .gate("G_OSC", "not", 1)
+      .wire("G_OSC", "Y", "G_OSC", "A") // oscillating inverter ring
+      .build();
+
+    const { netlist, index } = elaborate(doc);
+    // Vector with CLR=1, PRE=0, D=0
+    const clrIdx = netlist.inputs.findIndex((i) => i.label === "CLR");
+    const preIdx = netlist.inputs.findIndex((i) => i.label === "PRE");
+    const vec = netlist.inputs.map((_, i) => (i === clrIdx ? 1 : i === preIdx ? 0 : 0)) as (0 | 1)[];
+
+    const result = evaluate(netlist, vec);
+    const qNet = index.netOfPin.get(pinKey(ref("U1", "1Q")))!;
+    const qOrd = index.ordinalOf.get(qNet)!;
+
+    // Flip-flop output net must NOT be LZ (high-impedance)
+    expect(result.values[qOrd]).not.toBe(LZ);
+    // Specifically with PRE=0, Q should be driven to L1
+    expect(result.values[qOrd]).toBe(L1);
+  });
 });
+

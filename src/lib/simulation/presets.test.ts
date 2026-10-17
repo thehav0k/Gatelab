@@ -112,3 +112,37 @@ describe("the hazard presets — the lesson, end to end", () => {
     expect(table("hazard")).toEqual(table("hazard-free"));
   });
 });
+
+describe("mux4 truth table — all 64 rows (LAB-07)", () => {
+  it("evaluates correctly according to select lines across all 64 combinations", () => {
+    const preset = PRESETS.find((p) => p.id === "mux4")!;
+    const { netlist } = elaborate(buildPreset(preset));
+    const port = netlist.outputs.find((o) => o.label === "Y")!;
+
+    for (let s1 = 0; s1 <= 1; s1++) {
+      for (let s0 = 0; s0 <= 1; s0++) {
+        for (let d0 = 0; d0 <= 1; d0++) {
+          for (let d1 = 0; d1 <= 1; d1++) {
+            for (let d2 = 0; d2 <= 1; d2++) {
+              for (let d3 = 0; d3 <= 1; d3++) {
+                const valMap: Record<string, 0 | 1> = {
+                  S1: s1 as 0 | 1,
+                  S0: s0 as 0 | 1,
+                  D0: d0 as 0 | 1,
+                  D1: d1 as 0 | 1,
+                  D2: d2 as 0 | 1,
+                  D3: d3 as 0 | 1,
+                };
+                const inputs = netlist.inputs.map((p) => valMap[p.label] ?? (0 as const));
+                const state = evaluate(netlist, inputs);
+                const expected = s1 === 0 ? (s0 === 0 ? d0 : d1) : s0 === 0 ? d2 : d3;
+                expect(state.values[port.net]).toBe(expected);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+});
+

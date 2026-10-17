@@ -33,6 +33,7 @@ import {
 
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useExpected } from "@/stores/spec-store";
+import type { BooleanFunction } from "@/lib/core-engine/types";
 import { cn } from "@/lib/utils";
 
 const WIRE_COLORS = [
@@ -136,13 +137,19 @@ export default function LabPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [deleteSelected, undo, redo, isZenMode, onBoard, setRightSidebarOpen, setLeftSidebarOpen]);
 
+  const [prevExpected, setPrevExpected] = useState<BooleanFunction | null>(null);
+  if (expected && expected !== prevExpected) {
+    setPrevExpected(expected);
+    setRightSidebarUserChoice(true);
+  }
+
   const hint = pendingHole
     ? "Now click a second hole to lay the jumper — or press Escape."
     : pendingPin
       ? "Now click a second pin to complete the wire — or press Escape."
       : onBoard
-        ? "Click a hole, then another, to lay a jumper. Click a wire to select it (Alt+Click or Del to delete). Hover any hole to probe."
-        : "Click a pin, then another, to wire them. Click a switch to toggle it; Alt+Click or Del to delete a wire.";
+        ? "Click a hole, then another, to lay a jumper. Click a wire to select it (Alt+Click or Delete/Backspace to delete a wire). Hover any hole to probe."
+        : "Click a pin, then another, to wire them. Click a switch to toggle it; Alt+Click or Delete/Backspace to delete a wire.";
 
   /**
    * The view switch is BIDIRECTIONAL now.
@@ -461,13 +468,21 @@ export default function LabPage() {
             <span className="sr-only">Redo</span>
           </Button>
 
+          <Separator orientation="vertical" className="hidden h-5 sm:block" />
+
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               if (!hasNodes) return;
+              const nodeCount = Object.keys(useCircuitStore.getState().doc.nodes).length;
+              if (nodeCount > 5 && typeof window !== "undefined") {
+                if (!window.confirm(`Clear circuit with ${nodeCount} parts? This can be undone with Ctrl+Z.`)) {
+                  return;
+                }
+              }
               clear();
-              toast("Circuit cleared", {
+              toast("Circuit cleared — Undo", {
                 action: {
                   label: "Undo",
                   onClick: () => undo(),

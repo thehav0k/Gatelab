@@ -417,7 +417,7 @@ function WireLine({
             rx={5}
             className="fill-card/95 stroke-border"
             strokeWidth={1}
-            filter="drop-shadow(0 4px 6px rgba(0,0,0,0.35))"
+            style={{ filter: "drop-shadow(0 4px 6px rgba(0,0,0,0.35))" }}
           />
 
           <circle cx={11} cy={13} r={4} fill={logicColor(value)} />
@@ -524,7 +524,7 @@ function NodeActionPill({
         rx={5}
         className="fill-card/95 stroke-border"
         strokeWidth={1}
-        filter="drop-shadow(0 3px 5px rgba(0,0,0,0.3))"
+        style={{ filter: "drop-shadow(0 3px 5px rgba(0,0,0,0.3))" }}
       />
       {/* Rotate CW */}
       <g
