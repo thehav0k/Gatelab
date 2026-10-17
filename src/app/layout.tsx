@@ -8,6 +8,8 @@ import { SiteHeader } from "@/components/shared/site-header";
 import { SiteFooter } from "@/components/shared/site-footer";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { PrecisionCursor } from "@/components/shared/precision-cursor";
+import { ReadingProgress } from "@/components/shared/reading-progress";
 import { KEYWORDS, SITE, jsonLd } from "@/lib/site";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
@@ -95,6 +97,8 @@ export default function RootLayout({
         />
         <ThemeProvider>
           <TooltipProvider>
+            <ReadingProgress />
+            <PrecisionCursor />
             <div className="flex min-h-dvh flex-col">
               <SiteHeader />
               <main className="flex flex-1 flex-col">{children}</main>

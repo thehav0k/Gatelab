@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 import {
   Blocks,
   BookOpen,
@@ -181,11 +182,32 @@ const TOC = [
 
 export default function ManualPage() {
   const [query, setQuery] = useState("");
+  const [activeId, setActiveId] = useState<string>("start");
   const q = query.trim().toLowerCase();
 
   const filteredToc = TOC.filter(
     (item) => q === "" || item.label.toLowerCase().includes(q) || item.id.includes(q),
   );
+
+  useEffect(() => {
+    const sections = TOC.map((t) => document.getElementById(t.id)).filter(Boolean) as HTMLElement[];
+    if (sections.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveId(entry.target.id);
+            break;
+          }
+        }
+      },
+      { rootMargin: "-15% 0px -75% 0px" },
+    );
+
+    sections.forEach((s) => observer.observe(s));
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
@@ -237,16 +259,24 @@ export default function ManualPage() {
               />
             </div>
             <ul className="space-y-0.5 text-sm">
-              {filteredToc.map(({ id, label }) => (
-                <li key={id}>
-                  <a
-                    href={`#${id}`}
-                    className="text-muted-foreground hover:text-foreground hover:bg-muted/60 block rounded px-2.5 py-1 text-xs transition-colors"
-                  >
-                    {label}
-                  </a>
-                </li>
-              ))}
+              {filteredToc.map(({ id, label }) => {
+                const isActive = activeId === id;
+                return (
+                  <li key={id}>
+                    <a
+                      href={`#${id}`}
+                      className={cn(
+                        "block rounded px-2.5 py-1 text-xs transition-colors",
+                        isActive
+                          ? "bg-secondary text-secondary-foreground font-medium border-l-2 border-logic-high pl-2"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      {label}
+                    </a>
+                  </li>
+                );
+              })}
               {filteredToc.length === 0 && (
                 <li className="text-muted-foreground px-2 py-2 text-xs italic">
                   No matching topics found

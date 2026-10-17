@@ -130,8 +130,11 @@
 
     /* Animation and interaction motion tokens */
     --motion-fast: 120ms;
+    --motion-ui: 150ms;
     --motion-enter: 180ms;
+    --motion-panel: 220ms;
     --ease-ui: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark {
@@ -272,6 +275,20 @@ button[data-slot="button"]:active:not(:disabled) {
 
 .canvas-pan:active {
   cursor: grabbing;
+}
+
+/* Precision cursor & scroll indicators */
+.reading-progress-bar {
+  transform-origin: 0% 50%;
+  transition: transform 60ms linear;
+}
+
+/* Canvas components hide the custom desktop cursor so native high-precision crosshairs take over */
+.builder-canvas,
+.diagram-viewport,
+.diagram-figure,
+[data-native-cursor] {
+  cursor: crosshair;
 }
 
 @media (prefers-reduced-motion: reduce) {

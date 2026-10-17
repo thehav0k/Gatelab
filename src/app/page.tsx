@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LogicAnimation } from "@/components/shared/logic-animation";
+import { DURATION, EASE } from "@/components/shared/motion";
 
 /**
  * The landing page.
@@ -109,10 +110,17 @@ const FACTS = [
   },
 ] as const;
 
-const rise = (delay: number) => ({
+const heroRise = (delay: number) => ({
   initial: { opacity: 0, y: 14 },
   animate: { opacity: 1, y: 0 },
-  transition: { duration: 0.45, delay, ease: "easeOut" as const },
+  transition: { duration: DURATION.enter, delay, ease: EASE.enter },
+});
+
+const scrollRise = (delay: number = 0) => ({
+  initial: { opacity: 0, y: 16 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, margin: "-40px" },
+  transition: { duration: DURATION.enter, delay, ease: EASE.enter },
 });
 
 export default function Home() {
@@ -120,7 +128,7 @@ export default function Home() {
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
       {/* --- hero -------------------------------------------------------------- */}
       <section className="grid items-center gap-10 md:grid-cols-[1.05fr_1fr]">
-        <motion.div {...rise(0)}>
+        <motion.div {...heroRise(0)}>
           <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
             Boolean algebra, <span className="text-logic-high">wired up.</span>
           </h1>
@@ -178,7 +186,7 @@ export default function Home() {
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {MODULES.map(({ step, href, icon: Icon, title, verb, blurb, points }, i) => (
-            <motion.div key={href} {...rise(0.15 + i * 0.07)} className="flex">
+            <motion.div key={href} {...scrollRise(i * 0.05)} className="flex">
               <Link
                 href={href}
                 className="group hover:border-foreground/20 hover:bg-accent/40 flex w-full flex-col rounded-xl border p-5 transition-colors"
@@ -224,7 +232,7 @@ export default function Home() {
 
       {/* --- the bridge ---------------------------------------------------------- */}
       <motion.section
-        {...rise(0.2)}
+        {...scrollRise(0.05)}
         className="bg-card/40 mt-16 rounded-xl border p-6 sm:mt-20 sm:p-8"
       >
         <div className="flex flex-col gap-6 md:flex-row md:items-center">
@@ -271,7 +279,7 @@ export default function Home() {
 
         <div className="mt-6 grid gap-x-10 gap-y-8 sm:grid-cols-2">
           {FACTS.map(({ icon: Icon, title, body }, i) => (
-            <motion.div key={title} {...rise(0.1 + i * 0.06)}>
+            <motion.div key={title} {...scrollRise(i * 0.05)}>
               <Icon className="text-muted-foreground size-4" />
               <h3 className="mt-2 font-medium">{title}</h3>
               <p className="text-muted-foreground mt-1.5 text-sm text-pretty">{body}</p>
@@ -282,7 +290,7 @@ export default function Home() {
 
       {/* --- close ---------------------------------------------------------------- */}
       <motion.section
-        {...rise(0.1)}
+        {...scrollRise(0.05)}
         className="mt-16 flex flex-wrap items-center justify-between gap-4 rounded-xl border p-6 sm:mt-20"
       >
         <div className="min-w-0">

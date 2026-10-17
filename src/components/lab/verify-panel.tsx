@@ -51,21 +51,21 @@ export function VerifyPanel() {
       </div>
 
       {result.error ? (
-        <Alert>
+        <Alert className="animate-in fade-in-50 duration-200">
           <OctagonX />
           <AlertTitle>Cannot check yet</AlertTitle>
           <AlertDescription>{result.error}</AlertDescription>
         </Alert>
       ) : result.ok ? (
-        <Alert>
+        <Alert className="border-logic-high/50 bg-logic-high/5 animate-in fade-in-50 duration-200">
           <CircleCheck className="text-logic-high" />
-          <AlertTitle>Verified</AlertTitle>
+          <AlertTitle className="text-logic-high">Verified</AlertTitle>
           <AlertDescription>
             Your circuit matches {expected.name} on all {result.rows.length} rows.
           </AlertDescription>
         </Alert>
       ) : (
-        <Alert variant="destructive">
+        <Alert variant="destructive" className="animate-in fade-in-50 duration-200">
           <OctagonX />
           <AlertTitle>
             {result.nonCombinational

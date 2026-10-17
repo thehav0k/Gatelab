@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { CircuitBoard, FileText, Printer, Sparkles, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ export default function ReportPage() {
   const theorySource = useWorkspaceStore((s) => s.theorySource);
   const userSource = specSource || theorySource;
   const [showSample, setShowSample] = useState(false);
+  const [activeId, setActiveId] = useState<string>("section-1");
 
   const activeSource = userSource || (showSample ? SAMPLE_SOURCE : null);
   const doc = useCircuitStore((s) => s.doc);
@@ -49,6 +50,28 @@ export default function ReportPage() {
     const hasCircuit = Object.keys(doc.nodes).length > 0;
     return buildReport(activeSource, hasCircuit && !isSample ? doc : null);
   }, [activeSource, doc, isSample]);
+
+  useEffect(() => {
+    if (!report) return;
+    const ids = ["section-1", "section-2", "section-3", "section-4", "section-5", "section-6"];
+    const elements = ids.map((id) => document.getElementById(id)).filter(Boolean) as HTMLElement[];
+    if (elements.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveId(entry.target.id);
+            break;
+          }
+        }
+      },
+      { rootMargin: "-15% 0px -75% 0px" },
+    );
+
+    elements.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [report]);
 
   if (!report) {
     return (
@@ -133,21 +156,34 @@ export default function ReportPage() {
               Contents
             </p>
             <ul className="space-y-1 text-xs">
-              {SECTIONS.map((s) => (
-                <li key={s.id}>
-                  <a
-                    href={`#${s.id}`}
-                    className="text-muted-foreground hover:text-foreground block rounded px-2 py-1 transition-colors"
-                  >
-                    {s.title}
-                  </a>
-                </li>
-              ))}
+              {SECTIONS.map((s) => {
+                const isActive = activeId === s.id;
+                return (
+                  <li key={s.id}>
+                    <a
+                      href={`#${s.id}`}
+                      className={cn(
+                        "block rounded px-2 py-1 transition-colors",
+                        isActive
+                          ? "bg-secondary text-secondary-foreground font-medium border-l-2 border-logic-high pl-2"
+                          : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                      )}
+                    >
+                      {s.title}
+                    </a>
+                  </li>
+                );
+              })}
               {report.timing && report.timing.glitches.length > 0 && (
                 <li>
                   <a
                     href="#section-6"
-                    className="text-muted-foreground hover:text-foreground block rounded px-2 py-1 transition-colors"
+                    className={cn(
+                      "block rounded px-2 py-1 transition-colors",
+                      activeId === "section-6"
+                        ? "bg-secondary text-secondary-foreground font-medium border-l-2 border-logic-high pl-2"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
+                    )}
                   >
                     6. Timing hazards
                   </a>

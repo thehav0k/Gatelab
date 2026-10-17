@@ -121,6 +121,8 @@ export function BuilderCanvas({
   const [hoverPort, setHoverPort] = useState<Endpoint | null>(null);
   const [armedPort, setArmedPort] = useState<Endpoint | null>(null);
   const [docCursor, setDocCursor] = useState<Point>({ x: 0, y: 0 });
+  const [recentlyPlacedBlock, setRecentlyPlacedBlock] = useState<string | null>(null);
+  const [recentlyCreatedLink, setRecentlyCreatedLink] = useState<string | null>(null);
   const host = useRef<HTMLDivElement | null>(null);
 
   /** A client point in document coordinates. */
@@ -149,6 +151,8 @@ export function BuilderCanvas({
     }
     commit(added.doc);
     select([added.id]);
+    setRecentlyPlacedBlock(added.id);
+    setTimeout(() => setRecentlyPlacedBlock(null), 300);
   };
 
   // --- pointer ---------------------------------------------------------------
@@ -293,6 +297,8 @@ export function BuilderCanvas({
         const result = connect(doc, gesture.from, target);
         if (result.ok) {
           commit(result.doc);
+          setRecentlyCreatedLink(result.id);
+          setTimeout(() => setRecentlyCreatedLink(null), 300);
         } else {
           toast.error(result.reason);
         }
@@ -343,6 +349,8 @@ export function BuilderCanvas({
     }
     commit(result.doc);
     select([added.id]);
+    setRecentlyCreatedLink(result.id);
+    setTimeout(() => setRecentlyCreatedLink(null), 300);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -418,6 +426,8 @@ export function BuilderCanvas({
           armedPort={armedPort}
           doc={doc}
           cursor={docCursor}
+          recentlyPlacedBlock={recentlyPlacedBlock}
+          recentlyCreatedLink={recentlyCreatedLink}
         />
       </div>
 
@@ -441,6 +451,8 @@ function Overlay({
   armedPort,
   doc,
   cursor,
+  recentlyPlacedBlock,
+  recentlyCreatedLink,
 }: {
   placed: PlacedDiagram;
   selection: readonly string[];
@@ -450,6 +462,8 @@ function Overlay({
   armedPort: Endpoint | null;
   doc: EditorDocument;
   cursor: Point;
+  recentlyPlacedBlock: string | null;
+  recentlyCreatedLink: string | null;
 }) {
   const selected = new Set(selection);
   const activeSource = gesture.kind === "wire" ? gesture.from : armedPort;
@@ -528,6 +542,37 @@ function Overlay({
             strokeDasharray="4 3"
           />
         ))}
+
+      {recentlyPlacedBlock &&
+        placed.blocks
+          .filter((b) => b.block.id === recentlyPlacedBlock)
+          .map((b) => (
+            <rect
+              key={`placed.${b.block.id}`}
+              x={b.x - 8}
+              y={b.y - 8}
+              width={b.w + 16}
+              height={b.h + 16}
+              rx={8}
+              fill="none"
+              className="stroke-logic-high transition-opacity duration-300"
+              strokeWidth={2}
+            />
+          ))}
+
+      {recentlyCreatedLink &&
+        placed.links
+          .filter((l) => l.link.id === recentlyCreatedLink)
+          .map((l) => (
+            <polyline
+              key={`link.${l.link.id}`}
+              points={l.points.map((p) => `${p.x},${p.y}`).join(" ")}
+              className="stroke-logic-high transition-opacity duration-300"
+              strokeWidth={3}
+              fill="none"
+              strokeLinejoin="round"
+            />
+          ))}
 
       {wireFrom && (gesture.kind === "wire" || armedPort) && (
         <line
