@@ -1,17 +1,28 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 
 type Mode = "default" | "link" | "drag" | "text" | "hidden";
 
 export function CustomCursor() {
+  const pathname = usePathname();
   const dot = useRef<HTMLDivElement>(null);
   const ring = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Custom cursor only mounts on the marketing home page; canvases maintain 100% native cursors
+    if (pathname !== "/") {
+      document.documentElement.classList.remove("has-custom-cursor");
+      return;
+    }
+
     const fine = window.matchMedia("(pointer: fine) and (hover: hover)").matches;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!fine || reduce) return;
+    if (!fine || reduce) {
+      document.documentElement.classList.remove("has-custom-cursor");
+      return;
+    }
 
     document.documentElement.classList.add("has-custom-cursor");
 
@@ -111,7 +122,9 @@ export function CustomCursor() {
       document.documentElement.removeEventListener("pointerleave", onLeave);
       document.documentElement.removeEventListener("pointerenter", onEnter);
     };
-  }, []);
+  }, [pathname]);
+
+  if (pathname !== "/") return null;
 
   return (
     <div className="cursor-layer pointer-events-none fixed inset-0 z-[9999]" aria-hidden>

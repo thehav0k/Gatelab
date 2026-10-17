@@ -292,12 +292,13 @@ button[data-slot="button"]:active:not(:disabled) {
   transition: transform 60ms linear;
 }
 
-/* Canvas components hide the custom desktop cursor so native high-precision crosshairs take over */
-.builder-canvas,
+/* Canvas components state-aware cursors */
+.builder-canvas {
+  cursor: default;
+}
 .diagram-viewport,
-.diagram-figure,
-[data-native-cursor] {
-  cursor: crosshair;
+.diagram-figure {
+  cursor: grab;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -482,15 +483,22 @@ button[data-slot="button"]:active:not(:disabled) {
   animation: row-shake 240ms var(--ease-out-expo);
 }
 
-/* Custom Cursor */
-.has-custom-cursor:not(.cursor-native) *:not(input):not(textarea) {
-  cursor: none !important;
+/* Custom Cursor (Home page only) */
+.has-custom-cursor {
+  cursor: none;
 }
-
-/* Simulator canvases opt back into native cursors for precision */
+.has-custom-cursor a,
+.has-custom-cursor button,
+.has-custom-cursor [role="button"],
+.has-custom-cursor .ui-button {
+  cursor: none;
+}
+.has-custom-cursor input,
+.has-custom-cursor textarea,
+.has-custom-cursor select,
 .has-custom-cursor [data-native-cursor],
 .has-custom-cursor [data-native-cursor] * {
-  cursor: revert !important;
+  cursor: auto;
 }
 
 .cursor-dot {

@@ -570,7 +570,10 @@ export function BreadboardView() {
         data-native-cursor=""
         viewBox={cam.viewBox}
         preserveAspectRatio="xMidYMid meet"
-        className="bg-card h-full w-full touch-none rounded-md border"
+        className={cn(
+          "bg-card h-full w-full touch-none rounded-md border",
+          pendingStart ? "cursor-crosshair" : "cursor-default",
+        )}
         onWheel={cam.onWheel}
         onPointerDown={(e) => {
           dragStartRef.current = { x: e.clientX, y: e.clientY };

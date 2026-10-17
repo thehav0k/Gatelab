@@ -185,7 +185,10 @@ export function CircuitCanvas() {
         ref={svgRef}
         data-native-cursor=""
         viewBox={cam.viewBox}
-        className="bg-card h-full w-full touch-none rounded-md border"
+        className={cn(
+          "bg-card h-full w-full touch-none rounded-md border",
+          pendingPin ? "cursor-crosshair" : "cursor-default",
+        )}
         onWheel={cam.onWheel}
         onPointerDown={(e) => {
           if (e.target === svgRef.current || (e.target as Element).id === "grid-bg") {
