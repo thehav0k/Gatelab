@@ -16,6 +16,7 @@ import { LogicAnimation } from "@/components/shared/logic-animation";
 import { DURATION, EASE } from "@/components/shared/motion";
 import { TLink as Link } from "@/components/motion/transition-link";
 import { Magnetic } from "@/components/motion/magnetic";
+import { HeroBackground } from "@/components/home/hero-background";
 
 /**
  * The landing page.
@@ -128,7 +129,8 @@ export default function Home() {
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6 sm:py-14">
       {/* --- hero -------------------------------------------------------------- */}
-      <section className="grid items-center gap-10 md:grid-cols-[1.05fr_1fr]">
+      <section className="relative grid items-center gap-10 md:grid-cols-[1.05fr_1fr]">
+        <HeroBackground />
         <motion.div {...heroRise(0)}>
           <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
             Boolean algebra, <span className="text-logic-high">wired up.</span>

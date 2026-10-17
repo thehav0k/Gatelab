@@ -142,7 +142,7 @@
     --dur-slow: 480ms;
     --cursor-x: 50vw;
     --cursor-y: 50vh;
-    --glow-color: oklch(0.75 0.15 200 / 0.18);
+    --hero-glow-intensity: 0.05;
     --signal-1: var(--logic-high);
 }
 
@@ -199,6 +199,7 @@
     --wire-6: oklch(0.70 0.17 260);
     --wire-7: oklch(0.72 0.18 305);
     --wire-8: oklch(0.74 0.17 350);
+    --hero-glow-intensity: 0.08;
 }
 
 @layer base {
@@ -438,7 +439,7 @@ button[data-slot="button"]:active:not(:disabled) {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  .cursor-layer, .bg-trace { display: none !important; }
+  .cursor-layer, .hero-trace-flow { display: none !important; }
 }
 
 @keyframes ripple {
@@ -574,24 +575,40 @@ button[data-slot="button"]:active:not(:disabled) {
   animation: ripple 560ms var(--ease-out-expo) forwards;
 }
 
-/* Ambient Circuit Grid & Spotlight Glow */
-.bg-grid {
-  position: fixed;
-  inset: 0;
-  z-index: -10;
-  pointer-events: none;
-  background-image: radial-gradient(circle at 1px 1px, color-mix(in oklch, var(--foreground) 10%, transparent) 1px, transparent 0);
-  background-size: 28px 28px;
-  mask-image: radial-gradient(600px circle at var(--cursor-x) var(--cursor-y), #000 0%, transparent 70%);
-  -webkit-mask-image: radial-gradient(600px circle at var(--cursor-x) var(--cursor-y), #000 0%, transparent 70%);
+/* Hero Background Layer (Home page only) */
+.hero-radial-glow {
+  background: radial-gradient(
+    circle at 55% 45%,
+    color-mix(in oklch, var(--logic-high) calc(var(--hero-glow-intensity) * 100%), transparent) 0%,
+    transparent 70%
+  );
 }
 
-.bg-glow {
-  position: fixed;
-  inset: 0;
-  z-index: -11;
-  pointer-events: none;
-  background: radial-gradient(500px circle at var(--cursor-x) var(--cursor-y), var(--glow-color), transparent 60%);
+.hero-dot-grid {
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    color-mix(in oklch, var(--foreground) 7%, transparent) 1px,
+    transparent 0
+  );
+  background-size: 24px 24px;
+}
+
+@keyframes hero-trace-flow {
+  to {
+    stroke-dashoffset: -68;
+  }
+}
+
+.hero-trace-flow {
+  animation: hero-trace-flow 18s linear infinite;
+}
+
+.trace-1 { animation-delay: 0s; }
+.trace-2 { animation-delay: -6s; }
+.trace-3 { animation-delay: -12s; }
+
+.hero-bg-paused .hero-trace-flow {
+  animation-play-state: paused !important;
 }
 
 /* View Transitions API */
