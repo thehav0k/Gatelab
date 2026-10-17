@@ -197,6 +197,7 @@ export default function Home() {
               <Link
                 href={href}
                 data-cursor="link"
+                aria-label={`Open stage ${step}: ${title} (${verb})`}
                 className="group hover:border-foreground/20 hover:bg-accent/40 flex w-full flex-col rounded-xl border p-5 transition-[transform,box-shadow,border-color,background-color] duration-200 [transition-timing-function:var(--ease-out-expo)] hover:-translate-y-1 hover:shadow-md active:translate-y-0 active:scale-[0.98] focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
               >
                 <div className="flex items-center gap-2">

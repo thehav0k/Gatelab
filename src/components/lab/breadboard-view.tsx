@@ -2331,10 +2331,20 @@ function SeatedIc({
               style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}
             />
             <g
-              className="cursor-pointer group/pwr"
+              role="button"
+              tabIndex={0}
+              aria-label={`Auto-power ${node.label}`}
+              className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
               onClick={() => {
                 onAutoPower(node.id);
                 toast.success(`Auto-powered ${node.label}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onAutoPower(node.id);
+                  toast.success(`Auto-powered ${node.label}`);
+                }
               }}
             >
               <rect
@@ -2355,10 +2365,20 @@ function SeatedIc({
               </text>
             </g>
             <g
-              className="cursor-pointer group/del"
+              role="button"
+              tabIndex={0}
+              aria-label={`Delete ${node.label}`}
+              className="cursor-pointer group/del focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-destructive rounded"
               onClick={() => {
                 onDelete();
                 toast.info(`Deleted ${node.label}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onDelete();
+                  toast.info(`Deleted ${node.label}`);
+                }
               }}
             >
               <rect
@@ -2460,10 +2480,20 @@ function SeatedIc({
                 style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}
               />
               <g
-                className="cursor-pointer group/pwr"
+                role="button"
+                tabIndex={0}
+                aria-label={`Auto-power ${node.label}`}
+                className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
                 onClick={() => {
                   onAutoPower(node.id);
                   toast.success(`Auto-powered ${node.label}`);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onAutoPower(node.id);
+                    toast.success(`Auto-powered ${node.label}`);
+                  }
                 }}
               >
                 <rect
@@ -2484,10 +2514,20 @@ function SeatedIc({
                 </text>
               </g>
               <g
-                className="cursor-pointer group/del"
+                role="button"
+                tabIndex={0}
+                aria-label={`Delete ${node.label}`}
+                className="cursor-pointer group/del focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-destructive rounded"
                 onClick={() => {
                   onDelete();
                   toast.info(`Deleted ${node.label}`);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onDelete();
+                    toast.info(`Deleted ${node.label}`);
+                  }
                 }}
               >
                 <rect

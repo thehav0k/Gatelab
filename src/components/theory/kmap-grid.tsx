@@ -85,7 +85,7 @@ export function KMapGrid({ fn, layout, loops, highlighted, onHighlight }: Props)
                   "font-mono text-base font-semibold",
                   value === 1 && "fill-logic-high",
                   value === DONT_CARE && "fill-logic-z",
-                  value === 0 && "fill-muted-foreground/40",
+                  value === 0 && "fill-muted-foreground/85 dark:fill-muted-foreground/60",
                 )}
               >
                 {GLYPH[value]}

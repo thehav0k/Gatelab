@@ -39,7 +39,7 @@ export function SiteHeader() {
   return (
     <header className="site-header bg-background/80 print:hidden no-print sticky top-0 z-50 border-b backdrop-blur">
       <div className="flex h-14 items-center gap-2 px-3 sm:gap-6 sm:px-4">
-        <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
+        <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
           <CircuitBoard className="text-logic-high size-5" />
           <span>Gatelab</span>
         </Link>
@@ -51,7 +51,7 @@ export function SiteHeader() {
               href={href}
               aria-current={isActive(href) ? "page" : undefined}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                "rounded-md px-3 py-1.5 text-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 isActive(href)
                   ? "bg-secondary text-secondary-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -65,7 +65,7 @@ export function SiteHeader() {
             href="/manual"
             aria-current={isActive("/manual") ? "page" : undefined}
             className={cn(
-              "rounded-md px-3 py-1.5 text-sm transition-colors",
+              "rounded-md px-3 py-1.5 text-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               isActive("/manual")
                 ? "bg-secondary text-secondary-foreground"
                 : "text-muted-foreground hover:text-foreground",
@@ -121,7 +121,7 @@ export function SiteHeader() {
                     aria-current={isActive(href) ? "page" : undefined}
                     onClick={() => setMenu(false)}
                     className={cn(
-                      "rounded-md px-3 py-2 text-sm transition-colors",
+                      "rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                       isActive(href)
                         ? "bg-secondary text-secondary-foreground font-medium"
                         : "text-muted-foreground hover:text-foreground",
@@ -138,7 +138,7 @@ export function SiteHeader() {
                   aria-current={isActive("/manual") ? "page" : undefined}
                   onClick={() => setMenu(false)}
                   className={cn(
-                    "rounded-md px-3 py-2 text-sm transition-colors",
+                    "rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                     isActive("/manual")
                       ? "bg-secondary text-secondary-foreground font-medium"
                       : "text-muted-foreground hover:text-foreground",
