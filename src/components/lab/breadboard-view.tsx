@@ -119,7 +119,6 @@ export function BreadboardView() {
   const load = useCircuitStore((s) => s.load);
   const toBreadboard = useCircuitStore((s) => s.toBreadboard);
   const toSchematic = useCircuitStore((s) => s.toSchematic);
-  const clearCircuit = useCircuitStore((s) => s.clear);
 
   const [hover, setHover] = useState<HoleRef | null>(null);
   const [hoverSocket, setHoverSocket] = useState<{ point: Point; pin: PinRef; label: string; color: string } | null>(null);
@@ -389,9 +388,7 @@ export function BreadboardView() {
   };
 
   const handleSwitchToSchematic = () => {
-    if (!toSchematic()) {
-      clearCircuit();
-    }
+    toSchematic();
   };
 
   const handleInitTrainerDefaults = () => {

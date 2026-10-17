@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { placeOnBreadboard, seatOnBoard, stripOfPin } from "./place";
+import { placeOnBreadboard, seatOnBoard, stripOfPin, breadboardToSchematic } from "./place";
 import { realize, synthesize, technologyMap, type Strategy } from "./synth";
 import { verify } from "./verify";
 import { elaborate } from "./elaborate";
@@ -13,7 +13,7 @@ import { minimize } from "@/lib/core-engine/minimizer";
 import { arbFunction } from "@/lib/core-engine/testing/arbitraries";
 import type { BooleanFunction } from "@/lib/core-engine/types";
 import { circuit } from "./testing/build";
-import type { CircuitDocument, CircuitNode } from "./netlist";
+import { asNodeId, type CircuitDocument, type CircuitNode } from "./netlist";
 import { getSequentialPreset } from "./sequential-presets";
 
 const fnOf = (src: string): BooleanFunction => {
@@ -402,6 +402,121 @@ describe("seating a part onto a board that is already built", () => {
         expect(unpowered).toHaveLength(0);
       }
     });
+  });
+});
+
+describe("breadboardToSchematic", () => {
+  it("preserves switch and clock states from breadboard", () => {
+    const schematic = circuit()
+      .switch("sw1", 0)
+      .clock("clk1", 0)
+      .led("led1")
+      .wire("sw1", "Q", "led1", "A")
+      .build();
+
+    const { doc: placed } = placeOnBreadboard(schematic, DEFAULT_BOARD, { panelMode: true });
+
+    // Flip switch and clock on breadboard
+    const modifiedBoard = {
+      ...placed,
+      nodes: {
+        ...placed.nodes,
+        sw1: { ...placed.nodes.sw1!, state: 1 as const },
+        clk1: { ...placed.nodes.clk1!, state: 1 as const },
+      },
+    };
+
+    const backToSchematic = breadboardToSchematic(modifiedBoard, schematic);
+    const swNode = backToSchematic.nodes.sw1;
+    expect(swNode?.kind).toBe("switch");
+    if (swNode?.kind === "switch") expect(swNode.state).toBe(1);
+
+    const clkNode = backToSchematic.nodes.clk1;
+    expect(clkNode?.kind).toBe("clock");
+    if (clkNode?.kind === "clock") expect(clkNode.state).toBe(1);
+  });
+
+  it("preserves power rails and IC power connections without UNPOWERED_IC faults", () => {
+    const schematic = circuit().ic("U1", "7400").build();
+    const { doc: placed } = placeOnBreadboard(schematic, DEFAULT_BOARD, {
+      panelMode: true,
+      autoPower: true,
+    });
+
+    const backToSchematic = breadboardToSchematic(placed, schematic);
+    expect(backToSchematic.board).toBeNull();
+
+    // Check power rails exist in schematic
+    const rails = Object.values(backToSchematic.nodes).filter((n) => n.kind === "rail");
+    expect(rails.length).toBeGreaterThanOrEqual(2);
+
+    // Verify simulate & diagnose on the resulting schematic
+    const { index, netlist } = elaborate(backToSchematic);
+    const st = evaluate(netlist, netlist.inputs.map(() => 0 as const));
+    const unpowered = diagnose(backToSchematic, index, netlist, st).filter(
+      (d) => d.code === "UNPOWERED_IC",
+    );
+    expect(unpowered).toHaveLength(0);
+  });
+
+  it("retains authored schematic positions for existing components and places new ones cleanly", () => {
+    const schematic = circuit()
+      .switch("sw1", 0)
+      .ic("U1", "7408")
+      .build();
+
+    // Author custom positions
+    const authoredSchematic = {
+      ...schematic,
+      nodes: {
+        ...schematic.nodes,
+        sw1: { ...schematic.nodes.sw1!, pos: { x: 96, y: 128 } },
+        U1: { ...schematic.nodes.U1!, pos: { x: 320, y: 192 } },
+      },
+    };
+
+    const { doc: placed } = placeOnBreadboard(authoredSchematic, DEFAULT_BOARD, { panelMode: true });
+
+    // Add a new LED while on breadboard
+    const modifiedBoard = {
+      ...placed,
+      nodes: {
+        ...placed.nodes,
+        led_new: { id: asNodeId("led_new"), kind: "led" as const, label: "L1", pos: { x: 0, y: 0 } },
+      },
+    };
+
+    const backToSchematic = breadboardToSchematic(modifiedBoard, authoredSchematic);
+    expect(backToSchematic.nodes.sw1?.pos).toEqual({ x: 96, y: 128 });
+    expect(backToSchematic.nodes.U1?.pos).toEqual({ x: 320, y: 192 });
+    expect(backToSchematic.nodes.led_new?.pos.x).toBeGreaterThan(0);
+    expect(backToSchematic.nodes.led_new?.pos.y).toBeGreaterThan(0);
+  });
+
+  it("derives a complete valid schematic when schematicDoc is null", () => {
+    // Board built from scratch without a previous schematic
+    const scratchDoc = circuit()
+      .switch("A", 1)
+      .ic("U1", "7408")
+      .led("L0")
+      .build();
+
+    const { doc: placed } = placeOnBreadboard(scratchDoc, DEFAULT_BOARD, {
+      panelMode: true,
+      autoPower: true,
+    });
+
+    const derivedSchematic = breadboardToSchematic(placed, null);
+    expect(derivedSchematic.board).toBeNull();
+    expect(Object.keys(derivedSchematic.nodes)).toHaveLength(Object.keys(placed.nodes).length);
+    expect(Object.keys(derivedSchematic.wires).length).toBeGreaterThan(0);
+
+    const { index, netlist } = elaborate(derivedSchematic);
+    const st = evaluate(netlist, netlist.inputs.map(() => 0 as const));
+    const unpowered = diagnose(derivedSchematic, index, netlist, st).filter(
+      (d) => d.code === "UNPOWERED_IC",
+    );
+    expect(unpowered).toHaveLength(0);
   });
 });
 

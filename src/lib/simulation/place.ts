@@ -10,6 +10,7 @@ import {
 import {
   asNodeId,
   asWireId,
+  buildNetIndex,
   holeEnd,
   pinEnd,
   pinKey,
@@ -17,7 +18,9 @@ import {
   type CircuitNode,
   type Endpoint,
   type PinRef,
+  type RailNode,
   type Wire,
+  type WireId,
 } from "./netlist";
 import { getIc } from "./ic-library";
 import { pinsOf } from "./parts";
@@ -363,11 +366,50 @@ export function placeOnBreadboard(
         continue;
       }
 
+      const ensureRailFeed = (railNode: CircuitNode, isVcc: boolean) => {
+        const hasFeed = Object.values(wires).some(
+          (w) =>
+            (w.a.kind === "pin" && w.a.ref.node === railNode.id) ||
+            (w.b.kind === "pin" && w.b.ref.node === railNode.id),
+        );
+        if (!hasFeed) {
+          if (isVcc) {
+            const vccTop: HoleRef = freeHoleOn({ col: 1, row: "+top" }) ?? { col: 1, row: "+top" };
+            const vccBottom: HoleRef = freeHoleOn({ col: 1, row: "+bottom" }) ?? { col: 1, row: "+bottom" };
+            wirePinToHole({ node: railNode.id, pin: "VCC" }, vccTop, "#ef4444");
+            jumper(vccTop, vccBottom, "#ef4444");
+          } else {
+            const gndTop: HoleRef = freeHoleOn({ col: 1, row: "-top" }) ?? { col: 1, row: "-top" };
+            const gndBottom: HoleRef = freeHoleOn({ col: 1, row: "-bottom" }) ?? { col: 1, row: "-bottom" };
+            wirePinToHole({ node: railNode.id, pin: "GND" }, gndBottom, "#3b82f6");
+            jumper(gndTop, gndBottom, "#3b82f6");
+          }
+
+          if (spec.railSegments > 1) {
+            const perSegment = Math.ceil(spec.columns / spec.railSegments);
+            for (let seg = 1; seg < spec.railSegments; seg++) {
+              const cLeft = seg * perSegment;
+              const cRight = cLeft + 1;
+              if (cRight <= spec.columns) {
+                if (isVcc) {
+                  jumper({ col: cLeft, row: "+top" }, { col: cRight, row: "+top" }, "#ef4444");
+                  jumper({ col: cLeft, row: "+bottom" }, { col: cRight, row: "+bottom" }, "#ef4444");
+                } else {
+                  jumper({ col: cLeft, row: "-top" }, { col: cRight, row: "-top" }, "#3b82f6");
+                  jumper({ col: cLeft, row: "-bottom" }, { col: cRight, row: "-bottom" }, "#3b82f6");
+                }
+              }
+            }
+          }
+        }
+      };
+
       // Preserve logic tie-off wires between power rails and signal pins (e.g. 1J/1K tied to VCC)
       if (isRailA && !isRailB && pinA) {
         const railNode = nodes[pinA.node] ?? source.nodes[pinA.node];
         const isVcc = railNode?.kind === "rail" ? railNode.rail === "vcc" : pinA.pin === "VCC";
         const color = wire.color || (isVcc ? "#ef4444" : "#3b82f6");
+        if (railNode) ensureRailFeed(railNode, isVcc);
 
         if (isLedB && pinB) {
           const railRow: BoardRow = isVcc ? "+top" : "-bottom";
@@ -409,6 +451,7 @@ export function placeOnBreadboard(
         const railNode = nodes[pinB.node] ?? source.nodes[pinB.node];
         const isVcc = railNode?.kind === "rail" ? railNode.rail === "vcc" : pinB.pin === "VCC";
         const color = wire.color || (isVcc ? "#ef4444" : "#3b82f6");
+        if (railNode) ensureRailFeed(railNode, isVcc);
 
         if (isLedA && pinA) {
           const railRow: BoardRow = isVcc ? "+top" : "-bottom";
@@ -619,4 +662,281 @@ export function seatOnBoard(
   const next = { ...node, pos: { x: 0, y: 0 } };
   delete (next as { boardRow?: unknown }).boardRow;
   return next;
+}
+
+/**
+ * Convert or synchronize a breadboard circuit back into a schematic document.
+ *
+ * Guarantees:
+ * 1. Switch and clock active states (`state: 0 | 1`) are retained from the breadboard.
+ * 2. Power rails (+5V / GND) and IC power connections (VCC / GND) are preserved into
+ *    the schematic so chips remain powered without UNPOWERED_IC diagnostics or power resets.
+ * 3. All components currently on the board are retained; authored schematic positions
+ *    from `schematicDoc` are preserved, while newly added breadboard parts are assigned
+ *    clean, non-overlapping canvas positions.
+ * 4. Netlist connectivity established by jumpers and strips is preserved as pin-to-pin
+ *    schematic wires. Existing schematic wires are kept if their pins remain shorted.
+ * 5. If `schematicDoc` is null, derives a valid schematic layout and wiring from scratch.
+ */
+export function breadboardToSchematic(
+  boardDoc: CircuitDocument,
+  schematicDoc?: CircuitDocument | null,
+): CircuitDocument {
+  if (!boardDoc.board) return boardDoc;
+
+  const snap8 = (v: number) => Math.round(v / 8) * 8;
+
+  // 1. Synchronize Nodes
+  const schematicNodes = schematicDoc && !schematicDoc.board ? schematicDoc.nodes : {};
+  const resultNodes: Record<string, CircuitNode> = {};
+
+  const unplacedInputs: CircuitNode[] = [];
+  const unplacedOutputs: CircuitNode[] = [];
+  const unplacedRails: CircuitNode[] = [];
+  const unplacedLogic: CircuitNode[] = [];
+
+  for (const [id, node] of Object.entries(boardDoc.nodes)) {
+    const baseNode: CircuitNode = { ...node };
+    delete (baseNode as { boardRow?: unknown }).boardRow;
+
+    const sNode = schematicNodes[id];
+    if (sNode) {
+      resultNodes[id] = {
+        ...baseNode,
+        pos: sNode.pos,
+        ...(sNode.rotation !== undefined ? { rotation: sNode.rotation } : {}),
+        ...(sNode.flipX !== undefined ? { flipX: sNode.flipX } : {}),
+        ...(sNode.flipY !== undefined ? { flipY: sNode.flipY } : {}),
+        ...(node.kind === "switch" || node.kind === "clock" ? { state: node.state } : {}),
+      };
+    } else {
+      if (node.kind === "switch" || node.kind === "clock") {
+        unplacedInputs.push(baseNode);
+      } else if (node.kind === "led") {
+        unplacedOutputs.push(baseNode);
+      } else if (node.kind === "rail") {
+        unplacedRails.push(baseNode);
+      } else {
+        unplacedLogic.push(baseNode);
+      }
+    }
+  }
+
+  // Place unplaced inputs (switches, clocks) on the left (x = 40)
+  const inputNodes = Object.values(resultNodes).filter(
+    (n) => n.kind === "switch" || n.kind === "clock",
+  );
+  let nextInputY =
+    inputNodes.length > 0
+      ? Math.max(...inputNodes.map((n) => n.pos.y)) + 72
+      : 64;
+  for (const node of unplacedInputs) {
+    resultNodes[node.id] = {
+      ...node,
+      pos: { x: 40, y: snap8(nextInputY) },
+    };
+    nextInputY += 72;
+  }
+
+  // Place unplaced rails (+5V, GND) at top
+  const railNodes = Object.values(resultNodes).filter((n) => n.kind === "rail");
+  let nextRailX =
+    railNodes.length > 0
+      ? Math.max(...railNodes.map((n) => n.pos.x)) + 80
+      : 240;
+  for (const node of unplacedRails) {
+    resultNodes[node.id] = {
+      ...node,
+      pos: { x: snap8(nextRailX), y: 32 },
+    };
+    nextRailX += 80;
+  }
+
+  // Place unplaced logic (ICs, gates) in center
+  const logicNodes = Object.values(resultNodes).filter(
+    (n) => n.kind === "ic" || n.kind === "gate",
+  );
+  let logicCount = logicNodes.length;
+  for (const node of unplacedLogic) {
+    const col = logicCount % 2;
+    const row = Math.floor(logicCount / 2);
+    const x = snap8(224 + col * 240);
+    const y = snap8(120 + row * 168);
+    resultNodes[node.id] = {
+      ...node,
+      pos: { x, y },
+    };
+    logicCount++;
+  }
+
+  // Place unplaced outputs (LEDs) on right
+  const allCurrentNodes = Object.values(resultNodes);
+  const maxX =
+    allCurrentNodes.length > 0
+      ? Math.max(...allCurrentNodes.map((n) => n.pos.x))
+      : 500;
+  const ledX = snap8(Math.max(680, maxX + 160));
+  const existingLeds = Object.values(resultNodes).filter((n) => n.kind === "led");
+  let nextLedY =
+    existingLeds.length > 0
+      ? Math.max(...existingLeds.map((n) => n.pos.y)) + 72
+      : 64;
+  for (const node of unplacedOutputs) {
+    resultNodes[node.id] = {
+      ...node,
+      pos: { x: ledX, y: snap8(nextLedY) },
+    };
+    nextLedY += 72;
+  }
+
+  // 2. Netlist & Wires
+  const netIndex = buildNetIndex(boardDoc, pinsOf);
+
+  const parent = new Map<string, string>();
+  const addPin = (k: string) => {
+    if (!parent.has(k)) parent.set(k, k);
+  };
+  const findPin = (k: string): string => {
+    let root = k;
+    while (parent.get(root) && parent.get(root) !== root) {
+      root = parent.get(root)!;
+    }
+    let cur = k;
+    while (parent.get(cur) && parent.get(cur) !== root) {
+      const next = parent.get(cur)!;
+      parent.set(cur, root);
+      cur = next;
+    }
+    return root;
+  };
+  const unionPins = (a: string, b: string) => {
+    addPin(a);
+    addPin(b);
+    const ra = findPin(a);
+    const rb = findPin(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+
+  const resultWires: Record<string, Wire> = {};
+  const existingIds = new Set<string>();
+
+  // Preserve existing schematic wires if both pins are still shorted on the board
+  if (schematicDoc && !schematicDoc.board && schematicDoc.wires) {
+    for (const wire of Object.values(schematicDoc.wires)) {
+      if (wire.a.kind !== "pin" || wire.b.kind !== "pin") continue;
+      const refA = wire.a.ref;
+      const refB = wire.b.ref;
+      if (!resultNodes[refA.node] || !resultNodes[refB.node]) continue;
+
+      const keyA = pinKey(refA);
+      const keyB = pinKey(refB);
+      const netA = netIndex.netOfPin.get(keyA);
+      const netB = netIndex.netOfPin.get(keyB);
+
+      if (netA !== undefined && netA === netB) {
+        resultWires[wire.id] = wire;
+        existingIds.add(wire.id);
+        unionPins(keyA, keyB);
+      }
+    }
+  }
+
+  let wireCounter = 1;
+  const genWireId = (): WireId => {
+    while (existingIds.has(`w_s${wireCounter}`)) {
+      wireCounter++;
+    }
+    const id = asWireId(`w_s${wireCounter++}`);
+    existingIds.add(id);
+    return id;
+  };
+
+  // Add missing wires for all nets on the breadboard
+  for (const net of netIndex.nets) {
+    const validPins = net.pins.filter((p) => {
+      const node = resultNodes[p.node];
+      if (!node) return false;
+      return pinsOf(node).some((spec) => spec.name === p.pin);
+    });
+
+    if (validPins.length < 2) continue;
+
+    for (const p of validPins) {
+      addPin(pinKey(p));
+    }
+
+    const compMap = new Map<string, PinRef[]>();
+    for (const p of validPins) {
+      const root = findPin(pinKey(p));
+      const list = compMap.get(root);
+      if (list) list.push(p);
+      else compMap.set(root, [p]);
+    }
+
+    if (compMap.size <= 1) continue;
+
+    // Pick anchor pin
+    let anchorPin: PinRef | null = null;
+    if (net.kind === "vcc") {
+      anchorPin =
+        validPins.find(
+          (p) =>
+            resultNodes[p.node]?.kind === "rail" &&
+            (resultNodes[p.node] as RailNode).rail === "vcc",
+        ) ?? null;
+    } else if (net.kind === "gnd") {
+      anchorPin =
+        validPins.find(
+          (p) =>
+            resultNodes[p.node]?.kind === "rail" &&
+            (resultNodes[p.node] as RailNode).rail === "gnd",
+        ) ?? null;
+    }
+
+    if (!anchorPin) {
+      anchorPin =
+        validPins.find((p) => {
+          const spec = pinsOf(resultNodes[p.node]!).find((s) => s.name === p.pin);
+          return spec?.dir === "out" || spec?.dir === "pwr" || spec?.dir === "gnd";
+        }) ?? validPins[0]!;
+    }
+
+    const anchorKey = pinKey(anchorPin);
+    const anchorRoot = findPin(anchorKey);
+
+    let netColor: string | undefined = undefined;
+    if (net.kind === "vcc" || anchorPin.pin === "VCC") {
+      netColor = "#ef4444";
+    } else if (net.kind === "gnd" || anchorPin.pin === "GND") {
+      netColor = "#3b82f6";
+    } else if (resultNodes[anchorPin.node]?.kind === "clock") {
+      netColor = "#f59e0b";
+    }
+
+    for (const [compRoot, pinsInComp] of compMap.entries()) {
+      if (compRoot === anchorRoot) continue;
+
+      const targetPin =
+        pinsInComp.find((p) => {
+          const spec = pinsOf(resultNodes[p.node]!).find((s) => s.name === p.pin);
+          return spec?.dir === "in";
+        }) ?? pinsInComp[0]!;
+
+      const wireId = genWireId();
+      resultWires[wireId] = {
+        id: wireId,
+        a: pinEnd(anchorPin),
+        b: pinEnd(targetPin),
+        ...(netColor ? { color: netColor } : {}),
+      };
+
+      unionPins(anchorKey, pinKey(targetPin));
+    }
+  }
+
+  return {
+    nodes: resultNodes,
+    wires: resultWires,
+    board: null,
+  };
 }

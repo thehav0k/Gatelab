@@ -197,18 +197,9 @@ export default function LabPage() {
     }
 
     if (v === "schematic" && onBoard) {
-      if (!toSchematic()) {
-        if (!hasNodes) {
-          useCircuitStore.getState().clear();
-          return;
-        }
-        toast.error("This board was not seated from a schematic", {
-          description: "There is no layout to go back to.",
-        });
-        return;
-      }
+      toSchematic();
       toast.info("Back to the schematic", {
-        description: "Jumpers you added on the board are not carried back.",
+        description: "Connections and component states are preserved.",
       });
     }
   };

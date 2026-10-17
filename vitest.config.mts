@@ -1,12 +1,16 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  resolve: { tsconfigPaths: true },
+  resolve: {
+    alias: {
+      "@": new URL("./src", import.meta.url).pathname,
+    },
+  },
   test: {
     // Node only. src/lib is pure by construction (see eslint.config.mjs), so the
     // engine suite needs no jsdom and no React plugin — it runs in milliseconds.
     environment: "node",
-    include: ["src/lib/**/*.test.ts"],
+    include: ["src/lib/**/*.test.ts", "src/stores/**/*.test.ts"],
     coverage: {
       provider: "v8",
       include: ["src/lib/**"],
