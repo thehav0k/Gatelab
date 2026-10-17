@@ -11,6 +11,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { CustomCursor } from "@/components/motion/custom-cursor";
 import { MotionBackground } from "@/components/motion/motion-background";
 import { ReadingProgress } from "@/components/shared/reading-progress";
+import { TermsAndSystemGate } from "@/components/legal/terms-and-system-gate";
 import { SITE, jsonLd } from "@/lib/site";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
@@ -75,6 +76,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#020617",
 };
 
 export default function RootLayout({
@@ -100,6 +102,7 @@ export default function RootLayout({
             <ReadingProgress />
             <CustomCursor />
             <MotionBackground />
+            <TermsAndSystemGate />
             <div className="flex min-h-dvh flex-col">
               <SiteHeader />
               <main className="flex flex-1 flex-col">{children}</main>
@@ -113,3 +116,4 @@ export default function RootLayout({
     </html>
   );
 }
+

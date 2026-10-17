@@ -4,24 +4,31 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
+  AlertTriangle,
   Blocks,
   BookOpen,
   CircuitBoard,
   Cpu,
+  Eye,
   Keyboard,
+  Layers,
   MessageSquare,
   Network,
   Search,
+  ShieldCheck,
   Sigma,
+  Sparkles,
   TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FeedbackDialog } from "@/components/shared/feedback-dialog";
 import { GithubIcon } from "@/components/shared/github-icon";
 import { GateReference, LogicValues } from "@/components/manual/gate-reference";
 import { IcReference } from "@/components/manual/ic-reference";
+import { QuickstartTutorial } from "@/components/quickstart/quickstart-tutorial";
+import { openTermsModal } from "@/components/legal/terms-and-system-gate";
 import { CONTACT } from "@/lib/feedback";
 import { CONSTRAINTS } from "@/lib/simulation/constraints";
 
@@ -51,6 +58,101 @@ const NOTATION = [
     note: "rows you are free to choose",
   },
   { write: "F(A,B,C) = ΠM(0,2)", means: "product of maxterms", note: "the rows where F = 0" },
+] as const;
+
+/**
+ * The 17 74xx TTL integrated circuits, their packages, power supplies,
+ * and datasheet exceptions / bench traps.
+ */
+const TTL_EXCEPTIONS_CATALOG = [
+  {
+    part: "7400 / 7408 / 7432 / 7486",
+    fn: "Quad 2-in NAND / AND / OR / XOR",
+    pkg: "DIP-14",
+    pwr: "Pin 14 / Pin 7",
+    trap: "Standard pinout: Gates 1–4 inputs and outputs run in order (1,2→3; 4,5→6; 9,10→8; 12,13→11).",
+    highlight: false,
+  },
+  {
+    part: "7402",
+    fn: "Quad 2-in NOR",
+    pkg: "DIP-14",
+    pwr: "Pin 14 / Pin 7",
+    trap: "Output-First Trap: Left half puts outputs on Pins 1 and 4! Gate 1 is inputs (2, 3) → Pin 1 (1Y); Gate 2 is inputs (5, 6) → Pin 4 (2Y). Right half returns to Y on pins 10 and 13.",
+    highlight: "amber",
+  },
+  {
+    part: "7404",
+    fn: "Hex Inverter (NOT)",
+    pkg: "DIP-14",
+    pwr: "Pin 14 / Pin 7",
+    trap: "Right-Half Reversed: Left side is 1→2, 3→4, 5→6. Right side reverses direction: Pin 8 is 4Y (input on Pin 9 = 4A), Pin 10 is 5Y, Pin 12 is 6Y.",
+    highlight: "amber",
+  },
+  {
+    part: "7410 / 7411 / 7427",
+    fn: "Triple 3-in NAND / AND / NOR",
+    pkg: "DIP-14",
+    pwr: "Pin 14 / Pin 7",
+    trap: "Wrapped Gate 1: Gate 1's pins wrap across the notch: inputs on Pins 1, 2, and 13 → output 1Y on Pin 12! Gate 2 is (3,4,5→6); Gate 3 is (9,10,11→8).",
+    highlight: "amber",
+  },
+  {
+    part: "7420 / 7421",
+    fn: "Dual 4-in NAND / AND",
+    pkg: "DIP-14",
+    pwr: "Pin 14 / Pin 7",
+    trap: "NC Pins: Pins 3 and 11 are No Connect (NC). Gate 1 is (1,2,4,5→6); Gate 2 is (9,10,12,13→8).",
+    highlight: false,
+  },
+  {
+    part: "7430",
+    fn: "8-input NAND",
+    pkg: "DIP-14",
+    pwr: "Pin 14 / Pin 7",
+    trap: "NC Pins & Opposite Output: Pins 9, 10, and 13 are NC. Eight inputs on Pins 1,2,3,4,5,6,11,12. The single output 1Y sits on Pin 8 directly opposite GND.",
+    highlight: false,
+  },
+  {
+    part: "7474",
+    fn: "Dual D Flip-Flop (+Edge)",
+    pkg: "DIP-14",
+    pwr: "Pin 14 / Pin 7",
+    trap: "Active-low async CLR (pins 1, 13) and PRE (pins 4, 10) must be tied to +5V (VCC) for normal clocking. Powers up at X (unknown) until CLR is pulsed low.",
+    highlight: false,
+  },
+  {
+    part: "74LS76A",
+    fn: "Dual JK Flip-Flop (-Edge) with PRE/CLR",
+    pkg: "DIP-16",
+    pwr: "Pin 5 / Pin 13",
+    trap: "Non-Corner Center Supply Trap: 16-pin package where VCC is Pin 5 and GND is Pin 13 (Pin 16 is 1K, Pin 8 is 2CLR). Wiring it like a 7474 leaves it unpowered!",
+    highlight: "red",
+  },
+  {
+    part: "74LS107A",
+    fn: "Dual JK Flip-Flop (-Edge)",
+    pkg: "DIP-14",
+    pwr: "Pin 14 / Pin 7",
+    trap: "Clear only (no preset). Classic ripple-counter part: tie J and K to +5V and pulse CLK. Pin 1 is 1J, Pin 7 is GND, Pin 14 is VCC.",
+    highlight: false,
+  },
+  {
+    part: "74175",
+    fn: "Quad D Register (+Edge)",
+    pkg: "DIP-16",
+    pwr: "Pin 16 / Pin 8",
+    trap: "16-pin corner supply (Pin 16 = VCC, Pin 8 = GND). Four D flip-flops sharing common CLK (Pin 9) and common active-low CLR (Pin 1). Both Q and Q̄ outputs.",
+    highlight: false,
+  },
+  {
+    part: "74174",
+    fn: "Hex D Register (+Edge)",
+    pkg: "DIP-16",
+    pwr: "Pin 16 / Pin 8",
+    trap: "16-pin corner supply (Pin 16 = VCC, Pin 8 = GND). Six D flip-flops sharing common CLK (Pin 9) and common active-low CLR (Pin 1). True Q outputs only (no Q̄).",
+    highlight: false,
+  },
 ] as const;
 
 /**
@@ -90,13 +192,13 @@ const FLIP_FLOPS = [
 const FAULTS = [
   {
     code: "UNPOWERED_IC",
-    what: "A chip has no +5V on pin 14, or no GND on pin 7.",
-    fix: "Wire the rails. An unpowered TTL chip drives nothing — its outputs sit at Z, and the whole downstream circuit floats. This is the single most common bench mistake, and it is why the fault exists.",
+    what: "A chip has no +5V on pin 14 (or pin 5/16), or no GND on pin 7 (or pin 13/8).",
+    fix: "Wire the rails or click Auto-Power. An unpowered TTL chip drives nothing — its outputs sit at Z, and the whole downstream circuit floats. This is the single most common bench mistake, and it is why the fault exists.",
   },
   {
     code: "FLOATING_INPUT",
     what: "A gate input is connected to nothing.",
-    fix: "A real TTL input left floating drifts HIGH, unreliably. Gatelab refuses to guess: it propagates X. Tie the input to +5V or GND, or wire it to something.",
+    fix: "A real TTL input left floating drifts HIGH, unreliably. Gatelab refuses to guess: it propagates X. Tie the input to +5V or GND, or wire it to a valid signal source.",
   },
   {
     code: "OUTPUT_SHORT",
@@ -111,7 +213,7 @@ const FAULTS = [
   {
     code: "RAIL_SHORT",
     what: "+5V and GND are on the same net.",
-    fix: "Dead short across the supply. Find the jumper that bridges the two rails.",
+    fix: "Dead short across the power supply. Find and delete the jumper that bridges the positive and negative rails.",
   },
   {
     code: "OSCILLATION",
@@ -126,24 +228,29 @@ const FAULTS = [
 ] as const;
 
 const SHORTCUTS = [
-  { keys: "Click pin, click pin", does: "Wire two pins together" },
-  { keys: "Alt+Click or Delete/Backspace", does: "Delete a wire" },
-  { keys: "Click a switch / Space", does: "Toggle it between 0 and 1" },
-  { keys: "Tab / Shift+Tab", does: "Focus next / previous component or control" },
-  { keys: "Space / Enter", does: "Select focused part or toggle focused switch" },
-  { keys: "R / Shift+R", does: "Rotate selected gate 90° CW / CCW" },
-  { keys: "H / V", does: "Flip selected gate horizontally / vertically" },
-  { keys: "Esc", does: "Cancel wire drawing or exit Zen mode" },
-  { keys: "Backspace / Delete", does: "Delete the selected part" },
-  { keys: "⌘Z / Ctrl-Z", does: "Undo" },
-  { keys: "⇧⌘Z / Ctrl-Shift-Z", does: "Redo" },
+  { keys: "Click wire", does: "Select wire (opens HUD for color/delete & exposes draggable routing handle)" },
+  { keys: "Alt+Click wire", does: "Delete wire instantly" },
+  { keys: "Delete / Backspace", does: "Delete selected wire or component" },
+  { keys: "Drag white handle", does: "Adjust wire horizontal Manhattan routing channel (snappedY)" },
+  { keys: "Click pin, click pin", does: "Wire two pins or breadboard holes together" },
+  { keys: "Click switch lever / Space", does: "Toggle logic switch between 0 (LOW) and 1 (HIGH)" },
+  { keys: "PULSE button", does: "Fire a complete 0 → 1 → 0 clock pulse (advances rising & falling edge ICs)" },
+  { keys: "CLR button", does: "Reset sequential flip-flops from power-up X to 0" },
+  { keys: "X", does: "Toggle DIP internal gate / flip-flop X-Ray view on breadboard" },
+  { keys: "A", does: "Toggle unrouted schematic Airwires rat's nest guide" },
   { keys: "F", does: "Toggle Zen fullscreen mode" },
   { keys: "[ or B", does: "Toggle Parts palette sidebar" },
   { keys: "]", does: "Toggle Faults & Verification inspector" },
-  { keys: "A", does: "Toggle Airwires guide on breadboard" },
-  { keys: "X", does: "Toggle DIP-14 internal gate X-Ray view" },
-  { keys: "Scroll / pinch", does: "Zoom the canvas" },
-  { keys: "Drag the background", does: "Pan the canvas" },
+  { keys: "R / Shift+R", does: "Rotate selected gate or IC 90° CW / CCW" },
+  { keys: "H / V", does: "Flip selected gate horizontally / vertically" },
+  { keys: "G / Shift+G", does: "Group selection into reusable IC / Ungroup (Diagram workbench)" },
+  { keys: "Esc", does: "Cancel wire drawing or clear active selection" },
+  { keys: "Tab / Shift+Tab", does: "Focus next / previous component or control" },
+  { keys: "Space / Enter", does: "Select focused part or toggle focused switch" },
+  { keys: "⌘Z / Ctrl-Z", does: "Undo" },
+  { keys: "⇧⌘Z / Ctrl-Shift-Z", does: "Redo" },
+  { keys: "Scroll / pinch", does: "Zoom canvas (anchored to cursor or touch center)" },
+  { keys: "Drag background", does: "Pan canvas with velocity inertia" },
 ] as const;
 
 function Section({
@@ -169,6 +276,7 @@ function Section({
 }
 
 const TOC = [
+  { id: "quickstart", label: "Interactive quickstart" },
   { id: "start", label: "Start here" },
   { id: "writing", label: "Writing a function" },
   { id: "theory", label: "The theory workspace" },
@@ -177,20 +285,21 @@ const TOC = [
   { id: "lab", label: "The lab" },
   { id: "blocks", label: "Presets & building blocks" },
   { id: "gates", label: "Logic gates" },
-  { id: "chips", label: "74xx chips" },
-  { id: "breadboard", label: "The breadboard" },
+  { id: "chips", label: "74xx chips & exceptions" },
+  { id: "breadboard", label: "Trainer chassis & breadboard" },
   { id: "sequential", label: "Flip-flops & counters" },
   { id: "faults", label: "Faults" },
   { id: "verify", label: "Verification" },
   { id: "timing", label: "Timing and hazards" },
   { id: "report", label: "The report" },
-  { id: "keys", label: "Shortcuts" },
+  { id: "keys", label: "Shortcuts & gestures" },
+  { id: "terms", label: "Terms & system check" },
   { id: "contact", label: "Contact" },
 ] as const;
 
 export default function ManualPage() {
   const [query, setQuery] = useState("");
-  const [activeId, setActiveId] = useState<string>("start");
+  const [activeId, setActiveId] = useState<string>("quickstart");
   const q = query.trim().toLowerCase();
 
   const filteredToc = TOC.filter(
@@ -295,6 +404,16 @@ export default function ManualPage() {
         </nav>
 
         <div className="min-w-0 space-y-10">
+          <Section id="quickstart" icon={Sparkles} title="Interactive Visual Quickstart">
+            <p className="text-muted-foreground">
+              New to GateLab or exploring its digital logic design pipeline? Follow this 4-step tutorial
+              demonstrating how algebraic derivation connects directly to 74xx breadboard construction and $2^n$ verification.
+            </p>
+            <div className="pt-2">
+              <QuickstartTutorial />
+            </div>
+          </Section>
+
           <Section id="start" icon={CircuitBoard} title="Start here">
             <p>
               The whole product is one loop, and it is worth doing once end to end
@@ -349,103 +468,72 @@ export default function ManualPage() {
                       <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
                         {write}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">{means}</td>
-                      <td className="text-muted-foreground px-3 py-2 text-xs">{note}</td>
+                      <td className="px-3 py-2">{means}</td>
+                      <td className="text-muted-foreground px-3 py-2 text-xs">
+                        {note}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <p>
-              Precedence runs <strong>NOT → AND → XOR → OR</strong>, so{" "}
-              <code>A + BC</code> is <code>A + (B·C)</code>. Parenthesize when in
-              doubt.
-            </p>
             <p className="text-muted-foreground">
-              A variable is one letter, optionally followed by digits (<code>A</code>,{" "}
-              <code>B2</code>). It cannot be a word — because juxtaposition means AND,{" "}
-              <code>Cin</code>{" "}
-              would have to parse as C·i·n. The full adder&apos;s
-              carry-in is just <code>C</code>.
+              Juxtaposition is AND, so <code>AB</code> is <code>A AND B</code>. An
+              apostrophe is NOT, so <code>A&apos;</code> is <code>NOT A</code>.
             </p>
           </Section>
 
-          <Section id="theory" icon={Sigma} title="The theory workspace">
+          <Section id="theory" icon={BookOpen} title="The theory workspace">
             <p>
-              One document, six views. The expression box and the minimal form stay
-              on screen; the tabs below are different ways of looking at the same
-              function.
+              Type an expression at the top, or click outputs in the truth table or
+              K-map. Every view updates as you type:
             </p>
             <ul className="ml-4 list-disc space-y-1.5">
               <li>
-                <strong>How it was derived</strong> — the reduction spelled out the way
-                you would work it on paper: read the 1-rows, write the canonical SOP,
-                combine terms differing in one variable, collect the prime implicants,
-                find the essential ones, cover the rest.
+                <strong>Truth table</strong> — click any output bit to cycle it through
+                0, 1 and X (don&apos;t care).
               </li>
               <li>
-                <strong>Truth table</strong> — <em>editable</em>. Click an output to
-                cycle it 0 → 1 → X (don&apos;t-care), click a variable name to rename
-                it, use ± to change the variable count. Every edit rewrites the
-                expression above. Start from a blank table and just fill in the outputs
-                — the equation derives itself.
+                <strong>K-map</strong> — rendered with the prime implicants looped. The
+                loops are not re-derived for the drawing; they are the Quine–McCluskey
+                result, drawn.
               </li>
               <li>
-                <strong>K-map</strong> — the loops are not a second algorithm&apos;s
-                opinion. They <em>are</em> the prime implicants the tabular method
-                found, drawn onto the grid. Wrapping loops really do wrap.
+                <strong>Derivation</strong> — Quine–McCluskey step by step: grouping by
+                number of 1s, matching terms that differ by one bit, and the prime
+                implicant chart that picks the essential ones.
               </li>
               <li>
-                <strong>Tabular method</strong> — every intermediate Quine–McCluskey
-                column, the prime-implicant chart, and Petrick&apos;s method when the
-                chart is cyclic.
-              </li>
-              <li>
-                <strong>Circuit</strong> — the minimal expression drawn as a gate
-                diagram, then the same logic mapped onto real 74xx chips, and finally
-                a <em>wiring list</em>: every connection in datasheet language, like
-                <code> U1 pin 2 (1Y) → U2 pin 1 (1A)</code>. That last table is the
-                thing you actually transcribe onto a breadboard — which pin number
-                goes to which pin number — and it is derived from the same net index
-                the simulator uses, so it cannot disagree with it.
-              </li>
-              <li>
-                <Link href="/theory?tab=build" className="underline underline-offset-4">
-                  <strong>Build it</strong>
-                </Link>{" "}
-                — drops the whole circuit onto the lab bench.
+                <strong>Canonical forms</strong> — minterm list (Σm), maxterm list
+                (ΠM), and the numeric vectors.
               </li>
             </ul>
-            <p className="text-muted-foreground">
-              Don&apos;t-cares are merge fuel: they let cubes grow, but they are never
-              rows you must cover. That is what makes them worth so much.
-            </p>
           </Section>
 
-          <Section id="rules" icon={TriangleAlert} title="Gate rules">
+          <Section id="rules" icon={CircuitBoard} title="Gate rules">
             <p>
-              “Implement this with NAND only” is the exercise, not a lint. Pick a rule
-              and the palette narrows to match — you cannot place what you may not use
-              — and the synthesizer is steered by it, so <em>Build it</em> obeys the
-              rule instead of apologizing for breaking it.
+              &ldquo;Implement this using NAND only&rdquo; is not a suggestion — in a
+              digital logic course it is the whole exercise. So the rule is chosen
+              before you build:
             </p>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="space-y-2">
               {CONSTRAINTS.map((c) => (
-                <div key={c.id} className="rounded-md border p-2.5">
-                  <p className="text-sm font-medium">{c.name}</p>
-                  <p className="text-muted-foreground mt-0.5 text-xs text-pretty">
-                    {c.description}
-                  </p>
+                <div key={c.id} className="rounded-md border p-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{c.name}</span>
+                    <span className="text-muted-foreground font-mono text-xs">
+                      {c.parts.join(", ")}
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground mt-1 text-xs">{c.description}</p>
                 </div>
               ))}
             </div>
             <p>
-              You can also build a custom rule from any set of gates. Some of them are{" "}
-              <strong>impossible</strong>, and Gatelab will say so and refuse rather
-              than build something that quietly breaks the rule. XOR alone can never
-              make an AND — XOR is affine, affine functions compose to affine
-              functions, and AND is not affine. The verdict comes from Post&apos;s
-              criterion, and it tells you <em>which</em> property traps you.
+              When a rule is active, the palette narrows to match — you cannot place
+              gates you are not allowed to use — and the synthesizer is steered by it,
+              so <em>Build this circuit</em> obeys the rule rather than apologizing
+              for breaking it.
             </p>
             <p className="text-muted-foreground">
               The power rails matter here. A constant 1 is not 0-preserving, so having
@@ -478,80 +566,6 @@ export default function ManualPage() {
               straightening one of its wires is now pulled the rest of the way, and a
               whole bus of them agrees on one shift.
             </p>
-            <p className="text-muted-foreground">
-              If you would rather be exact, the properties panel has the block&apos;s{" "}
-              <strong>X</strong> and <strong>Y</strong> as numbers you can type into —
-              which is also the quickest way to put four blocks on the same line or
-              space a row evenly.
-            </p>
-
-            <h3 className="pt-1 text-sm font-medium">Junctions</h3>
-            <p>
-              Drag a wire out of a pin and let go over empty space: you get a{" "}
-              <strong>junction</strong> there, wired up. It is a dot with a single pin,
-              so a wire can carry on from it — which is how you join two points that
-              are not pins, fan a signal out at a corner, or route a long wire the way
-              you want it rather than the way the router chose.
-            </p>
-            <p className="text-muted-foreground">
-              A junction you have not selected is a place to start a wire; one you have
-              already selected is a thing to drag. Click it once, then move it.
-            </p>
-
-            <h3 className="pt-1 text-sm font-medium">Blocks are parametric</h3>
-            <p>
-              A decoder is not one block — a decoder with three address lines and an
-              active-low enable is. Select a placed block and the panel on the right
-              changes what it <em>is</em>: width, number of address or select lines,
-              enables, clears, active-low pins, RAM or ROM. Narrowing a block really
-              does delete pins, and the tool tells you how many wires went with them.
-            </p>
-            <p>
-              When the palette has not got what you need, <strong>Custom block</strong>{" "}
-              is a box whose title and pin lists you type in — a comma-separated list
-              per side, with a trailing apostrophe for an active-low pin.
-            </p>
-
-            <h3 className="pt-1 text-sm font-medium">Starting from an equation</h3>
-            <p>
-              The <strong>Equation</strong> tab takes the function however your
-              question gave it to you — an expression, a minterm list, or the column
-              of output bits — and builds a circuit for it:
-            </p>
-            <pre className="bg-muted/40 overflow-x-auto rounded-md border p-3 font-mono text-xs">
-{`F(A,B,C) = A'B + BC'
-F(A,B,C) = Σm(1,3,5) + d(7)
-F(A,B,C) = 01101001`}
-            </pre>
-            <p>
-              One function per line, and the first line&apos;s variables carry to the
-              rest — so <code>f1</code>, <code>f2</code> and <code>f3</code> over the
-              same inputs is three lines, and they share one decoder.
-            </p>
-            <p>
-              Six implementations, and they are not styles — they are different
-              answers, and which one is right depends on what you are allowed to use:
-              gates, NAND-only, NOR-only, a decoder with collecting OR gates, one
-              multiplexer by Shannon expansion, or a reduced tree of 2-to-1
-              multiplexers. What lands on the canvas is ordinary blocks and ordinary
-              wires; drag them, re-parameterise them, group them.
-            </p>
-
-            <h3 className="pt-1 text-sm font-medium">Auto-wiring a block you placed</h3>
-            <p>
-              When the question dictates the component — &ldquo;implement f using a
-              3-to-8 decoder&rdquo; — you do not want the tool choosing for you.
-              Place the decoder yourself, select it, type the function, and press{" "}
-              <strong>Auto-wire</strong>: it grows the input tags, the collecting
-              gates and the outputs around <em>that</em> block.
-            </p>
-            <p className="text-muted-foreground">
-              Pins you have already wired are left alone, so you can do part of it by
-              hand and let the rest be filled in. And a decoder whose address lines do
-              not match the function is refused rather than quietly widened — with the
-              number you need to change, because reshaping a part you chose on purpose
-              would be the tool overruling you.
-            </p>
 
             <h3 className="pt-1 text-sm font-medium">Building bigger things</h3>
             <p>
@@ -560,14 +574,6 @@ F(A,B,C) = 01101001`}
               placed as many times as you like. Build a 4-bit adder once, group it,
               place it four times — that is a 16-bit adder, and it is how every real
               digital system is put together.
-            </p>
-            <p className="text-muted-foreground">
-              The new block&apos;s pins come from the Input and Output tags inside the
-              selection, plus any wire that crossed its boundary. So the deliberate
-              way to design one is to drop the tags in first and wire them up: the
-              block gets exactly the interface you drew. ⇧
-              <kbd className="rounded border px-1">G</kbd> takes it apart again and
-              reconnects whatever was wired to it.
             </p>
 
             <h3 className="pt-1 text-sm font-medium">Exporting</h3>
@@ -583,62 +589,37 @@ F(A,B,C) = 01101001`}
               PNG of a circuit has the wrong fonts, the wrong line weights and goes
               soft in print. It writes a TikZ picture of the same drawing — download a
               standalone <code>.tex</code> you can compile on its own, or copy the
-              figure straight into your document. It needs{" "}
-              <code>\usepackage&#123;tikz&#125;</code> and nothing else: no
-              circuitikz, no libraries, no fonts. Timing charts are the one thing it
-              does not carry over, and it says so in a comment at the top of the file
-              rather than leaving you to notice.
-            </p>
-            <p>
-              The <strong>Preset</strong> at the top of the <strong>Style</strong> tab
-              is a whole look, and choosing one applies it — including over changes you
-              had made yourself, because a preset that left your old background in
-              place would change the name in the box and nothing on the page. It says
-              what it replaced and puts it back on one click if that is not what you
-              meant.
-            </p>
-            <p>
-              The rest of the <strong>Style</strong> tab changes the background
-              (including fully transparent, for dark slides), the grid, the wire colors
-              and widths, the
-              corner radii, the type sizes, and the color of each category of block.
-              It applies to the canvas and to the export together — there is one
-              renderer, and the canvas is showing you the same bytes the file will
-              contain.
-            </p>
-            <p className="text-muted-foreground">
-              Per-signal wire coloring gives every net its own hue and every branch of
-              one fan-out the same one. Real jumper wire is multicolored for exactly
-              this reason: so that a connection can be traced across a crowded drawing.
-              The hues are handed out in order and the palette is arranged so that
-              consecutive ones are far apart — two signals side by side have to look
-              like two signals.
-            </p>
-            <p className="text-muted-foreground">
-              Select a wire and you can give it a color of its own, which is what you
-              want when the reader has to be shown <em>that</em> wire: the carry chain,
-              the enable, the one line the paragraph underneath is about. Auto puts it
-              back.
-            </p>
-
-            <h3 className="pt-1 text-sm font-medium">Straight from an equation</h3>
-            <p>
-              Theory&apos;s <em>Block diagram</em> tab draws whatever function you are
-              working on four ways — as gates, from a decoder, on one multiplexer, or
-              as a tree of 2-to-1 multiplexers — with the same exporter and the same
-              styling.
+              figure straight into your document.
             </p>
           </Section>
 
           <Section id="lab" icon={CircuitBoard} title="The lab">
             <p>
               Drag parts from the palette. Click one pin, then another, to wire them —
-              the wire routes itself around obstacles. Click a switch to toggle it;
-              select a wire to recolor or reroute it (Alt+Click or Backspace/Delete to remove it).
+              the wire routes itself around obstacles. Click a switch to toggle it.
             </p>
+
+            <div className="rounded-md border p-3 bg-card/60">
+              <h3 className="text-sm font-semibold mb-1">Wire Selection &amp; Routing Controls</h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Clicking any wire on the Schematic or Breadboard <strong>selects</strong> it:
+              </p>
+              <ul className="mt-1.5 list-disc pl-5 text-xs text-muted-foreground space-y-1">
+                <li>
+                  <strong>Action HUD:</strong> A docked toolbar opens allowing you to recolor the wire across 8 distinct hues or delete it.
+                </li>
+                <li>
+                  <strong>Horizontal Routing Handle:</strong> A circular white handle appears along the horizontal segment. Drag this handle up or down to adjust its Manhattan routing channel (<code>snappedY</code>) without moving the connected pins.
+                </li>
+                <li>
+                  <strong>Quick Delete:</strong> Hold <kbd className="px-1 py-0.5 rounded border bg-muted font-mono">Alt</kbd> and click a wire, or press <kbd className="px-1 py-0.5 rounded border bg-muted font-mono">Delete</kbd> / <kbd className="px-1 py-0.5 rounded border bg-muted font-mono">Backspace</kbd> while selected, to delete it instantly.
+                </li>
+              </ul>
+            </div>
+
             <p>
               <strong>Logic is four-state: 0, 1, Z and X.</strong> Z is a floating,
-              undriven net — not zero. X is a conflict. This is the difference between
+              undriven net — not zero. X is a conflict or power-up indeterminate state. This is the difference between
               a simulator that tells you your circuit works and one that tells you the
               truth: a boolean simulator reads an unconnected input as false and stays
               quiet.
@@ -649,54 +630,43 @@ F(A,B,C) = 01101001`}
               one. But Z and X keep their own unmistakable color and dashing. A broken
               wire must never be able to look like a working one.
             </p>
-            <p>
-              <strong>Gates can have 2, 3 or 4 inputs.</strong> Pick the count in the
-              palette before you place one — a real 74xx family has 2-, 3- and 4-input
-              parts, and &ldquo;implement this as a 3-input NAND&rdquo; is a normal
-              exercise. NOT is always 1-input. Already placed a gate? Select it and the
-              palette lets you change its inputs; widening adds unconnected pins,
-              narrowing drops the wires to the pins that vanish.
-            </p>
-            <p className="text-muted-foreground">
-              Every gate is documented below — definition, truth table and algebraic
-              properties — and so is every chip, with its real pinout.
-            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2 pt-1">
+              <div className="rounded-md border p-3">
+                <h4 className="font-semibold text-xs flex items-center gap-1.5">
+                  <Eye className="size-3.5 text-primary" /> X-Ray Mode (Hotkey X)
+                </h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Press <kbd className="px-1 rounded border bg-muted font-mono">X</kbd> in Breadboard view to reveal the live internal logic gate and flip-flop symbols inside every DIP package, color-coded by electrical state.
+                </p>
+              </div>
+              <div className="rounded-md border p-3">
+                <h4 className="font-semibold text-xs flex items-center gap-1.5">
+                  <Layers className="size-3.5 text-sky-400" /> Airwires &amp; Ravine Dragging
+                </h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Press <kbd className="px-1 rounded border bg-muted font-mono">A</kbd> to show unrouted rat&apos;s-nest airwires. Drag any IC horizontally along the center ravine to re-seat it — attached strip jumpers automatically translate with the pins!
+                </p>
+              </div>
+            </div>
           </Section>
 
           <Section id="blocks" icon={Blocks} title="Presets & building blocks">
             <p>
-              The <strong>Presets</strong> menu is not just a grab-bag of examples —
-              it is organized around one idea: complex circuits are built from simple
+              The <strong>Presets</strong> menu is organized around one idea: complex circuits are built from simple
               ones.
             </p>
             <ul className="ml-4 list-disc space-y-1.5">
               <li>
-                <strong>Building blocks</strong> — the classics on their own: half and
-                full adders, a comparator, multiplexers, a decoder, a priority encoder.
+                <strong>Building blocks</strong> — half and full adders, comparators, multiplexers, decoders, priority encoders.
               </li>
               <li>
-                <strong>Built from smaller blocks</strong> — the same circuits shown as
-                a <em>hierarchy</em>. A full adder wired from two half adders and an OR;
-                a 4:1 mux as a tree of three 2:1 muxes; an 8:1 mux from two 4:1s and a
-                2:1. The blocks are placed as distinct clusters and wired port-to-port,
-                so you can trace the decomposition — because the structure IS the lesson,
-                and a flattened truth table erases it.
+                <strong>Hierarchical blocks</strong> — full adders wired from two half adders and an OR; 4:1 mux as a tree of three 2:1 muxes; 8:1 mux from two 4:1s and a 2:1.
               </li>
               <li>
-                <strong>Large circuits</strong> — 2-, 4-, 8- and 16-bit ripple-carry
-                adders, each one <em>n</em> full adders with the carry rippling from the
-                bottom bit to the top. An 8-bit adder&apos;s truth table has 2¹⁷ rows,
-                which is exactly why nobody minimizes an adder — you build it from
-                blocks. Watch the top sum bit wait for the carry to walk all the way up.
+                <strong>Large circuits</strong> — 2-, 4-, 8- and 16-bit ripple-carry adders. Watch the top sum bit wait for the carry to walk all the way up.
               </li>
             </ul>
-            <p className="text-muted-foreground">
-              These are real, simulatable, verifiable boards — composed block by block
-              from the same gate tables everything else uses, so they compute what they
-              claim to. (Verification sweeps 2ⁿ inputs, so above 16 inputs the lab
-              declines to sweep and trusts the construction instead — a 16-bit adder has
-              2³³ combinations.)
-            </p>
           </Section>
 
           <Section id="gates" icon={CircuitBoard} title="Logic gates">
@@ -704,109 +674,162 @@ F(A,B,C) = 01101001`}
               The seven gates, what each one means, and the algebraic properties that
               decide how it behaves when you build with it.
             </p>
-            <p className="text-muted-foreground">
-              Every truth table below is <em>computed by the simulator itself</em>, not
-              typed into this page — so it cannot drift from what the lab actually
-              does.
-            </p>
-
             <div className="pt-2">
-              <h3 className="mb-2 text-sm font-medium">
-                Before the gates: the four values
-              </h3>
+              <h3 className="mb-2 text-sm font-medium">Before the gates: the four values</h3>
               <LogicValues />
             </div>
-
             <div className="pt-3">
               <GateReference />
             </div>
-
-            <div className="rounded-md border p-3">
-              <p className="text-sm font-medium">Two things worth knowing</p>
-              <p className="text-muted-foreground mt-1.5 text-xs text-pretty">
-                <strong>A controlling value decides the output on its own.</strong> AND
-                is controlled by 0 and OR by 1, which is why <code>AND(0, X) = 0</code>{" "}
-                — a floating second input cannot change an answer that is already
-                settled. XOR has no controlling value at all, so{" "}
-                <code>XOR(anything, X) = X</code>. If X were unconditionally contagious,
-                one floating pin would turn the whole board red and the diagnostic would
-                be worthless.
-              </p>
-              <p className="text-muted-foreground mt-2 text-xs text-pretty">
-                <strong>NAND and NOR are not associative.</strong>{" "}
-                <code>NAND(NAND(A,B), C)</code> is <em>not</em>{" "}
-                <code>NAND(A, NAND(B,C))</code>, and neither is a 3-input NAND. You
-                cannot widen a NAND by chaining it — that is what the 7410 is for.
-              </p>
-            </div>
           </Section>
 
-          <Section id="chips" icon={Cpu} title="74xx chips">
+          <Section id="chips" icon={Cpu} title="74xx chips & exceptions">
             <p>
-              The library, with real pinouts transcribed from the datasheets. Each
-              package holds several independent gates that share one power supply —
-              which is why chip count and gate count are different numbers, and why
-              you cannot buy half a package.
+              The GateLab 74xx TTL integrated circuit catalog covers 17 standard DIP packages, transcribed
+              directly from official Texas Instruments datasheets.
             </p>
-            <p className="text-muted-foreground">
-              <strong>Pin 14 is +5V and pin 7 is GND on every DIP-14 here.</strong> An
-              unpowered TTL chip does not output 0 — it outputs nothing at all, and
-              everything downstream of it floats. Forgetting the supply is the single
-              most common bench mistake, and the lab reports it as{" "}
-              <code>UNPOWERED_IC</code>.
-            </p>
+
+            <Card className="border-border/80 my-4">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Cpu className="size-4 text-primary" />
+                  74xx TTL Integrated Circuit Catalog &amp; Pinout Exceptions
+                </CardTitle>
+                <CardDescription>
+                  Review power supplies, pinout layouts, and non-standard traps before wiring on the bench.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b text-muted-foreground font-mono">
+                        <th className="py-2 pr-3">Part</th>
+                        <th className="py-2 px-3">Function</th>
+                        <th className="py-2 px-3">Package</th>
+                        <th className="py-2 px-3">VCC / GND</th>
+                        <th className="py-2 pl-3">Datasheet Trap &amp; Pinout Rule</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y font-sans">
+                      {TTL_EXCEPTIONS_CATALOG.map((item) => (
+                        <tr
+                          key={item.part}
+                          className={cn(
+                            item.highlight === "amber" && "bg-amber-500/5",
+                            item.highlight === "red" && "bg-red-500/10 font-medium",
+                          )}
+                        >
+                          <td className="py-2.5 pr-3 font-mono font-bold text-foreground whitespace-nowrap">
+                            {item.part}
+                          </td>
+                          <td className="py-2.5 px-3">{item.fn}</td>
+                          <td className="py-2.5 px-3 font-mono text-muted-foreground whitespace-nowrap">
+                            {item.pkg}
+                          </td>
+                          <td
+                            className={cn(
+                              "py-2.5 px-3 font-mono font-semibold whitespace-nowrap",
+                              item.highlight === "red" ? "text-red-400" : "text-logic-high",
+                            )}
+                          >
+                            {item.pwr}
+                          </td>
+                          <td className="py-2.5 pl-3 text-muted-foreground leading-normal">
+                            {item.trap}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
             <IcReference />
           </Section>
 
-          <Section id="breadboard" icon={CircuitBoard} title="The breadboard">
+          <Section id="breadboard" icon={CircuitBoard} title="Trainer chassis & breadboard">
             <p>
-              Press <strong>Breadboard</strong> to seat a schematic on a real board.
-              Hover any hole and the whole strip it shorts to lights up — because that
-              strip <em>is</em> one net.
+              Switching from Schematic to <strong>Breadboard</strong> seats your components onto the
+              <strong> MODEL 74XX-TTL · 5V BENCH Digital Logic Trainer</strong>, a high-fidelity virtual
+              workbench with integrated power, pulsing, input switches, and logic indicators.
             </p>
-            <p>Three facts make a breadboard a breadboard, and all three are enforced:</p>
-            <ul className="ml-4 list-disc space-y-1.5">
-              <li>Holes A–E are shorted together. F–J are shorted together.</li>
-              <li>
-                <strong>They never meet.</strong> The centre channel is what a DIP
-                straddles — short across it and every gate is wired input-to-output.
-              </li>
-              <li>
-                The power rails are <strong>broken at the midpoint</strong>. A jumper in
-                the left half does not power a chip wired to the right half. This one
-                costs people hours at a real bench.
-              </li>
-            </ul>
-            <p>
-              You can keep building once you are on the board: a chip you add from the
-              palette is <em>plugged in</em> — given real columns, clear of the chips
-              already there and clear of their strips, because two parts in one column
-              are wired together whether or not you meant it. If the board is full it
-              says so rather than adding a part with nowhere to be.
-            </p>
-            <p className="text-muted-foreground">
-              Seating a schematic is a realization, and a board has no schematic layout
-              — so Gatelab keeps the original and hands it back when you switch view. A
-              board built from scratch has nothing to go back to, and says so.
-            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2 pt-2">
+              <div className="rounded-md border p-3 bg-card/60">
+                <h4 className="font-mono text-xs font-bold uppercase tracking-wider text-red-400 mb-1">
+                  1. DC Power Supply (+5.0V &amp; 0.0V GND)
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Located top-left. Click the red <code>+5.0V (VCC)</code> or blue <code>0.0V (GND)</code> banana socket and click any rail hole to supply power. Or click <code className="text-amber-400">Auto-Power</code> in the top toolbar to automatically wire and bridge supplies for all seated ICs.
+                </p>
+              </div>
+
+              <div className="rounded-md border p-3 bg-card/60">
+                <h4 className="font-mono text-xs font-bold uppercase tracking-wider text-amber-400 mb-1">
+                  2. Pulse / Clock Generator (PULSE, CLR, 1Hz–5Hz)
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Wire the amber <code>CLK OUT</code> socket to flip-flop clock pins. Click <code>PULSE</code> for a clean 0 → 1 → 0 transition, <code>CLR</code> to reset flip-flops from power-up <code>X</code> to <code>0</code>, or toggle <code>1Hz / 2Hz / 5Hz</code> for continuous execution.
+                </p>
+              </div>
+
+              <div className="rounded-md border p-3 bg-card/60">
+                <h4 className="font-mono text-xs font-bold uppercase tracking-wider text-sky-400 mb-1">
+                  3. Logic Input Switches (Bottom Chassis)
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Click the physical toggle bat lever on any switch to toggle its logic state between <code>1 (HIGH)</code> and <code>0 (LOW)</code>. Click its blue <code>OUT</code> banana socket to route a jumper wire to the breadboard. Add more switches with <code>+ Input</code>.
+                </p>
+              </div>
+
+              <div className="rounded-md border p-3 bg-card/60">
+                <h4 className="font-mono text-xs font-bold uppercase tracking-wider text-emerald-400 mb-1">
+                  4. Logic Indicators (Top-Right Chassis)
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Each LED displays a real-time 4-state digital readout badge (<code>0</code>, <code>1</code>, <code className="text-amber-400">Z</code> floating, or <code className="text-red-400">X</code> conflict). Click the small lens dot beside any LED label to cycle across 7 lens colors (Green, Red, Amber, Blue, Cyan, Purple, White).
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3.5 text-xs mt-3">
+              <p className="font-semibold text-amber-300 flex items-center gap-1.5 mb-1.5">
+                <AlertTriangle className="size-4 shrink-0" />
+                Three Physical Breadboard Rules Modelled Strictly by GateLab:
+              </p>
+              <ul className="list-disc pl-5 space-y-1.5 text-muted-foreground">
+                <li>
+                  <strong>5-Hole Vertical Terminal Strips:</strong> In each column (1–63), holes A–E short together, and holes F–J short separately. They never meet across the center ravine.
+                </li>
+                <li>
+                  <strong>One Leg or Jumper Per Hole:</strong> An IC leg occupies row E (pins 1..N/2) and row F (pins N/2+1..N). Jumper wires must plug into the remaining 4 free holes (A–D or G–J) in that column.
+                </li>
+                <li>
+                  <strong>Midpoint Power Rail Split:</strong> Like physical 63-column breadboards, the +top, -top, +bottom, and -bottom rails break between <strong>Column 32 and Column 33</strong>. Bridge the split with jumper wires or click <code className="text-amber-400">Auto-Power</code> when placing ICs on the right half.
+                </li>
+              </ul>
+            </div>
           </Section>
 
           <Section id="sequential" icon={CircuitBoard} title="Flip-flops, clocks and counters">
             <p>
-              Everything above is <em>combinational</em>: the output is a function of
-              the inputs, and nothing else. A flip-flop is the first part here with a
-              yesterday — its output depends on what happened at the last clock{" "}
-              <strong>edge</strong>, which is why it needs a control the switches
-              cannot provide.
+              Combinational outputs depend solely on current inputs. Flip-flops introduce memory:
+              their outputs change only at clock <strong>edges</strong>.
             </p>
 
-            <h3 className="pt-1 text-sm font-medium">The parts</h3>
-            <p>
-              Five packages, with the pin names transcribed from the TI datasheets and
-              checked pin by pin in the test suite. They are much less alike than the
-              gates are, so read the tooltip before you wire one:
-            </p>
-            <div className="space-y-2">
+            <div className="rounded-md border p-3.5 bg-card/60 my-2">
+              <h3 className="text-sm font-semibold text-amber-400 flex items-center gap-2 mb-1">
+                <AlertTriangle className="size-4" /> Why Flip-Flops Power Up at X (Unknown State)
+              </h3>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Real bistable multivibrators power up in an indeterminate state dictated by transistor mismatch. GateLab reflects physical reality: newly placed flip-flops start at <code>X</code>, and clocking <code>X</code> propagates <code>X</code>.
+                <strong> You must click CLR on the Trainer Clock module (or Clear in the Clock Drawer) to initialize flip-flops to 0 before pulsing the clock!</strong>
+              </p>
+            </div>
+
+            <div className="space-y-2 pt-2">
               {FLIP_FLOPS.map(({ part, what, watch }) => (
                 <div key={part} className="rounded-md border p-3">
                   <code className="text-xs font-semibold">{part}</code>
@@ -815,109 +838,13 @@ F(A,B,C) = 01101001`}
                 </div>
               ))}
             </div>
-
-            <h3 className="pt-1 text-sm font-medium">The clock</h3>
-            <p>
-              Drop a <strong>Clock</strong> from the palette and wire it to CLK. It is
-              a switch the app can drive for you: click it on the canvas for one edge,
-              or use the panel under the canvas.
-            </p>
-            <ul className="ml-4 list-disc space-y-1.5 text-sm">
-              <li>
-                <strong>Pulse</strong> runs the level up and back down — one complete
-                pulse. It has to be both halves, because half these parts load on the
-                rising edge and half on the falling one, so a button that only raised
-                the clock would appear to do nothing at all on a ripple counter.
-              </li>
-              <li>
-                <strong>Run</strong> pulses it on a timer, from 1 to 10 Hz.
-              </li>
-              <li>
-                <strong>Power-cycle</strong> puts every flip-flop back to unknown. It is
-                not an edit and does not touch undo.
-              </li>
-            </ul>
-
-            <h3 className="pt-1 text-sm font-medium">Why it starts at X</h3>
-            <p>
-              A flip-flop you have just placed reads <code>X</code>, not 0, and its
-              LED is dark rather than off. That is not the simulator being unhelpful —
-              a real flip-flop powers up in whichever state the metastability fell
-              into, and that is the entire reason every counter you have ever seen has
-              a CLEAR wired to it.
-            </p>
-            <p className="text-muted-foreground">
-              Pull CLR low once and the count starts. Getting an <code>X</code> until
-              you do is the same rule as a floating input reading <code>Z</code>: the
-              tool will not invent a value it does not have.
-            </p>
-
-            <h3 className="pt-1 text-sm font-medium">Designing a counter from its sequence</h3>
-            <p>
-              Theory&apos;s <strong>Sequential circuits</strong> section has a{" "}
-              <strong>Custom sequence</strong> entry: type the states you want counted,
-              in the order you want them, and it runs the standard design procedure and
-              shows every step of it — because the marks are in the steps.
-            </p>
-            <ol className="ml-4 list-decimal space-y-1.5 text-sm">
-              <li>The sequence gives the transition table — each state&apos;s successor.</li>
-              <li>
-                The flip-flop&apos;s own excitation table turns each transition into the
-                inputs that produce it. Half the J-K table is don&apos;t-care, which is
-                why J-K designs come out smaller than D ones.
-              </li>
-              <li>
-                Each input is then a Boolean function of the present state, minimized by
-                the same Quine–McCluskey the rest of the app uses.
-              </li>
-              <li>
-                <strong>The states the counter never visits are don&apos;t cares.</strong>{" "}
-                This is the step people skip, and it typically halves the gate count.
-              </li>
-            </ol>
-            <p className="text-muted-foreground">
-              Any subset in any order works — <code>0, 3, 5, 6</code> is a counter, and
-              so is a Gray-code sequence or a down-count. A state that appears twice is
-              refused, because a state with two different successors is not a function of
-              the present state and no combinational logic can produce it.
-            </p>
-            <p className="text-muted-foreground">
-              It also says <strong>where the unused states actually go</strong>. The
-              minimizer was free to choose anything there and chose whatever made the
-              algebra smallest, so where that leaves a stray state is a real property of
-              the finished circuit that nobody decided on purpose — and it is the
-              difference between a counter that recovers from a power-up glitch and one
-              that sits in a trap forever.
-            </p>
-
-            <h3 className="pt-1 text-sm font-medium">Counters and registers</h3>
-            <p>
-              The <strong>Presets</strong> menu has a clocked section: a divide-by-two,
-              ripple counters, a synchronous counter, a register and a shift register,
-              all built from the real packages. Open one and press Pulse.
-            </p>
-            <p className="text-muted-foreground">
-              The pair worth opening together is the 2-bit ripple and the 2-bit
-              synchronous counter. They count the same and differ by one wire — where
-              the second flip-flop&apos;s clock comes from — which is the whole of the
-              lesson about ripple delay. Theory&apos;s{" "}
-              <strong>Sequential circuits</strong> section draws the same circuits as
-              block diagrams, with a link straight to the Lab preset.
-            </p>
-            <p className="text-muted-foreground">
-              The timing chart switches to <em>clock-driven</em> for these: it drives
-              the clock and plots the state, continuing from wherever the board
-              actually is. Clear the counter and you get the classic halving
-              waveform; do not, and you get a chart full of unknowns, which is the
-              truth about an uncleared counter.
-            </p>
           </Section>
 
           <Section id="faults" icon={TriangleAlert} title="Faults">
             <p>
-              The <strong>Faults</strong> panel is a separate pass from the simulation.
-              The simulator always produces a value so the board stays useful; the fault
-              panel separately tells the truth about the hardware.
+              The <strong>Faults</strong> panel runs as a separate pass from value resolution.
+              The simulator always produces a value so the board stays usable; the fault
+              panel separately alerts you to real physical wiring errors:
             </p>
             <div className="space-y-2">
               {FAULTS.map(({ code, what, fix }) => (
@@ -932,55 +859,54 @@ F(A,B,C) = 01101001`}
 
           <Section id="verify" icon={Sigma} title="Verification">
             <p>
-              This is the bridge, and the reason the app exists. <strong>Verify</strong>{" "}
-              sweeps every one of the 2ⁿ input combinations through the circuit you
-              actually built and diffs the results against the function you actually
-              derived — row by row, naming the ones that disagree.
+              The <strong>Verification Bridge</strong> sweeps all $2^n$ input combinations through
+              your wired circuit and diffs the results against your algebraic Boolean specification.
             </p>
-            <p>When it fails it also guesses why, because some mistakes have a shape:</p>
-            <ul className="ml-4 list-disc space-y-1.5">
+            <ul className="ml-4 list-disc space-y-1.5 text-sm">
               <li>
-                <strong>Every</strong> output bit flipped → you used NAND where AND was
-                needed.
+                <strong>Variable-Label Alignment:</strong> Input switches match Boolean variables by exact label name (e.g. <code>A, B, C</code> or <code>S, D0, D1</code>), not array order, supporting up to 16 variables.
               </li>
               <li>
-                The table matches under a column swap → two input wires are swapped.
+                <strong>Tarjan SCC Feedback Detection:</strong> Netlists are checked with Tarjan&apos;s Strongly Connected Components algorithm; any combinational feedback loops or unclocked latches are caught and flagged as non-combinational memory.
               </li>
-              <li>The output never changes → check Vcc and floating inputs.</li>
+              <li>
+                <strong>5 Automated Fault Hypotheses:</strong> When verification fails, GateLab tests root-cause hypotheses:
+                <ul className="ml-5 list-circle space-y-1 text-xs text-muted-foreground mt-1">
+                  <li><code>UNPOWERED_IC</code>: IC supply pins missing +5V or GND.</li>
+                  <li><code>FLOATING_INPUT</code>: Gate inputs disconnected and drifting to X.</li>
+                  <li><code>output-inverted</code>: Circuit output is the exact complement of target (e.g. NAND used for AND).</li>
+                  <li><code>output-stuck</code>: Circuit output is permanently stuck at 0 or 1.</li>
+                  <li><code>inputs-swapped</code>: Tests if swapping any two input signals (e.g. A ↔ B) produces a 100% match.</li>
+                </ul>
+              </li>
             </ul>
-            <p className="text-muted-foreground">
-              If the circuit has a feedback loop it has <em>memory</em>, and no truth
-              table can describe it. Gatelab says that rather than printing a
-              plausible-looking table that depends on what the circuit happened to be
-              doing a moment ago.
-            </p>
           </Section>
 
           <Section id="timing" icon={CircuitBoard} title="Timing and hazards">
             <p>
-              The timing panel drives the inputs in <strong>Gray code</strong> — one bit
-              changes at a time — with a unit delay on every gate, and it sweeps forward
-              and then back.
+              The GateLab Timing Drawer houses a <strong>Dual Timing Engine</strong> designed for both
+              combinational hazard analysis and sequential clock debugging:
             </p>
-            <p>
-              Both of those are load-bearing. A binary counter changes several bits at
-              once, which produces <em>function</em> hazards you cannot cure. And a
-              hazard is directional: it appears on a falling edge but not on the
-              matching rising one, so a one-way sweep would miss half of them.
-            </p>
-            <p className="text-muted-foreground">
-              This is where the two halves of the app meet:{" "}
-              <strong>minimal is not hazard-free</strong>. The redundant consensus term
-              that Quine–McCluskey correctly discarded as non-minimal is exactly the term
-              that removes the glitch. Add it back and watch the spike disappear.
-            </p>
-            <p className="text-muted-foreground">
-              The sweep covers circuits with up to seven inputs, and says so when a
-              circuit has more. Every term of the cost doubles per input — a 4-bit
-              adder&apos;s nine inputs is 512 combinations and a chart you would have to
-              scroll for a minute; the 16-bit adder&apos;s thirty-three is eight billion.
-              Everything else — the schematic, the faults, the verification — still works
-              on circuits that size.
+            <div className="grid gap-3 sm:grid-cols-2 pt-1">
+              <div className="rounded-md border p-3 bg-card/60">
+                <h4 className="font-semibold text-xs text-primary mb-1">
+                  1. Combinational Unit-Delay Engine
+                </h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Drives inputs in a forward-then-reverse <strong>Gray-code sequence</strong> (changing 1 bit per step) with configurable unit gate delays (1, 2, or 3 ticks). By changing only one variable at a time, it isolates true static and dynamic <em>logic hazards</em> from unavoidable function hazards. Capped at 7 inputs (256 held steps).
+                </p>
+              </div>
+              <div className="rounded-md border p-3 bg-card/60">
+                <h4 className="font-semibold text-xs text-amber-400 mb-1">
+                  2. Clocked Sequential Engine
+                </h4>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Drives 18 continuous clock cycles while holding input switches constant. Plots flip-flop state transitions, propagation ripple delay, and register waveforms.
+                </p>
+              </div>
+            </div>
+            <p className="text-muted-foreground pt-1">
+              Remember: <strong>minimal is not hazard-free</strong>. The redundant consensus term that Quine–McCluskey discards during minimization is precisely the term that prevents a static-1 glitch. Add it back to eliminate the spike!
             </p>
           </Section>
 
@@ -990,35 +916,61 @@ F(A,B,C) = 01101001`}
                 Report
               </Link>{" "}
               assembles the whole derivation into one printable page: truth table,
-              K-map, the tabular reduction, the circuit you built, and the row-by-row
-              verification.
+              K-map, tabular reduction, schematic/breadboard snapshot, and the row-by-row
+              verification matrix.
             </p>
             <p>
-              Print it with your browser (⌘P / Ctrl-P) and “Save as PDF”. It goes
-              through the browser&apos;s own PDF engine, so the circuit and the K-map
-              stay real vectors in the output instead of blurry screenshots.
+              Print it with your browser (⌘P / Ctrl-P) and “Save as PDF”. It outputs
+              vector SVG elements so figures stay crisp and publication-ready.
             </p>
           </Section>
 
-          <Section id="keys" icon={Keyboard} title="Shortcuts">
+          <Section id="keys" icon={Keyboard} title="Shortcuts & gestures">
             <div className="overflow-x-auto rounded-md border">
               <table className="w-full text-sm">
                 <tbody>
                   {SHORTCUTS.map(({ keys, does }) => (
                     <tr key={keys} className="border-b last:border-0">
-                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
+                      <td className="px-3 py-2 font-mono text-xs whitespace-nowrap font-medium text-foreground">
                         {keys}
                       </td>
-                      <td className="px-3 py-2">{does}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">{does}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
             <p className="text-muted-foreground">
-              Everything is saved in your browser as you work. Nothing is uploaded —
-              the entire engine runs on your machine.
+              GateLab runs 100% in your browser. All designs and states are saved locally in localStorage with zero server uploads.
             </p>
+          </Section>
+
+          <Section id="terms" icon={ShieldCheck} title="Terms & system check">
+            <Card className="border-border/80">
+              <CardHeader>
+                <CardTitle className="text-base flex items-center gap-2">
+                  <ShieldCheck className="size-4 text-emerald-400" />
+                  Client-Side Execution Terms &amp; Hardware Diagnostics
+                </CardTitle>
+                <CardDescription>
+                  GateLab runs 100% in your local browser sandbox. Review our execution terms or run an automated system capability diagnostic at any time.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Our 4-clause terms guarantee that all Boolean derivations, 74xx delta-cycle simulations, and $2^n$ verification sweeps run entirely client-side using TypedArrays and web workers. Zero schematics, formulas, or personal telemetry are uploaded to external servers.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openTermsModal()}
+                  className="gap-2 cursor-pointer"
+                >
+                  <Cpu className="size-3.5 text-primary" />
+                  <span>Open System Capability Check &amp; Terms Modal</span>
+                </Button>
+              </CardContent>
+            </Card>
           </Section>
 
           <Section id="contact" icon={MessageSquare} title="Contact">

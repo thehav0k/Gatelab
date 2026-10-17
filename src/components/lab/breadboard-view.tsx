@@ -54,7 +54,7 @@ import {
 import { useViewBox } from "@/hooks/use-viewbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CircuitBoard, Cpu, Eye, EyeOff, Layers, Maximize2, Plus, Radio, Zap } from "lucide-react";
+import { CircuitBoard, Cpu, Eye, EyeOff, Layers, Maximize2, Plus, Radio, RotateCcw, X, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useConstraint, useWorkspaceStore } from "@/stores/workspace-store";
 import { useSpecStore } from "@/stores/spec-store";
@@ -129,6 +129,7 @@ export function BreadboardView() {
   const [showXRay, setShowXRay] = useState<boolean>(true);
   const [showAirwires, setShowAirwires] = useState<boolean>(false);
   const [autoHz, setAutoHz] = useState<number | null>(null);
+  const [showRotateBanner, setShowRotateBanner] = useState<boolean>(true);
 
   const nodes = useMemo(() => Object.values(doc.nodes), [doc.nodes]);
 
@@ -487,6 +488,24 @@ export function BreadboardView() {
 
   return (
     <div className="relative h-full w-full">
+      {/* Mobile Landscape Orientation Advisory Banner (< 640px) */}
+      {showRotateBanner && (
+        <div className="no-print sm:hidden absolute top-2 left-2 right-2 z-30 flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-card/95 backdrop-blur-md px-3 py-2 text-xs text-amber-300 shadow-lg">
+          <div className="flex items-center gap-2">
+            <RotateCcw className="size-4 shrink-0 text-amber-400" />
+            <span className="font-medium">Rotate device to landscape for best Breadboard experience</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowRotateBanner(false)}
+            className="rounded p-1 hover:bg-amber-500/20 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            aria-label="Dismiss orientation advisory"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Top Breadboard Action Toolbar */}
       <div className="no-print absolute right-2 top-2 z-10 flex items-center gap-1.5">
         {unpoweredNodes.length > 0 && (

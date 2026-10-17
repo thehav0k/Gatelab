@@ -610,58 +610,63 @@ export interface SeqState {
   readonly q: Uint8Array;
   /** Per flip-flop, its clock net's value at the end of the last evaluation. */
   readonly clk: Uint8Array;
+  /** Per gate cell, its last settled output — gives cross-coupled gate latches memory. */
+  readonly cellOut?: Uint8Array;
 }
 
-/**
- * A circuit that has not been clocked yet.
- *
- * Q starts UNKNOWN, not 0. A real flip-flop powers up in whichever state the
- * metastability fell into — which is the entire reason every counter ever built
- * has a clear wired to it. Starting at 0 would make a missing reset invisible,
- * which is the same mistake as reading a floating input as false.
- */
 export const initialState = (nl: SimNetlist): SeqState => ({
   q: new Uint8Array(nl.flops.length).fill(UNKNOWN),
   clk: new Uint8Array(nl.flops.length).fill(LZ),
+  cellOut: new Uint8Array(nl.cells.length).fill(LZ),
 });
 
 export const cloneState = (state: SeqState): SeqState => ({
   q: new Uint8Array(state.q),
   clk: new Uint8Array(state.clk),
+  ...(state.cellOut ? { cellOut: new Uint8Array(state.cellOut) } : {}),
 });
 
-/**
- * The stored state, keyed by WHICH FLIP-FLOP rather than by array position.
- *
- * The netlist is rebuilt from the document on every simulation, so a flip-flop's
- * index in `nl.flops` is only as stable as the document's node order — add a
- * chip and every index after it shifts. Carrying the state across in an array
- * would then hand flip-flop 3's bit to flip-flop 4, which is a memory circuit
- * silently changing its mind about what it remembered. The identity of a
- * flip-flop is its package and its slot, so that is the key.
- *
- * Plain JSON, so it survives `persist` and a page reload.
- */
-export type StoredState = Readonly<Record<string, readonly [Logic, Logic]>>;
+export type StoredState = Readonly<
+  Record<string, readonly [Logic, Logic] | readonly [Logic]>
+>;
 
 const keyOf = (flop: SimFlop): string => `${flop.owner.node}/${flop.owner.slot}`;
+const cellKeyOf = (cell: { owner: { node: string; slot: number } }): string =>
+  `cell:${cell.owner.node}/${cell.owner.slot}`;
 
 export function toSeqState(nl: SimNetlist, stored: StoredState | undefined): SeqState {
   const state = initialState(nl);
   if (!stored) return state;
   for (const flop of nl.flops) {
     const saved = stored[keyOf(flop)];
-    if (!saved) continue;
-    state.q[flop.id] = saved[0];
-    state.clk[flop.id] = saved[1];
+    if (!saved || saved.length < 2) continue;
+    state.q[flop.id] = saved[0] as Logic;
+    state.clk[flop.id] = saved[1] as Logic;
+  }
+  if (state.cellOut) {
+    for (const cell of nl.cells) {
+      const saved = stored[cellKeyOf(cell)];
+      if (!saved) continue;
+      state.cellOut[cell.id] = saved[0] as Logic;
+    }
   }
   return state;
 }
 
 export function fromSeqState(nl: SimNetlist, state: SeqState): StoredState {
-  const out: Record<string, readonly [Logic, Logic]> = {};
+  const out: Record<string, readonly [Logic, Logic] | readonly [Logic]> = {};
   for (const flop of nl.flops) {
     out[keyOf(flop)] = [state.q[flop.id] as Logic, state.clk[flop.id] as Logic];
+  }
+  if (state.cellOut && nl.feedbackLoops.length > 0) {
+    for (const loop of nl.feedbackLoops) {
+      for (const cellId of loop) {
+        const cell = nl.cells[cellId];
+        if (cell) {
+          out[cellKeyOf(cell)] = [state.cellOut[cell.id] as Logic];
+        }
+      }
+    }
   }
   return out;
 }
@@ -737,8 +742,8 @@ export function evaluate(
   let edges = 0;
 
   for (let pass = 0; pass < maxPasses; pass++) {
-    const moved = advance(nl, last.values, state);
-    edges += moved;
+    const { moved, triggered } = advance(nl, last.values, state);
+    edges += triggered;
     if (moved === 0) return { ...last, state, edges };
     last = settle(nl, inputs, options, state);
   }
@@ -752,8 +757,14 @@ export function evaluate(
  * Returns how many flip-flops actually loaded, which is the loop's termination
  * condition above.
  */
-function advance(nl: SimNetlist, values: Uint8Array, state: SeqState): number {
+function advance(
+  nl: SimNetlist,
+  values: Uint8Array,
+  state: SeqState,
+): { moved: number; triggered: number } {
   let moved = 0;
+  let triggered = 0;
+  const nextQ = new Uint8Array(state.q);
 
   for (const flop of nl.flops) {
     const clockNow = values[flop.clock] as Logic;
@@ -761,21 +772,19 @@ function advance(nl: SimNetlist, values: Uint8Array, state: SeqState): number {
     state.clk[flop.id] = clockNow;
 
     if (flop.power && !isPowered(flop.power, values)) {
-      // An unpowered flip-flop is not holding anything. It has no supply to
-      // hold it with, and saying it still remembers the last value would be the
-      // same lie as an unpowered gate driving a clean 0.
-      state.q[flop.id] = UNKNOWN;
+      if (state.q[flop.id] !== UNKNOWN) moved += 1;
+      nextQ[flop.id] = UNKNOWN;
       continue;
     }
 
-    // Preset and clear are LEVEL-sensitive and outrank the clock, so they are
-    // applied first and they write the stored bit — otherwise releasing clear
-    // would reveal whatever was underneath it.
     const async = asyncOutputs(asyncOf(flop, values));
     if (async) {
       const forced = asStored(async.q);
-      if (state.q[flop.id] !== forced) moved += 1;
-      state.q[flop.id] = forced;
+      if (state.q[flop.id] !== forced) {
+        moved += 1;
+        triggered += 1;
+      }
+      nextQ[flop.id] = forced;
       continue;
     }
 
@@ -785,11 +794,15 @@ function advance(nl: SimNetlist, values: Uint8Array, state: SeqState): number {
     const after = asStored(
       clockedNext(flop.kind, flop.data.map((n) => values[n] as Logic), before),
     );
-    state.q[flop.id] = after;
-    if (after !== before) moved += 1;
+    nextQ[flop.id] = after;
+    if (after !== before) {
+      moved += 1;
+      triggered += 1;
+    }
   }
 
-  return moved;
+  state.q.set(nextQ);
+  return { moved, triggered };
 }
 
 const asyncOf = (flop: SimFlop, values: Uint8Array) => ({
@@ -835,11 +848,14 @@ function settle(
     });
   });
 
-  // A cell's current output, so a net can be resolved from all of its drivers
-  // without re-evaluating any of them. THIS is what the seed initializes — see
-  // SimOptions.seed. Defaults to Z: a gate that has not been evaluated yet
-  // drives nothing.
-  const cellOut = new Uint8Array(nl.cells.length).fill(seed);
+  // Seed from explicit options.seed when provided (e.g. verification sweeps),
+  // otherwise preserve feedback cell outputs from `state.cellOut` if available.
+  const cellOut =
+    options.seed === undefined &&
+    state.cellOut &&
+    state.cellOut.length === nl.cells.length
+      ? new Uint8Array(state.cellOut)
+      : new Uint8Array(nl.cells.length).fill(seed);
 
   const shorted = new Set(nl.railShorts);
 
@@ -913,6 +929,9 @@ function settle(
     // placed first would flag every stable circuit as an oscillator.
     if (equal(cur, next)) {
       cellOut.set(nextCellOut);
+      if (state.cellOut && state.cellOut.length === cellOut.length) {
+        state.cellOut.set(cellOut);
+      }
       settled = true;
       break;
     }
@@ -1288,10 +1307,11 @@ export function simulateTimed(
     combinations: [],
   };
 
-  // A circuit with memory has no truth table to sweep, so the clock drives the
-  // chart instead. This is not a fallback — it is the right chart for the
-  // circuit, and the one a counter is always drawn with.
-  if (nl.flops.length > 0) return simulateClocked(nl, options);
+  // A circuit with flip-flops or a clock source has no combinational truth table
+  // to sweep — drive the clock instead.
+  if (nl.flops.length > 0 || nl.clocks.length > 0) {
+    return simulateClocked(nl, options);
+  }
 
   if (n === 0 || nl.cells.length === 0) return nothing;
 
@@ -2031,7 +2051,7 @@ export const IC_74LS107A = defineSeqDip(
   "Negative edge, clear only — no preset. The usual ripple-counter part.",
   [
     "1J", "1QN", "1Q", "1K", "2Q", "2QN", "GND",      // pins 1-7
-    "2J", "2CLK", "2CLR", "2K", "1CLK", "1CLR", "VCC", // pins 8-14
+    "2K", "2CLK", "2CLR", "2J", "1CLK", "1CLR", "VCC", // pins 8-14
   ],
 );
 
@@ -3288,7 +3308,6 @@ export function getPinWorldPosition(node: CircuitNode, pin: string): Point {
 === FILE: src/lib/simulation/place.ts ===
 import {
   DEFAULT_BOARD,
-  ROWS_LOWER,
   ROWS_UPPER,
   dipHoles,
   stripOf,
@@ -3420,6 +3439,17 @@ export function placeOnBreadboard(
     col += span + 2; // a two-column gutter so jumpers have somewhere to land
   }
 
+  const connectedStrips = new Map<string, Set<string>>();
+  const linkStrips = (s1: string, s2: string): void => {
+    if (!connectedStrips.has(s1)) connectedStrips.set(s1, new Set([s1]));
+    if (!connectedStrips.has(s2)) connectedStrips.set(s2, new Set([s2]));
+    const merged = new Set([
+      ...(connectedStrips.get(s1) ?? []),
+      ...(connectedStrips.get(s2) ?? []),
+    ]);
+    for (const s of merged) connectedStrips.set(s, merged);
+  };
+
   const freeHoleOn = (hole: HoleRef): HoleRef | null => {
     const strip = stripOf(spec, hole);
 
@@ -3444,6 +3474,23 @@ export function placeOnBreadboard(
       const candidate: HoleRef = { col: hole.col, row };
       if (!isTaken(candidate)) return candidate;
     }
+
+    // Fallback for high-fanout pins (>4 jumpers): find a free hole on any strip
+    // already shorted to this strip via an earlier jumper.
+    const peers = connectedStrips.get(strip);
+    if (peers) {
+      for (const peer of peers) {
+        if (peer === strip || !peer.startsWith("col:")) continue;
+        const [, colStr, half] = peer.split(":");
+        const peerCol = Number(colStr);
+        const rows = half === "L" ? LOWER_FREE : UPPER_FREE;
+        for (const r of rows) {
+          const cand: HoleRef = { col: peerCol, row: r };
+          if (!isTaken(cand)) return cand;
+        }
+      }
+    }
+
     return null; // the strip is full — five holes, all used
   };
 
@@ -3452,6 +3499,7 @@ export function placeOnBreadboard(
     const id = asWireId(`bb${++w}`);
     occupy(a);
     occupy(b);
+    linkStrips(stripOf(spec, a), stripOf(spec, b));
     wires[id] = { id, a: holeEnd(a), b: holeEnd(b), ...(color ? { color } : {}) };
   };
 
@@ -3558,7 +3606,9 @@ export function placeOnBreadboard(
         if (!targetLeg) { unplaced.push(wire.id); continue; }
         const targetHole = freeHoleOn(targetLeg);
         if (!targetHole) { unplaced.push(wire.id); continue; }
-        wirePinToHole(pinA, targetHole, wire.color || "#38bdf8");
+        const srcNode = source.nodes[pinA.node];
+        const defaultColor = srcNode?.kind === "clock" ? "#f59e0b" : "#38bdf8";
+        wirePinToHole(pinA, targetHole, wire.color || defaultColor);
         continue;
       }
       if (isSwitchB && !isSwitchA && pinB) {
@@ -3566,7 +3616,9 @@ export function placeOnBreadboard(
         if (!targetLeg) { unplaced.push(wire.id); continue; }
         const targetHole = freeHoleOn(targetLeg);
         if (!targetHole) { unplaced.push(wire.id); continue; }
-        wirePinToHole(pinB, targetHole, wire.color || "#38bdf8");
+        const srcNode = source.nodes[pinB.node];
+        const defaultColor = srcNode?.kind === "clock" ? "#f59e0b" : "#38bdf8";
+        wirePinToHole(pinB, targetHole, wire.color || defaultColor);
         continue;
       }
       if (isLedA && !isLedB && pinA) {
@@ -4579,6 +4631,7 @@ import {
   type HoleRef,
 } from "@/lib/simulation/breadboard";
 import { getIc } from "@/lib/simulation/ic-library";
+import { ensureUniqueDesignators } from "@/lib/simulation/presets";
 import { simStore } from "./sim-store";
 
 /**
@@ -4652,6 +4705,8 @@ interface CircuitState {
   pulseClock: (id: NodeId, sync?: boolean) => void;
   /** Synchronous low, high, low pulse without timers. */
   pulseClockSync: (id: NodeId) => void;
+  /** Pulse active-low CLR/RESET switches (1 -> 0 -> 1) or seed flip-flops to 0. */
+  pulseClear: () => void;
   /** Forget every stored bit, as though the power had just come on. */
   resetState: () => void;
 
@@ -4718,13 +4773,18 @@ function defaultLabel(doc: CircuitDocument, node: NewNode): string {
   }
 
   if (node.kind === "led") {
-    const n = existing.filter((x) => x.kind === "led").length;
-    return n === 0 ? "Q" : `Q${n}`;
+    const used = new Set(existing.filter((x) => x.kind === "led").map((x) => x.label));
+    if (!used.has("Q")) return "Q";
+    let n = 1;
+    while (used.has(`Q${n}`)) n++;
+    return `Q${n}`;
   }
 
   const prefix =
     node.kind === "ic" ? "U" : node.kind === "rail" ? (node.rail === "vcc" ? "V" : "GND") : "G";
-  const n = existing.filter((x) => x.kind === node.kind).length + 1;
+  const used = new Set(existing.filter((x) => x.kind === node.kind).map((x) => x.label));
+  let n = 1;
+  while (used.has(`${prefix}${n}`)) n++;
   return `${prefix}${n}`;
 }
 
@@ -4794,7 +4854,11 @@ export const useCircuitStore = create<CircuitState>()(
    * topology at all — dragging a chip, flipping a switch — where the board is still
    * exactly what was built.
    */
-  let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+  const pulseTimers = new Map<NodeId, ReturnType<typeof setTimeout>>();
+  const clearAllPulseTimers = (): void => {
+    for (const timer of pulseTimers.values()) clearTimeout(timer);
+    pulseTimers.clear();
+  };
 
   /** Drive one clock node to a new level and re-simulate. Not an edit. */
   const setClock = (id: NodeId, to: (level: 0 | 1) => 0 | 1): void => {
@@ -4821,9 +4885,10 @@ export const useCircuitStore = create<CircuitState>()(
     const { doc } = get();
     const node = doc.nodes[id];
     if (node?.kind !== "clock") return;
-    if (pulseTimer) {
-      clearTimeout(pulseTimer);
-      pulseTimer = null;
+    const existing = pulseTimers.get(id);
+    if (existing) {
+      clearTimeout(existing);
+      pulseTimers.delete(id);
     }
     if (node.state === 1) {
       setClock(id, () => 0);
@@ -4976,18 +5041,33 @@ export const useCircuitStore = create<CircuitState>()(
       if (selection.length === 0) return;
 
       const gone = new Set<string>(selection);
+      const deletedIcStrips = new Set<string>();
+      if (doc.board) {
+        for (const id of selection) {
+          const node = doc.nodes[id];
+          if (node?.kind === "ic") {
+            const def = getIc(node.part);
+            const holes = dipHoles({ col: Math.round(node.pos.x) }, def?.pins.length ?? 14);
+            for (const h of holes) deletedIcStrips.add(stripOf(doc.board, h));
+          }
+        }
+      }
+
       const nodes = Object.fromEntries(
         Object.entries(doc.nodes).filter(([id]) => !gone.has(id)),
       );
-      // Wires to a deleted node go with it. The nets are rebuilt from scratch
-      // afterwards, so there is nothing else to clean up.
-      const touches = (e: (typeof doc.wires)[string]["a"]): boolean =>
-        e.kind === "pin" && gone.has(e.ref.node);
+      const touches = (e: (typeof doc.wires)[string]["a"]): boolean => {
+        if (e.kind === "pin") return gone.has(e.ref.node);
+        if (doc.board && deletedIcStrips.size > 0) {
+          return deletedIcStrips.has(stripOf(doc.board, e.ref));
+        }
+        return false;
+      };
       const wires = Object.fromEntries(
         Object.entries(doc.wires).filter(([, w]) => !touches(w.a) && !touches(w.b)),
       );
       set({ selection: [] });
-      commit({ nodes, wires });
+      commit({ ...doc, nodes, wires });
     },
 
     select: (ids) => set({ selection: ids }),
@@ -5028,31 +5108,66 @@ export const useCircuitStore = create<CircuitState>()(
       const node = doc.nodes[id];
       if (node?.kind !== "clock") return;
 
-      if (pulseTimer) {
-        clearTimeout(pulseTimer);
-        pulseTimer = null;
+      const existing = pulseTimers.get(id);
+      if (existing) {
+        clearTimeout(existing);
+        pulseTimers.delete(id);
       }
-      // If clock is already high, pull low first to ensure a crisp rising edge
       if (node.state === 1) {
         setClock(id, () => 0);
       }
       setClock(id, () => 1);
-      pulseTimer = setTimeout(() => {
-        pulseTimer = null;
+      const timer = setTimeout(() => {
+        pulseTimers.delete(id);
         setClock(id, () => 0);
       }, 120);
+      pulseTimers.set(id, timer);
     },
 
     pulseClockSync,
 
-    /**
-     * Power-cycle the memory.
-     *
-     * Not a document edit — nothing about the circuit changes — so it does not
-     * touch the undo stack. It puts every flip-flop back to unknown, which is
-     * where a real one starts.
-     */
+    pulseClear: () => {
+      clearAllPulseTimers();
+      const { doc, flopState } = get();
+      const clrSwitches = Object.values(doc.nodes).filter(
+        (n): n is Extract<CircuitNode, { kind: "switch" }> =>
+          n.kind === "switch" && /^(CLR|RESET|RST|CLEAR)/i.test(n.label),
+      );
+      if (clrSwitches.length > 0) {
+        const assertedNodes = { ...doc.nodes };
+        for (const sw of clrSwitches) assertedNodes[sw.id] = { ...sw, state: 0 };
+        const mid = simulate({ ...doc, nodes: assertedNodes }, flopState);
+
+        const releasedNodes = { ...doc.nodes };
+        for (const sw of clrSwitches) releasedNodes[sw.id] = { ...sw, state: 1 };
+        const finalDoc = { ...doc, nodes: releasedNodes };
+        const next = simulate(finalDoc, mid.flopState);
+        set({
+          doc: finalDoc,
+          index: next.index,
+          diagnostics: next.diagnostics,
+          routes: next.routes,
+          flopState: next.flopState,
+        });
+        return;
+      }
+
+      const { netlist } = elaborate(doc);
+      const seeded: Record<string, readonly [0, 0]> = {};
+      for (const flop of netlist.flops) {
+        seeded[`${flop.owner.node}/${flop.owner.slot}`] = [0, 0];
+      }
+      const next = simulate(doc, seeded);
+      set({
+        flopState: next.flopState,
+        index: next.index,
+        diagnostics: next.diagnostics,
+        routes: next.routes,
+      });
+    },
+
     resetState: () => {
+      clearAllPulseTimers();
       const { doc } = get();
       const next = simulate(doc, {});
       set({
@@ -5176,6 +5291,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     toBreadboard: (spec) => {
+      clearAllPulseTimers();
       const { doc } = get();
       if (doc.board) return [];
 
@@ -5203,6 +5319,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     toSchematic: () => {
+      clearAllPulseTimers();
       const { schematic, doc } = get();
       if (!doc.board) return true; // already there
       if (!schematic) return false; // built on the board; there is nothing to go back to
@@ -5299,8 +5416,142 @@ export const useCircuitStore = create<CircuitState>()(
       const { doc } = get();
       const node = doc.nodes[nodeId];
       if (!node || node.kind !== "ic" || !doc.board) return;
+      const spec = doc.board;
       const def = getIc(node.part);
       if (!def) return;
+
+      const nextNodes = { ...doc.nodes };
+      const nextWires = { ...doc.wires };
+      const taken = new Set<string>();
+
+      for (const n of Object.values(nextNodes)) {
+        if (n.kind === "ic") {
+          const d = getIc(n.part);
+          for (const h of dipHoles({ col: Math.round(n.pos.x) }, d?.pins.length ?? 14)) {
+            taken.add(`${h.col}/${h.row}`);
+          }
+        }
+      }
+      for (const w of Object.values(nextWires)) {
+        if (w.a.kind === "hole") taken.add(`${w.a.ref.col}/${w.a.ref.row}`);
+        if (w.b.kind === "hole") taken.add(`${w.b.ref.col}/${w.b.ref.row}`);
+      }
+
+      const pickFree = (col: number, rows: readonly ("A" | "B" | "C" | "D" | "G" | "H" | "I" | "J")[]): HoleRef => {
+        for (const r of rows) {
+          if (!taken.has(`${col}/${r}`)) {
+            taken.add(`${col}/${r}`);
+            return { col, row: r };
+          }
+        }
+        return { col, row: rows[0]! };
+      };
+
+      const pickFreeRail = (targetCol: number, row: "+top" | "-top" | "+bottom" | "-bottom"): HoleRef => {
+        const targetStrip = stripOf(spec, { col: targetCol, row });
+        for (let d = 0; d < spec.columns; d++) {
+          for (const c of d === 0 ? [targetCol] : [targetCol + d, targetCol - d]) {
+            if (c >= 1 && c <= spec.columns) {
+              const cand: HoleRef = { col: c, row };
+              if (stripOf(spec, cand) === targetStrip && !taken.has(`${c}/${row}`)) {
+                taken.add(`${c}/${row}`);
+                return cand;
+              }
+            }
+          }
+        }
+        return { col: targetCol, row };
+      };
+
+      // Ensure +5V and GND trainer rail nodes exist and feed the breadboard rails
+      let vccNode = Object.values(nextNodes).find((n) => n.kind === "rail" && n.rail === "vcc");
+      if (!vccNode) {
+        const id = asNodeId(nextId("n"));
+        vccNode = { id, kind: "rail", rail: "vcc", label: "+5V", pos: { x: 0, y: 0 } };
+        nextNodes[id] = vccNode;
+      }
+      let gndNode = Object.values(nextNodes).find((n) => n.kind === "rail" && n.rail === "gnd");
+      if (!gndNode) {
+        const id = asNodeId(nextId("n"));
+        gndNode = { id, kind: "rail", rail: "gnd", label: "GND", pos: { x: 0, y: 0 } };
+        nextNodes[id] = gndNode;
+      }
+
+      const hasVccFeed = Object.values(nextWires).some(
+        (w) =>
+          (w.a.kind === "pin" && w.a.ref.node === vccNode.id) ||
+          (w.b.kind === "pin" && w.b.ref.node === vccNode.id),
+      );
+      if (!hasVccFeed) {
+        const wFeed = asWireId(nextId("w"));
+        const wBridge = asWireId(nextId("w"));
+        nextWires[wFeed] = {
+          id: wFeed,
+          a: pinEnd({ node: vccNode.id, pin: "VCC" }),
+          b: holeEnd(pickFreeRail(1, "+top")),
+          color: "#ef4444",
+        };
+        nextWires[wBridge] = {
+          id: wBridge,
+          a: holeEnd(pickFreeRail(1, "+top")),
+          b: holeEnd(pickFreeRail(1, "+bottom")),
+          color: "#ef4444",
+        };
+      }
+
+      const hasGndFeed = Object.values(nextWires).some(
+        (w) =>
+          (w.a.kind === "pin" && w.a.ref.node === gndNode.id) ||
+          (w.b.kind === "pin" && w.b.ref.node === gndNode.id),
+      );
+      if (!hasGndFeed) {
+        const wFeed = asWireId(nextId("w"));
+        const wBridge = asWireId(nextId("w"));
+        nextWires[wFeed] = {
+          id: wFeed,
+          a: pinEnd({ node: gndNode.id, pin: "GND" }),
+          b: holeEnd(pickFreeRail(1, "-bottom")),
+          color: "#3b82f6",
+        };
+        nextWires[wBridge] = {
+          id: wBridge,
+          a: holeEnd(pickFreeRail(1, "-top")),
+          b: holeEnd(pickFreeRail(1, "-bottom")),
+          color: "#3b82f6",
+        };
+      }
+
+      // Bridge split rail segments if needed
+      if (spec.railSegments > 1) {
+        const perSegment = Math.ceil(spec.columns / spec.railSegments);
+        for (let seg = 1; seg < spec.railSegments; seg++) {
+          const cLeft = seg * perSegment;
+          const cRight = cLeft + 1;
+          if (cRight <= spec.columns) {
+            for (const r of ["+top", "-top", "+bottom", "-bottom"] as const) {
+              const alreadyBridged = Object.values(nextWires).some(
+                (w) =>
+                  w.a.kind === "hole" &&
+                  w.b.kind === "hole" &&
+                  w.a.ref.row === r &&
+                  w.b.ref.row === r &&
+                  Math.min(w.a.ref.col, w.b.ref.col) <= cLeft &&
+                  Math.max(w.a.ref.col, w.b.ref.col) >= cRight,
+              );
+              if (!alreadyBridged) {
+                const wb = asWireId(nextId("w"));
+                nextWires[wb] = {
+                  id: wb,
+                  a: holeEnd(pickFreeRail(cLeft, r)),
+                  b: holeEnd(pickFreeRail(cRight, r)),
+                  color: isPositiveRail(r) ? "#ef4444" : "#3b82f6",
+                };
+              }
+            }
+          }
+        }
+      }
+
       const col = Math.round(node.pos.x);
       const holes = dipHoles({ col }, def.pins.length);
       const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
@@ -5310,31 +5561,27 @@ export const useCircuitStore = create<CircuitState>()(
       const vccLeg = holes[vccIdx]!;
       const gndLeg = holes[gndIdx]!;
 
-      // Upper half (row F): free hole is row J -> +top rail; lower half (row E): row A -> -bottom rail
-      const vccHole: HoleRef = { col: vccLeg.col, row: vccLeg.row === "F" ? "J" : "A" };
-      const vccRail: HoleRef = { col: vccLeg.col, row: vccLeg.row === "F" ? "+top" : "+bottom" };
-      const gndHole: HoleRef = { col: gndLeg.col, row: gndLeg.row === "E" ? "A" : "J" };
-      const gndRail: HoleRef = { col: gndLeg.col, row: gndLeg.row === "E" ? "-bottom" : "-top" };
+      const vccHole = pickFree(vccLeg.col, vccLeg.row === "F" ? ["G", "H", "I", "J"] : ["D", "C", "B", "A"]);
+      const vccRail = pickFreeRail(vccLeg.col, vccLeg.row === "F" ? "+top" : "+bottom");
+      const gndHole = pickFree(gndLeg.col, gndLeg.row === "E" ? ["D", "C", "B", "A"] : ["G", "H", "I", "J"]);
+      const gndRail = pickFreeRail(gndLeg.col, gndLeg.row === "E" ? "-bottom" : "-top");
 
       const w1 = asWireId(nextId("w"));
       const w2 = asWireId(nextId("w"));
+      nextWires[w1] = { id: w1, a: holeEnd(vccHole), b: holeEnd(vccRail), color: "#ef4444" };
+      nextWires[w2] = { id: w2, a: holeEnd(gndHole), b: holeEnd(gndRail), color: "#3b82f6" };
 
-      commit({
-        ...doc,
-        wires: {
-          ...doc.wires,
-          [w1]: { id: w1, a: holeEnd(vccHole), b: holeEnd(vccRail), color: "#ef4444" },
-          [w2]: { id: w2, a: holeEnd(gndHole), b: holeEnd(gndRail), color: "#3b82f6" },
-        },
-      });
+      commit({ ...doc, nodes: nextNodes, wires: nextWires });
     },
 
     load: (doc, origin = null) => {
+      clearAllPulseTimers();
+      const normalizedDoc = ensureUniqueDesignators(doc);
       // A freshly loaded circuit has not been clocked. Carrying the old state in
       // would have its flip-flops start at values from a different circuit.
-      const { index, diagnostics, routes, flopState } = simulate(doc, {});
+      const { index, diagnostics, routes, flopState } = simulate(normalizedDoc, {});
       set({
-        doc,
+        doc: normalizedDoc,
         origin,
         flopState,
         index,
@@ -5352,6 +5599,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     clear: () => {
+      clearAllPulseTimers();
       const currentDoc = get().doc;
       const nextDoc = emptyDocument();
       const { index, diagnostics, routes, flopState } = simulate(nextDoc, {});
@@ -5372,6 +5620,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     undo: () => {
+      clearAllPulseTimers();
       const { past, doc, future } = get();
       const prev = past[past.length - 1];
       if (!prev) return;
@@ -5390,6 +5639,7 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     redo: () => {
+      clearAllPulseTimers();
       const { future, doc, past } = get();
       const next = future[0];
       if (!next) return;
@@ -5418,7 +5668,12 @@ export const useCircuitStore = create<CircuitState>()(
        * ghost-connection failure the invariants exist to prevent. Undo history is
        * dropped too: nobody expects to reopen a tab and undo yesterday.
        */
-      partialize: (s) => ({ doc: s.doc, schematic: s.schematic, origin: s.origin }),
+      partialize: (s) => ({
+        doc: s.doc,
+        schematic: s.schematic,
+        origin: s.origin,
+        flopState: s.flopState,
+      }),
 
       /**
        * Rehydration must RE-DERIVE, not restore. The document is plain JSON, so it
@@ -5472,13 +5727,33 @@ import { cn } from "@/lib/utils";
  */
 export function ClockPanel() {
   const doc = useCircuitStore((s) => s.doc);
+  const index = useCircuitStore((s) => s.index);
   const pulseClock = useCircuitStore((s) => s.pulseClock);
   const toggleClock = useCircuitStore((s) => s.toggleClock);
+  const pulseClear = useCircuitStore((s) => s.pulseClear);
   const resetState = useCircuitStore((s) => s.resetState);
   const flopState = useCircuitStore((s) => s.flopState);
 
   const clocks = Object.values(doc.nodes).filter((n) => n.kind === "clock");
-  const stored = Object.entries(flopState);
+  const allFlopEntries = Object.entries(flopState).filter(
+    ([key]) => !key.startsWith("cell:"),
+  );
+
+  // Hide unused flip-flop slots in multi-unit packages (e.g. slot 2 of 7474 in divide-by-two)
+  const stored = allFlopEntries.filter(([key]) => {
+    const [nodeId, slotStr] = key.split("/");
+    if (!nodeId || !slotStr || !index) return true;
+    const prefix = `${slotStr}`;
+    return index.nets.some(
+      (net) =>
+        net.pins.length > 1 &&
+        net.pins.some(
+          (p) =>
+            p.node === nodeId &&
+            (p.pin.startsWith(prefix) || p.pin === "CLK" || p.pin === "CLR"),
+        ),
+    );
+  });
 
   const [running, setRunning] = useState(false);
   const [hz, setHz] = useState(2);
@@ -5608,6 +5883,22 @@ export function ClockPanel() {
             <TooltipTrigger asChild>
               <Button
                 size="sm"
+                variant="outline"
+                className="h-7 gap-1.5 px-2 text-xs"
+                onClick={pulseClear}
+              >
+                Clear (0)
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-64">
+              Pulse active-low Clear (or initialize all flip-flops to 0) so the
+              counter starts from a known state.
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
                 variant="ghost"
                 className="h-7 gap-1.5 px-2 text-xs"
                 onClick={resetState}
@@ -5658,20 +5949,15 @@ const TICK_W = 7;
  */
 export function WaveformPanel() {
   const doc = useCircuitStore((s) => s.doc);
+  const flopState = useCircuitStore((s) => s.flopState);
+  const pulseClear = useCircuitStore((s) => s.pulseClear);
   const [delay, setDelay] = useState(1);
 
-  // The clocked chart continues from where the board actually is, so a counter
-  // you have just cleared charts a count and one you have not charts unknowns —
-  // which is the truth about an uncleared counter, and the lesson.
-  const flopState = useCircuitStore((s) => s.flopState);
   const result = useMemo(() => {
     const netlist = elaborate(doc).netlist;
     return simulateTimed(netlist, { delay, state: toSeqState(netlist, flopState) });
   }, [doc, delay, flopState]);
 
-  // Too many inputs to sweep. Say which circuit and by how much, rather than
-  // fall through to the "add some switches" line — the user has just built
-  // something substantial and being told to add a switch reads as a bug.
   if (result.tooWide) {
     return (
       <p className="text-muted-foreground p-3 text-sm text-pretty">
@@ -5693,12 +5979,39 @@ export function WaveformPanel() {
     );
   }
 
+  const outputWaves = result.waves.filter((w) => !w.isInput);
+  const allOutputsUnknown =
+    Boolean(result.clocked) &&
+    outputWaves.length > 0 &&
+    outputWaves.every((w) => w.samples.every((s) => s === LX || s === LZ));
+
   const width = LABEL_W + result.ticks * TICK_W;
   const height = result.waves.length * ROW_H + 18;
   const glitchTicks = new Set(result.glitches.flatMap((g) => g.ticks));
 
   return (
     <div className="space-y-3 p-3">
+      {allOutputsUnknown && (
+        <Alert>
+          <Zap className="text-amber-500" />
+          <AlertTitle>Flip-flops are in power-up unknown state (X)</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              Real flip-flops power up in an unknown state (X), and toggling X
+              stays X. Pulse Clear (or initialize to 0) to see the count waveform.
+            </span>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 text-xs"
+              onClick={pulseClear}
+            >
+              Initialize (Clear → 0)
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {result.glitches.length > 0 && (
         <Alert>
           <Zap className="text-logic-z" />
@@ -5716,18 +6029,22 @@ export function WaveformPanel() {
       )}
 
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground text-xs">Gate delay</span>
-        {[1, 2, 3].map((d) => (
-          <Button
-            key={d}
-            size="sm"
-            variant={delay === d ? "secondary" : "ghost"}
-            className="h-7 px-2 font-mono text-xs"
-            onClick={() => setDelay(d)}
-          >
-            {d}
-          </Button>
-        ))}
+        {!result.clocked && (
+          <>
+            <span className="text-muted-foreground text-xs">Gate delay</span>
+            {[1, 2, 3].map((d) => (
+              <Button
+                key={d}
+                size="sm"
+                variant={delay === d ? "secondary" : "ghost"}
+                className="h-7 px-2 font-mono text-xs"
+                onClick={() => setDelay(d)}
+              >
+                {d}
+              </Button>
+            ))}
+          </>
+        )}
         <span className="text-muted-foreground ml-auto text-xs">
           {result.clocked
             ? `${result.clocked.cycles} clock cycles`
@@ -5773,9 +6090,9 @@ export function WaveformPanel() {
       </div>
 
       <p className="text-muted-foreground text-xs">
-        Inputs step through every combination changing one bit at a time, then
-        reverse — so each transition is exercised in both directions. A hazard is
-        directional: it appears on a falling edge but not the matching rising one.
+        {result.clocked
+          ? "Clocked waveform starting from the circuit's current flip-flop state and switch settings."
+          : "Inputs step through every combination changing one bit at a time, then reverse — so each transition is exercised in both directions. A hazard is directional: it appears on a falling edge but not the matching rising one."}
       </p>
     </div>
   );
@@ -5946,6 +6263,7 @@ export function BreadboardView() {
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
   const toggleClock = useCircuitStore((s) => s.toggleClock);
   const pulseClock = useCircuitStore((s) => s.pulseClock);
+  const pulseClear = useCircuitStore((s) => s.pulseClear);
   const diagnostics = useCircuitStore((s) => s.diagnostics);
   const selection = useCircuitStore((s) => s.selection);
   const select = useCircuitStore((s) => s.select);
@@ -6009,24 +6327,23 @@ export function BreadboardView() {
     if (autoHz === null) return;
     const interval = setInterval(() => {
       const state = useCircuitStore.getState();
-      let clk = Object.values(state.doc.nodes).find((n): n is ClockNode => n.kind === "clock");
-      if (!clk) {
+      const clks = Object.values(state.doc.nodes).filter(
+        (n): n is ClockNode => n.kind === "clock",
+      );
+      if (clks.length === 0) {
         const id = state.addNode({ kind: "clock", label: "CLK", state: 0, pos: { x: 0, y: 0 } });
-        if (id) {
-          const n = state.doc.nodes[id];
-          if (n?.kind === "clock") clk = n;
-        }
-      }
-      if (clk) {
-        state.toggleClock(clk.id);
+        if (id) state.toggleClock(id);
+      } else {
+        for (const c of clks) state.toggleClock(c.id);
       }
     }, 1000 / (2 * autoHz));
     return () => {
       clearInterval(interval);
       const state = useCircuitStore.getState();
-      const clk = Object.values(state.doc.nodes).find((n) => n.kind === "clock");
-      if (clk && clk.state === 1) {
-        state.setClock(clk.id, () => 0);
+      for (const n of Object.values(state.doc.nodes)) {
+        if (n.kind === "clock" && n.state === 1) {
+          state.setClock(n.id, () => 0);
+        }
       }
     };
   }, [autoHz]);
@@ -6304,6 +6621,12 @@ export function BreadboardView() {
     }
   };
 
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    pulseClear();
+    toast.info("Cleared flip-flops (state -> 0)");
+  };
+
   const w = boardWidth(spec);
   const h = boardHeight();
   const CHASSIS_W = Math.max(
@@ -6335,6 +6658,7 @@ export function BreadboardView() {
               unpoweredNodes.forEach((n) => autoWireIcPower(n.id));
               toast.success(`Auto-powered ${unpoweredNodes.length} IC${unpoweredNodes.length > 1 ? "s" : ""}`);
             }}
+            aria-label={`Auto-wire VCC and GND to power rails for ${unpoweredNodes.length} ICs`}
             title="Auto-wire VCC and GND to power rails for all unpowered ICs"
           >
             <Zap className="size-3.5 mr-1 fill-amber-500" />
@@ -6346,39 +6670,43 @@ export function BreadboardView() {
           size="sm"
           className="h-7 text-xs gap-1 shadow-xs"
           onClick={() => setShowXRay((v) => !v)}
+          aria-label="Toggle DIP-14 Internal Gate X-Ray View"
           title="Toggle DIP-14 Internal Gate X-Ray View (Hotkey X)"
         >
           {showXRay ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5 text-muted-foreground" />}
           <span>X-Ray</span>
-          <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[9px] font-mono">X</kbd>
+          <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[11px] font-mono">X</kbd>
         </Button>
         <Button
           variant={showAirwires ? "default" : "outline"}
           size="sm"
           className="h-7 text-xs gap-1 shadow-xs"
           onClick={() => setShowAirwires((v) => !v)}
+          aria-label="Toggle Unrouted Schematic Airwires Guide"
           title="Toggle Unrouted Schematic Airwires Guide (Hotkey A)"
         >
           <Radio className="size-3.5" />
           <span>Airwires</span>
-          <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[9px] font-mono">A</kbd>
+          <kbd className="ml-0.5 rounded bg-muted/40 px-1 text-[11px] font-mono">A</kbd>
         </Button>
         <div className="flex items-center rounded-md border bg-card/90 shadow-xs h-7 px-1 text-xs font-mono">
           <button
             type="button"
             className="px-1.5 py-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
             onClick={cam.zoomOut}
+            aria-label="Zoom Out"
             title="Zoom Out"
           >
             -
           </button>
-          <span className="px-1 min-w-[38px] text-center text-[10px] select-none text-muted-foreground">
+          <span className="px-1 min-w-[38px] text-center text-[11px] select-none text-muted-foreground">
             {Math.round(cam.zoom * 100)}%
           </span>
           <button
             type="button"
             className="px-1.5 py-0.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground"
             onClick={cam.zoomIn}
+            aria-label="Zoom In"
             title="Zoom In"
           >
             +
@@ -6389,6 +6717,7 @@ export function BreadboardView() {
           size="sm"
           className="h-7 text-xs gap-1 shadow-xs"
           onClick={() => cam.reset()}
+          aria-label="Fit Breadboard Trainer to Screen"
           title="Fit Breadboard Trainer to Screen"
         >
           <Maximize2 className="size-3.5" />
@@ -6398,9 +6727,13 @@ export function BreadboardView() {
 
       <svg
         ref={svgRef}
+        data-native-cursor=""
         viewBox={cam.viewBox}
         preserveAspectRatio="xMidYMid meet"
-        className="bg-card h-full w-full touch-none rounded-md border"
+        className={cn(
+          "bg-card h-full w-full touch-none rounded-md border",
+          pendingStart ? "cursor-crosshair" : "cursor-default",
+        )}
         onWheel={cam.onWheel}
         onPointerDown={(e) => {
           dragStartRef.current = { x: e.clientX, y: e.clientY };
@@ -6636,20 +6969,46 @@ export function BreadboardView() {
               transform="translate(605, 42)"
             >
               <rect
-                width={48}
+                width={44}
                 height={26}
                 rx={4}
                 className="fill-primary/90 hover:fill-primary stroke-border"
                 strokeWidth={1}
               />
               <text
-                x={24}
+                x={22}
                 y={16.5}
                 textAnchor="middle"
                 fill="#ffffff"
                 className="font-mono text-[9px] font-bold pointer-events-none select-none"
               >
                 PULSE
+              </text>
+            </g>
+
+            {/* Manual Clear Button */}
+            <g
+              id="trainer-clear-btn"
+              data-testid="trainer-clear-btn"
+              className="cursor-pointer group"
+              onClick={handleClear}
+              transform="translate(653, 42)"
+            >
+              <rect
+                width={30}
+                height={26}
+                rx={4}
+                className="fill-slate-800 hover:fill-slate-700 stroke-border"
+                strokeWidth={1}
+              />
+              <text
+                x={15}
+                y={16.5}
+                textAnchor="middle"
+                fill="#cbd5e1"
+                className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
+              >
+                CLR
               </text>
             </g>
 
@@ -6670,16 +7029,16 @@ export function BreadboardView() {
                     return hzVal;
                   });
                 }}
-                transform={`translate(${660 + i * 36}, 42)`}
+                transform={`translate(${687 + i * 32}, 42)`}
               >
                 <rect
-                  width={32}
+                  width={28}
                   height={26}
                   rx={4}
                   className={autoHz === hzVal ? "fill-primary" : "fill-slate-800 hover:fill-slate-700"}
                 />
                 <text
-                  x={16}
+                  x={14}
                   y={16.5}
                   textAnchor="middle"
                   fill={autoHz === hzVal ? "#ffffff" : "#cbd5e1"}
@@ -6750,9 +7109,9 @@ export function BreadboardView() {
           <g>
             <rect
               x={905}
-              y={14}
+              y={8}
               width={CHASSIS_W - 925}
-              height={82}
+              height={88}
               rx={6}
               fill="#090d16"
               stroke="#1e293b"
@@ -6761,9 +7120,9 @@ export function BreadboardView() {
             {/* Header row */}
             <text
               x={918}
-              y={29}
-              fill="#f8fafc"
-              className="font-mono text-[9px] font-bold pointer-events-none select-none"
+              y={21}
+              fill="#94a3b8"
+              className="font-mono text-[8px] font-bold tracking-wider pointer-events-none select-none uppercase"
             >
               LOGIC INDICATORS (OUTPUT MONITOR)
             </text>
@@ -6771,30 +7130,30 @@ export function BreadboardView() {
             <g
               className="cursor-pointer group"
               onClick={handleAddLed}
-              transform={`translate(${CHASSIS_W - 82}, 18)`}
+              transform={`translate(${CHASSIS_W - 82}, 12)`}
             >
               <rect
                 width={54}
-                height={20}
+                height={17}
                 rx={4}
                 className="fill-slate-800 hover:fill-slate-700 stroke-slate-700 transition-colors"
                 strokeWidth={1}
               />
               <text
                 x={27}
-                y={13.5}
+                y={11.5}
                 textAnchor="middle"
                 fill="#f8fafc"
-                className="font-mono text-[8.5px] font-semibold pointer-events-none select-none"
+                className="font-mono text-[8px] font-semibold pointer-events-none select-none"
               >
                 + LED
               </text>
             </g>
             <line
               x1={905}
-              y1={36}
+              y1={25}
               x2={CHASSIS_W - 20}
-              y2={36}
+              y2={25}
               stroke="#1e293b"
               strokeWidth={0.75}
             />
@@ -7076,7 +7435,7 @@ export function BreadboardView() {
                 }}
                 style={{ backgroundColor: swatch.value }}
                 className={cn(
-                  "size-4 rounded-full border border-background/50 transition-all hover:scale-125 cursor-pointer",
+                  "size-4 rounded-full border border-background/50 transition-transform duration-150 hover:scale-125 cursor-pointer",
                   (selectedWire.color || "#38bdf8") === swatch.value &&
                     "ring-2 ring-primary ring-offset-1 ring-offset-background scale-110",
                 )}
@@ -7259,7 +7618,7 @@ function TrainerSocket({
           x={0}
           y={20}
           textAnchor="middle"
-          className="fill-muted-foreground font-mono text-[7.5px] font-medium pointer-events-none select-none"
+          className="fill-muted-foreground font-mono text-[8.5px] font-semibold pointer-events-none select-none"
         >
           {sublabel}
         </text>
@@ -7377,7 +7736,7 @@ function TrainerLed({
         y={14}
         textAnchor="middle"
         fill={lit ? chosenColor : isFault ? "#ef4444" : "#94a3b8"}
-        className="font-mono text-[7.5px] font-bold pointer-events-none select-none"
+        className="font-mono text-[8.5px] font-bold pointer-events-none select-none"
       >
         {value === 1 ? "1" : value === 0 ? "0" : value === 2 ? "Z" : "X"}
       </text>
@@ -7493,7 +7852,7 @@ function TrainerSwitch({
           y={-14}
           textAnchor="middle"
           fill="#94a3b8"
-          className="font-mono text-[7px] font-semibold pointer-events-none select-none"
+          className="font-mono text-[8px] font-bold pointer-events-none select-none"
         >
           OUT
         </text>
@@ -8085,30 +8444,36 @@ function SeatedIc({
     return (
       <g>
         {/* Part & instance text label with opaque pill */}
-        <g
-          transform={`translate(${(a.x + b.x) / 2}, ${midY + (showXRay ? -22 : 4)})`}
-          className="pointer-events-none"
-        >
-          <rect
-            x={-38}
-            y={-9}
-            width={76}
-            height={18}
-            rx={4}
-            fill="#090d16"
-            stroke="#334155"
-            strokeWidth={0.75}
-          />
-          <text
-            x={0}
-            y={3.5}
-            textAnchor="middle"
-            fill="#f8fafc"
-            className="font-mono text-[9.5px] font-bold select-none"
-          >
-            {node.part} · {node.label}
-          </text>
-        </g>
+        {(() => {
+          const pillText = `${node.part} · ${node.label}`;
+          const pillW = Math.max(82, pillText.length * 6.5 + 16);
+          return (
+            <g
+              transform={`translate(${(a.x + b.x) / 2}, ${midY + (showXRay ? -22 : 4)})`}
+              className="pointer-events-none"
+            >
+              <rect
+                x={-pillW / 2}
+                y={-10}
+                width={pillW}
+                height={20}
+                rx={4}
+                fill="#090d16"
+                stroke="#334155"
+                strokeWidth={0.75}
+              />
+              <text
+                x={0}
+                y={3.5}
+                textAnchor="middle"
+                fill="#f8fafc"
+                className="font-mono text-[10px] font-bold select-none tracking-tight"
+              >
+                {pillText}
+              </text>
+            </g>
+          );
+        })()}
 
         {/* Floating Action Pill on Selected IC */}
         {isSelected && (
@@ -8126,10 +8491,20 @@ function SeatedIc({
               style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}
             />
             <g
-              className="cursor-pointer group/pwr"
+              role="button"
+              tabIndex={0}
+              aria-label={`Auto-power ${node.label}`}
+              className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
               onClick={() => {
                 onAutoPower(node.id);
                 toast.success(`Auto-powered ${node.label}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onAutoPower(node.id);
+                  toast.success(`Auto-powered ${node.label}`);
+                }
               }}
             >
               <rect
@@ -8150,10 +8525,20 @@ function SeatedIc({
               </text>
             </g>
             <g
-              className="cursor-pointer group/del"
+              role="button"
+              tabIndex={0}
+              aria-label={`Delete ${node.label}`}
+              className="cursor-pointer group/del focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-destructive rounded"
               onClick={() => {
                 onDelete();
                 toast.info(`Deleted ${node.label}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onDelete();
+                  toast.info(`Deleted ${node.label}`);
+                }
               }}
             >
               <rect
@@ -8255,10 +8640,20 @@ function SeatedIc({
                 style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}
               />
               <g
-                className="cursor-pointer group/pwr"
+                role="button"
+                tabIndex={0}
+                aria-label={`Auto-power ${node.label}`}
+                className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
                 onClick={() => {
                   onAutoPower(node.id);
                   toast.success(`Auto-powered ${node.label}`);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onAutoPower(node.id);
+                    toast.success(`Auto-powered ${node.label}`);
+                  }
                 }}
               >
                 <rect
@@ -8279,10 +8674,20 @@ function SeatedIc({
                 </text>
               </g>
               <g
-                className="cursor-pointer group/del"
+                role="button"
+                tabIndex={0}
+                aria-label={`Delete ${node.label}`}
+                className="cursor-pointer group/del focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-destructive rounded"
                 onClick={() => {
                   onDelete();
                   toast.info(`Deleted ${node.label}`);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onDelete();
+                    toast.info(`Deleted ${node.label}`);
+                  }
                 }}
               >
                 <rect
@@ -8331,9 +8736,9 @@ function SeatedIc({
             <IcLeg hole={hole} isNc={isNc} />
             <text
               x={pt.x}
-              y={isUpper ? pt.y + 11 : pt.y - 7}
+              y={isUpper ? pt.y + 11.5 : pt.y - 7.5}
               textAnchor="middle"
-              className={`font-mono text-[7px] font-semibold pointer-events-none ${
+              className={`font-mono text-[8px] font-bold pointer-events-none ${
                 isNc
                   ? "fill-red-400 font-bold"
                   : pinName === "VCC"
@@ -8342,7 +8747,7 @@ function SeatedIc({
                   ? "fill-blue-400 font-bold"
                   : showXRay
                   ? "fill-muted-foreground"
-                  : "fill-background/80"
+                  : "fill-background/90"
               }`}
             >
               {isNc ? "NC" : pinName}
@@ -8457,6 +8862,44 @@ function IcXRay({
           />
         );
       })}
+
+      {def.flops.map((flop) => {
+        const qPinNum = pinNumberByName.get(flop.qPin);
+        const clkPinNum = pinNumberByName.get(flop.clockPin);
+        if (!qPinNum || !clkPinNum) return null;
+        const qPt = pinPointMap.get(qPinNum);
+        const clkPt = pinPointMap.get(clkPinNum);
+        if (!qPt || !clkPt) return null;
+        const qHole = holes[qPinNum - 1]!;
+        const boxX = (qPt.x + clkPt.x) / 2 - 11;
+        const boxY = midY - 8;
+        return (
+          <g key={`flop-${flop.slot}`}>
+            <XRayLead from={clkPt} to={{ x: boxX + 11, y: boxY + 8 }} hole={holes[clkPinNum - 1]!} />
+            <XRayLead from={qPt} to={{ x: boxX + 11, y: boxY + 8 }} hole={qHole} />
+            <rect
+              x={boxX}
+              y={boxY}
+              width={22}
+              height={16}
+              rx={2.5}
+              fill="rgba(15, 23, 42, 0.88)"
+              stroke="#38bdf8"
+              strokeWidth={1}
+            />
+            <text
+              x={boxX + 11}
+              y={boxY + 10.5}
+              textAnchor="middle"
+              fill="#f8fafc"
+              className="font-mono text-[7.5px] font-bold"
+            >
+              {flop.kind.toUpperCase()}
+              {flop.slot}
+            </text>
+          </g>
+        );
+      })}
     </g>
   );
 }
@@ -8527,7 +8970,7 @@ function XRayGate({
         x={cx}
         y={cy + 3}
         textAnchor="middle"
-        className="fill-foreground/80 font-mono text-[7px] font-bold"
+        className="fill-foreground/80 font-mono text-[8px] font-bold"
       >
         {slot}
       </text>
@@ -8880,8 +9323,7 @@ function Jumper({
             const onPointerMove = (ev: PointerEvent) => {
               if (toView) {
                 const pt = toView(ev.clientX, ev.clientY);
-                // Snap wire bend channel to breadboard 12px grid
-                const snappedY = Math.round((pt.y - BOARD_OFFSET_Y) / 12) * 12 + BOARD_OFFSET_Y;
+                const snappedY = Math.round(pt.y / 2) * 2;
                 onChannelDrag(snappedY);
               }
             };
@@ -8989,7 +9431,7 @@ function AirwiresGuide({
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Boxes, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
+import { Boxes, ChevronDown, FileText, Maximize2, Minimize2, Redo2, Stethoscope, Trash2, Undo2 } from "lucide-react";
 
 import { CircuitCanvas } from "@/components/lab/circuit-canvas";
 import { BreadboardView } from "@/components/lab/breadboard-view";
@@ -9019,6 +9461,7 @@ import {
 
 import { useCircuitStore } from "@/stores/circuit-store";
 import { useExpected } from "@/stores/spec-store";
+import type { BooleanFunction } from "@/lib/core-engine/types";
 import { cn } from "@/lib/utils";
 
 const WIRE_COLORS = [
@@ -9096,10 +9539,12 @@ export default function LabPage() {
       const el = document.activeElement;
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
 
-      if (e.key === "Backspace" || e.key === "Delete") deleteSelected();
+      if ((e.key === "Backspace" || e.key === "Delete") && !onBoard) {
+        deleteSelected();
+      }
       if (e.key === "Escape") {
         if (isZenMode) setIsZenMode(false);
-        else useCircuitStore.getState().cancelWire();
+        else if (!onBoard) useCircuitStore.getState().cancelWire();
       }
       if (e.key === "f" || e.key === "F") {
         setIsZenMode((v) => !v);
@@ -9118,15 +9563,21 @@ export default function LabPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [deleteSelected, undo, redo, isZenMode, setRightSidebarOpen, setLeftSidebarOpen]);
+  }, [deleteSelected, undo, redo, isZenMode, onBoard, setRightSidebarOpen, setLeftSidebarOpen]);
+
+  const [prevExpected, setPrevExpected] = useState<BooleanFunction | null>(null);
+  if (expected && expected !== prevExpected) {
+    setPrevExpected(expected);
+    setRightSidebarUserChoice(true);
+  }
 
   const hint = pendingHole
     ? "Now click a second hole to lay the jumper — or press Escape."
     : pendingPin
       ? "Now click a second pin to complete the wire — or press Escape."
       : onBoard
-        ? "Click a hole, then another, to lay a jumper. Click a wire to select it (Alt+Click or Del to delete). Hover any hole to probe."
-        : "Click a pin, then another, to wire them. Click a switch to toggle it; Alt+Click or Del to delete a wire.";
+        ? "Click a hole, then another, to lay a jumper. Click a wire to select it (Alt+Click or Delete/Backspace to delete a wire). Hover any hole to probe."
+        : "Click a pin, then another, to wire them. Click a switch to toggle it; Alt+Click or Delete/Backspace to delete a wire.";
 
   /**
    * The view switch is BIDIRECTIONAL now.
@@ -9148,8 +9599,21 @@ export default function LabPage() {
       }
       const unplaced = toBreadboard();
       if (unplaced.length > 0) {
+        const schematicDoc = useCircuitStore.getState().schematic;
+        const partNames = unplaced
+          .map((id) => schematicDoc?.nodes[id]?.label || id)
+          .join(", ");
         toast.warning(
-          `${unplaced.length} part${unplaced.length === 1 ? "" : "s"} did not fit on the board`,
+          `${unplaced.length} part${unplaced.length === 1 ? "" : "s"} did not fit: ${partNames}`,
+          {
+            description:
+              "The breadboard ran out of space. You can switch back to schematic or simplify the circuit.",
+            duration: 8000,
+            action: {
+              label: "Back to schematic",
+              onClick: () => switchView("schematic"),
+            },
+          },
         );
       } else {
         toast.success("Seated on a breadboard", {
@@ -9227,7 +9691,7 @@ export default function LabPage() {
   return (
     <div
       className={cn(
-        "flex w-full overflow-hidden flex-col bg-background transition-all",
+        "flex w-full overflow-hidden flex-col bg-background transition-[padding,margin] duration-200 [transition-timing-function:var(--ease-out-expo)]",
         isZenMode
           ? "fixed inset-0 z-50 h-screen w-screen p-0 m-0"
           : "h-[calc(100dvh-3.5rem)] px-2 py-2 sm:px-3 sm:py-2.5",
@@ -9244,7 +9708,7 @@ export default function LabPage() {
         >
           <Minimize2 className="size-3.5 text-foreground" />
           <span className="font-medium text-foreground">Exit Zen</span>
-          <kbd className="inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+          <kbd className="inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
             Esc
           </kbd>
         </Button>
@@ -9262,7 +9726,8 @@ export default function LabPage() {
               type="button"
               onClick={() => setHeaderCollapsed(true)}
               title="Compact Toolbar (Hide Banner)"
-              className="text-[10px] text-muted-foreground hover:text-foreground hidden sm:inline-block cursor-pointer px-1 rounded border"
+              aria-label="Compact Toolbar"
+              className="text-[11px] text-muted-foreground hover:text-foreground hidden sm:inline-block cursor-pointer px-1 rounded border"
             >
               Compact
             </button>
@@ -9278,10 +9743,11 @@ export default function LabPage() {
             type="button"
             onClick={() => setHeaderCollapsed(false)}
             title="Expand Banner"
+            aria-label="Expand Banner"
             className="text-xs text-muted-foreground hover:text-foreground cursor-pointer px-2 py-1 rounded border flex items-center gap-1"
           >
             <span className="font-semibold text-foreground">Lab</span>
-            <span className="text-[10px]">▼</span>
+            <span className="text-[11px]">▼</span>
           </button>
         )}
 
@@ -9292,11 +9758,12 @@ export default function LabPage() {
             size="sm"
             onClick={() => setIsZenMode((v) => !v)}
             title="Toggle Zen Fullscreen Mode (Hotkey F or Esc)"
+            aria-label="Toggle Zen Fullscreen Mode"
             className="h-8 gap-1.5 text-xs shadow-xs"
           >
             {isZenMode ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
             <span className="hidden xl:inline">{isZenMode ? "Exit Zen" : "Zen Mode"}</span>
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
               F
             </kbd>
           </Button>
@@ -9307,11 +9774,12 @@ export default function LabPage() {
             size="sm"
             onClick={() => setLeftSidebarOpen((v) => !v)}
             title="Toggle Parts Sidebar (B or [)"
+            aria-label="Toggle Parts Sidebar"
             className="hidden lg:flex gap-1.5 h-8 text-xs"
           >
             <Boxes className="size-3.5" />
             <span className="hidden xl:inline">Parts</span>
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
               [
             </kbd>
           </Button>
@@ -9323,8 +9791,9 @@ export default function LabPage() {
               type="button"
               onClick={() => setActiveWireColor(null)}
               title="Automatic Wire Color"
+              aria-label="Automatic wire color"
               className={cn(
-                "px-1.5 py-0.5 text-[10px] rounded font-mono font-medium transition-colors",
+                "px-1.5 py-0.5 text-[11px] rounded font-mono font-medium transition-colors",
                 activeWireColor === null
                   ? "bg-primary text-primary-foreground font-semibold"
                   : "text-muted-foreground hover:text-foreground",
@@ -9338,9 +9807,10 @@ export default function LabPage() {
                 type="button"
                 onClick={() => setActiveWireColor(c.value)}
                 title={c.label}
+                aria-label={c.label}
                 style={{ backgroundColor: c.value }}
                 className={cn(
-                  "size-3.5 rounded-full transition-all border border-background/50 hover:scale-125 cursor-pointer",
+                  "size-3.5 rounded-full transition-transform duration-150 border border-background/50 hover:scale-125 cursor-pointer",
                   activeWireColor === c.value &&
                     "ring-2 ring-foreground ring-offset-1 ring-offset-background scale-110",
                 )}
@@ -9348,11 +9818,11 @@ export default function LabPage() {
             ))}
           </div>
 
-          {/* --- the two side panels, as sheets, below lg --- */}
+          {/* --- the two side panels, as sheets, below lg / xl --- */}
           <Sheet open={partsOpen} onOpenChange={setPartsOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="lg:hidden">
-                <Boxes /> <span className="hidden sm:inline">Parts</span>
+              <Button variant="outline" size="sm" className="lg:hidden" aria-label="Open parts palette">
+                <Boxes className="size-3.5" /> <span className="hidden sm:inline">Parts</span>
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-[280px] p-0">
@@ -9367,8 +9837,8 @@ export default function LabPage() {
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm" className="lg:hidden">
-                <Stethoscope />
+              <Button variant="outline" size="sm" className="xl:hidden" aria-label="Open faults and verification drawer">
+                <Stethoscope className="size-3.5" />
                 <span className="hidden sm:inline">Check</span>
                 {errorCount > 0 && (
                   <Badge variant="destructive" className="ml-1 px-1.5">
@@ -9391,16 +9861,17 @@ export default function LabPage() {
             size="sm"
             onClick={() => setRightSidebarOpen((v) => !v)}
             title="Toggle Faults & Verification Inspector (])"
-            className="hidden lg:flex gap-1.5 h-8 text-xs"
+            aria-label="Toggle Faults & Verification Inspector"
+            className="hidden xl:flex gap-1.5 h-8 text-xs"
           >
             <Stethoscope className="size-3.5" />
-            <span className="hidden xl:inline">Inspect</span>
+            <span className="hidden 2xl:inline">Inspect</span>
             {errorCount > 0 && (
-              <Badge variant="destructive" className="ml-0.5 px-1.5 text-[10px]">
+              <Badge variant="destructive" className="ml-0.5 px-1.5 text-[11px]">
                 {errorCount}
               </Badge>
             )}
-            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[9px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
+            <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-[11px] font-mono font-medium rounded border border-border bg-muted text-muted-foreground shadow-2xs">
               ]
             </kbd>
           </Button>
@@ -9411,15 +9882,21 @@ export default function LabPage() {
             variant="outline"
             value={onBoard ? "board" : "schematic"}
             onValueChange={switchView}
+            className="border shadow-2xs p-0.5 rounded-lg"
           >
             <ToggleGroupItem
               id="toggle-schematic"
               value="schematic"
               disabled={onBoard && !hasSchematic}
+              className={cn("px-2.5 text-xs font-medium", !onBoard && "bg-secondary text-secondary-foreground font-semibold")}
             >
               Schematic
             </ToggleGroupItem>
-            <ToggleGroupItem id="toggle-breadboard" value="board">
+            <ToggleGroupItem
+              id="toggle-breadboard"
+              value="board"
+              className={cn("px-2.5 text-xs font-medium", onBoard && "bg-secondary text-secondary-foreground font-semibold")}
+            >
               Breadboard
             </ToggleGroupItem>
           </ToggleGroup>
@@ -9428,37 +9905,52 @@ export default function LabPage() {
           <PresetMenu />
           <EquationBuilder />
 
-          <Separator orientation="vertical" className="hidden h-6 sm:block" />
+          <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-          <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo}>
-            <Undo2 />
+          <Button variant="outline" size="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">
+            <Undo2 className="size-3.5" />
             <span className="sr-only">Undo</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={redo} disabled={!canRedo}>
-            <Redo2 />
+          <Button variant="outline" size="sm" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)" aria-label="Redo">
+            <Redo2 className="size-3.5" />
             <span className="sr-only">Redo</span>
           </Button>
+
+          <Separator orientation="vertical" className="hidden h-5 sm:block" />
+
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => {
               if (!hasNodes) return;
+              const nodeCount = Object.keys(useCircuitStore.getState().doc.nodes).length;
+              if (nodeCount > 5 && typeof window !== "undefined") {
+                if (!window.confirm(`Clear circuit with ${nodeCount} parts? This can be undone with Ctrl+Z.`)) {
+                  return;
+                }
+              }
               clear();
-              toast("Circuit cleared", {
+              toast("Circuit cleared — Undo", {
                 action: {
                   label: "Undo",
                   onClick: () => undo(),
                 },
               });
             }}
-            title="Clear circuit (Undoable with Ctrl+Z)"
+            title="Clear circuit (Destructive, Undoable with Ctrl+Z)"
+            aria-label="Clear circuit"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
           >
-            <Trash2 />
+            <Trash2 className="size-3.5" />
             <span className="sr-only">Clear</span>
           </Button>
-          <Button variant="outline" size="sm" asChild>
+
+          <Separator orientation="vertical" className="hidden h-5 sm:block" />
+
+          <Button variant="outline" size="sm" asChild className="h-8 gap-1.5 text-xs shadow-xs" title="Export Circuit Report" aria-label="Export Circuit Report">
             <Link href="/report">
-              <FileText /> <span className="hidden sm:inline">Report</span>
+              <FileText className="size-3.5" />
+              <span className="hidden sm:inline">Report</span>
             </Link>
           </Button>
         </div>
@@ -9480,14 +9972,16 @@ export default function LabPage() {
             {onBoard ? <BreadboardView /> : <CircuitCanvas />}
           </div>
 
-          {!onBoard && !isZenMode && <ClockPanel />}
+          {(!onBoard || hasFlops) && !isZenMode && <ClockPanel />}
 
           {!isZenMode && (
             <Card className="shrink-0 overflow-hidden py-0 shadow-xs">
               <button
                 type="button"
                 onClick={() => setTimingChoice(!showTiming)}
-                className="hover:bg-accent/50 flex w-full items-center gap-2.5 px-3.5 py-1.5 text-left cursor-pointer h-7 select-none"
+                aria-expanded={showTiming}
+                aria-controls="timing-diagram-content"
+                className="hover:bg-accent/50 flex w-full items-center gap-2.5 px-3.5 py-1.5 text-left cursor-pointer h-7 select-none transition-colors"
               >
                 <div className="flex items-center gap-1.5">
                   <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -9496,24 +9990,36 @@ export default function LabPage() {
                 <span className="text-muted-foreground hidden text-[11px] sm:inline font-mono">
                   Engine: {hasFlops ? "clock-driven" : "unit-delay, Gray-code sweep"}
                 </span>
-                <span className="text-muted-foreground ml-auto text-[11px] font-medium">
-                  {showTiming ? "▲ Hide" : "▼ Show Timing Diagram"}
+                <span className="text-muted-foreground ml-auto flex items-center gap-1 text-[11px] font-medium">
+                  <span>{showTiming ? "Hide Timing Diagram" : "Show Timing Diagram"}</span>
+                  <ChevronDown
+                    className={cn(
+                      "size-3.5 transition-transform duration-200 [transition-timing-function:var(--ease-out-expo)]",
+                      showTiming && "rotate-180",
+                    )}
+                  />
                 </span>
               </button>
-              {showTiming && (
-                <>
+              <div
+                id="timing-diagram-content"
+                className={cn(
+                  "grid transition-[grid-template-rows] duration-220 [transition-timing-function:var(--ease-out-expo)]",
+                  showTiming ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                )}
+              >
+                <div className="overflow-hidden">
                   <Separator />
                   <CardContent className="max-h-[160px] overflow-auto px-0 sm:max-h-[220px]">
                     <WaveformPanel />
                   </CardContent>
-                </>
-              )}
+                </div>
+              </div>
             </Card>
           )}
         </div>
 
         {rightSidebarOpen && !isZenMode && (
-          <Card className="hidden min-h-0 w-[340px] shrink-0 overflow-hidden py-0 lg:block shadow-xs">
+          <Card className="hidden min-h-0 w-[340px] shrink-0 overflow-hidden py-0 xl:block shadow-xs">
             {inspector}
           </Card>
         )}

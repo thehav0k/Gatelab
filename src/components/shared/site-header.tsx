@@ -10,12 +10,21 @@ import { FeedbackDialog } from "@/components/shared/feedback-dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { QuickstartTutorial } from "@/components/quickstart/quickstart-tutorial";
+import { InstallPwaButton } from "@/components/pwa/install-pwa-button";
 
 const NAV = [
   { href: "/theory", label: "1. Theory" },
@@ -34,6 +43,7 @@ const NAV = [
 export function SiteHeader() {
   const pathname = usePathname();
   const [menu, setMenu] = useState(false);
+  const [quickstartOpen, setQuickstartOpen] = useState(false);
   const isActive = (href: string) => pathname.startsWith(href);
 
   return (
@@ -73,9 +83,28 @@ export function SiteHeader() {
           >
             Manual
           </Link>
+
+          <Dialog open={quickstartOpen} onOpenChange={setQuickstartOpen}>
+            <DialogTrigger asChild>
+              <button
+                type="button"
+                className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                Quickstart
+              </button>
+            </DialogTrigger>
+            <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto p-6">
+              <DialogHeader className="sr-only">
+                <DialogTitle>Quickstart Tutorial</DialogTitle>
+              </DialogHeader>
+              <QuickstartTutorial onClose={() => setQuickstartOpen(false)} />
+            </DialogContent>
+          </Dialog>
         </nav>
 
         <div className="ml-auto flex items-center gap-1">
+          <InstallPwaButton />
+
           <FeedbackDialog>
             <Button variant="ghost" size="sm" className="hidden lg:inline-flex">
               <MessageSquare /> Feedback
@@ -147,6 +176,17 @@ export function SiteHeader() {
                   Manual
                 </Link>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenu(false);
+                    setQuickstartOpen(true);
+                  }}
+                  className="rounded-md px-3 py-2 text-left text-sm text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 cursor-pointer"
+                >
+                  Quickstart
+                </button>
+
                 {/* Do NOT close the sheet here: this dialog is a child of it, and
                     unmounting the sheet would take the open dialog with it. */}
                 <FeedbackDialog>
@@ -162,3 +202,4 @@ export function SiteHeader() {
     </header>
   );
 }
+

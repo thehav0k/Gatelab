@@ -2,10 +2,11 @@
 
 import { TLink as Link } from "@/components/motion/transition-link";
 import { usePathname } from "next/navigation";
-import { MessageSquare } from "lucide-react";
+import { ShieldCheck, MessageSquare } from "lucide-react";
 import { GithubIcon } from "@/components/shared/github-icon";
 import { FeedbackDialog } from "@/components/shared/feedback-dialog";
 import { CONTACT } from "@/lib/feedback";
+import { openTermsModal } from "@/components/legal/terms-and-system-gate";
 
 /**
  * NOT on the lab.
@@ -31,6 +32,15 @@ export function SiteFooter() {
             Manual
           </Link>
 
+          <button
+            type="button"
+            onClick={openTermsModal}
+            className="hover:text-foreground flex items-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <ShieldCheck className="size-3.5" />
+            Terms &amp; System Check
+          </button>
+
           <FeedbackDialog>
             <button
               type="button"
@@ -54,3 +64,4 @@ export function SiteFooter() {
     </footer>
   );
 }
+
