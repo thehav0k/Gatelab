@@ -20,6 +20,7 @@ import {
   pinKey,
   type CircuitDocument,
   type CircuitNode,
+  type Endpoint,
   type NetIndex,
   type NodeDraft as SharedDraft,
   type NodeId,
@@ -133,7 +134,8 @@ interface CircuitState {
   setLedColor: (id: NodeId, color: string) => void;
   rotateNode: (id: NodeId, delta?: 90 | -90) => void;
   flipNode: (id: NodeId, axis: "x" | "y") => void;
-  autoWireIcPower: (nodeId: string) => void;
+  autoWireIcPower: (nodeId: string) => boolean;
+  autoWireAllIcPower: () => { count: number; alreadyPowered: boolean };
   /**
    * The SCHEMATIC this board was seated from, kept so the view can switch back.
    *
@@ -707,8 +709,8 @@ export const useCircuitStore = create<CircuitState>()(
       if (doc.board) return [];
 
       const { doc: placed, unplaced } = spec
-        ? placeOnBreadboard(doc, spec, { panelMode: true })
-        : placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
+        ? placeOnBreadboard(doc, spec, { panelMode: true, autoPower: false })
+        : placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true, autoPower: false });
       const { index, diagnostics, routes, flopState } = simulate(placed, get().flopState);
       set({
         doc: placed,
@@ -733,7 +735,28 @@ export const useCircuitStore = create<CircuitState>()(
       clearAllPulseTimers();
       const { schematic, doc } = get();
       if (!doc.board) return true; // already there
-      if (!schematic) return false; // built on the board; there is nothing to go back to
+      if (!schematic) {
+        if (Object.keys(doc.nodes).length === 0) {
+          const nextDoc = emptyDocument();
+          const { index, diagnostics, routes, flopState } = simulate(nextDoc, {});
+          set({
+            doc: nextDoc,
+            origin: null,
+            flopState,
+            schematic: null,
+            index,
+            diagnostics,
+            routes,
+            past: [],
+            future: [],
+            selection: [],
+            pendingPin: null,
+            pendingHole: null,
+          });
+          return true;
+        }
+        return false; // built on the board; there is nothing to go back to
+      }
 
       const { index, diagnostics, routes, flopState } = simulate(schematic, get().flopState);
       set({
@@ -824,12 +847,87 @@ export const useCircuitStore = create<CircuitState>()(
     },
 
     autoWireIcPower: (nodeId) => {
-      const { doc } = get();
+      const { doc, diagnostics } = get();
       const node = doc.nodes[nodeId];
-      if (!node || node.kind !== "ic" || !doc.board) return;
+      if (!node || node.kind !== "ic" || !doc.board) return false;
       const spec = doc.board;
-      const def = getIc(node.part);
-      if (!def) return;
+
+      const wireExists = (wires: Record<string, Wire>, a: Endpoint, b: Endpoint): boolean => {
+        const ka = endpointKey(a);
+        const kb = endpointKey(b);
+        if (ka === kb) return true;
+        return Object.values(wires).some((w) => {
+          const wa = endpointKey(w.a);
+          const wb = endpointKey(w.b);
+          return (wa === ka && wb === kb) || (wa === kb && wb === ka);
+        });
+      };
+
+      const checkIcPwrStatus = (
+        icNode: Extract<CircuitNode, { kind: "ic" }>,
+        wires: Record<string, Wire>,
+      ) => {
+        const def = getIc(icNode.part);
+        if (!def) return { canPower: false, needsVcc: false, needsGnd: false, alreadyPowered: true };
+
+        const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
+        const gndIdx = def.pins.findIndex((p) => p.dir === "gnd");
+        if (vccIdx === -1 || gndIdx === -1) {
+          return { canPower: false, needsVcc: false, needsGnd: false, alreadyPowered: true };
+        }
+
+        const col = Math.round(icNode.pos.x);
+        const holes = dipHoles({ col }, def.pins.length);
+        const vccLeg = holes[vccIdx]!;
+        const gndLeg = holes[gndIdx]!;
+
+        const vccStrip = stripOf(spec, vccLeg);
+        const gndStrip = stripOf(spec, gndLeg);
+
+        const hasVccJumper = Object.values(wires).some((w) => {
+          if (w.a.kind !== "hole" || w.b.kind !== "hole") return false;
+          const sa = stripOf(spec, w.a.ref);
+          const sb = stripOf(spec, w.b.ref);
+          const posA = sa.startsWith("rail:+top") || sa.startsWith("rail:+bottom");
+          const posB = sb.startsWith("rail:+top") || sb.startsWith("rail:+bottom");
+          return (sa === vccStrip && posB) || (sb === vccStrip && posA);
+        });
+
+        const hasGndJumper = Object.values(wires).some((w) => {
+          if (w.a.kind !== "hole" || w.b.kind !== "hole") return false;
+          const sa = stripOf(spec, w.a.ref);
+          const sb = stripOf(spec, w.b.ref);
+          const gndA = sa.startsWith("rail:-top") || sa.startsWith("rail:-bottom");
+          const gndB = sb.startsWith("rail:-top") || sb.startsWith("rail:-bottom");
+          return (sa === gndStrip && gndB) || (sb === gndStrip && gndA);
+        });
+
+        const unpoweredDiag = diagnostics.find(
+          (d): d is Extract<Diagnostic, { code: "UNPOWERED_IC" }> =>
+            d.code === "UNPOWERED_IC" && d.node === icNode.id,
+        );
+
+        const missingVcc = unpoweredDiag ? unpoweredDiag.missing.includes("vcc") : !hasVccJumper;
+        const missingGnd = unpoweredDiag ? unpoweredDiag.missing.includes("gnd") : !hasGndJumper;
+
+        const needsVcc = !hasVccJumper && missingVcc;
+        const needsGnd = !hasGndJumper && missingGnd;
+        const alreadyPowered = !needsVcc && !needsGnd && (!unpoweredDiag || (hasVccJumper && hasGndJumper));
+
+        return {
+          canPower: true,
+          needsVcc,
+          needsGnd,
+          alreadyPowered,
+          vccLeg,
+          gndLeg,
+        };
+      };
+
+      const st = checkIcPwrStatus(node, doc.wires);
+      if (!st.canPower || st.alreadyPowered) {
+        return false;
+      }
 
       const nextNodes = { ...doc.nodes };
       const nextWires = { ...doc.wires };
@@ -895,13 +993,23 @@ export const useCircuitStore = create<CircuitState>()(
       );
       if (!hasVccFeed) {
         const wFeed = asWireId(nextId("w"));
-        const wBridge = asWireId(nextId("w"));
         nextWires[wFeed] = {
           id: wFeed,
           a: pinEnd({ node: vccNode.id, pin: "VCC" }),
           b: holeEnd(pickFreeRail(1, "+top")),
           color: "#ef4444",
         };
+      }
+
+      const hasVccTopBottomBridge = Object.values(nextWires).some(
+        (w) =>
+          w.a.kind === "hole" &&
+          w.b.kind === "hole" &&
+          stripOf(spec, w.a.ref) === "rail:+top:1" &&
+          stripOf(spec, w.b.ref) === "rail:+bottom:1",
+      );
+      if (!hasVccTopBottomBridge) {
+        const wBridge = asWireId(nextId("w"));
         nextWires[wBridge] = {
           id: wBridge,
           a: holeEnd(pickFreeRail(1, "+top")),
@@ -917,13 +1025,23 @@ export const useCircuitStore = create<CircuitState>()(
       );
       if (!hasGndFeed) {
         const wFeed = asWireId(nextId("w"));
-        const wBridge = asWireId(nextId("w"));
         nextWires[wFeed] = {
           id: wFeed,
           a: pinEnd({ node: gndNode.id, pin: "GND" }),
           b: holeEnd(pickFreeRail(1, "-bottom")),
           color: "#3b82f6",
         };
+      }
+
+      const hasGndTopBottomBridge = Object.values(nextWires).some(
+        (w) =>
+          w.a.kind === "hole" &&
+          w.b.kind === "hole" &&
+          stripOf(spec, w.a.ref) === "rail:-top:1" &&
+          stripOf(spec, w.b.ref) === "rail:-bottom:1",
+      );
+      if (!hasGndTopBottomBridge) {
+        const wBridge = asWireId(nextId("w"));
         nextWires[wBridge] = {
           id: wBridge,
           a: holeEnd(pickFreeRail(1, "-top")),
@@ -963,26 +1081,310 @@ export const useCircuitStore = create<CircuitState>()(
         }
       }
 
-      const col = Math.round(node.pos.x);
-      const holes = dipHoles({ col }, def.pins.length);
-      const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
-      const gndIdx = def.pins.findIndex((p) => p.dir === "gnd");
-      if (vccIdx === -1 || gndIdx === -1) return;
+      let wired = false;
+      if (st.needsVcc && st.vccLeg) {
+        const vccHole = pickFree(st.vccLeg.col, st.vccLeg.row === "F" ? ["G", "H", "I", "J"] : ["D", "C", "B", "A"]);
+        const vccRail = pickFreeRail(st.vccLeg.col, st.vccLeg.row === "F" ? "+top" : "+bottom");
+        if (!wireExists(nextWires, holeEnd(vccHole), holeEnd(vccRail))) {
+          const w1 = asWireId(nextId("w"));
+          nextWires[w1] = { id: w1, a: holeEnd(vccHole), b: holeEnd(vccRail), color: "#ef4444" };
+          wired = true;
+        }
+      }
 
-      const vccLeg = holes[vccIdx]!;
-      const gndLeg = holes[gndIdx]!;
+      if (st.needsGnd && st.gndLeg) {
+        const gndHole = pickFree(st.gndLeg.col, st.gndLeg.row === "E" ? ["D", "C", "B", "A"] : ["G", "H", "I", "J"]);
+        const gndRail = pickFreeRail(st.gndLeg.col, st.gndLeg.row === "E" ? "-bottom" : "-top");
+        if (!wireExists(nextWires, holeEnd(gndHole), holeEnd(gndRail))) {
+          const w2 = asWireId(nextId("w"));
+          nextWires[w2] = { id: w2, a: holeEnd(gndHole), b: holeEnd(gndRail), color: "#3b82f6" };
+          wired = true;
+        }
+      }
 
-      const vccHole = pickFree(vccLeg.col, vccLeg.row === "F" ? ["G", "H", "I", "J"] : ["D", "C", "B", "A"]);
-      const vccRail = pickFreeRail(vccLeg.col, vccLeg.row === "F" ? "+top" : "+bottom");
-      const gndHole = pickFree(gndLeg.col, gndLeg.row === "E" ? ["D", "C", "B", "A"] : ["G", "H", "I", "J"]);
-      const gndRail = pickFreeRail(gndLeg.col, gndLeg.row === "E" ? "-bottom" : "-top");
+      if (wired || Object.keys(nextWires).length > Object.keys(doc.wires).length) {
+        commit({ ...doc, nodes: nextNodes, wires: nextWires });
+        return true;
+      }
+      return false;
+    },
 
-      const w1 = asWireId(nextId("w"));
-      const w2 = asWireId(nextId("w"));
-      nextWires[w1] = { id: w1, a: holeEnd(vccHole), b: holeEnd(vccRail), color: "#ef4444" };
-      nextWires[w2] = { id: w2, a: holeEnd(gndHole), b: holeEnd(gndRail), color: "#3b82f6" };
+    autoWireAllIcPower: () => {
+      const { doc, diagnostics } = get();
+      if (!doc.board) return { count: 0, alreadyPowered: false };
+      const spec = doc.board;
 
-      commit({ ...doc, nodes: nextNodes, wires: nextWires });
+      const icNodes = Object.values(doc.nodes).filter(
+        (n): n is Extract<CircuitNode, { kind: "ic" }> => n.kind === "ic",
+      );
+      if (icNodes.length === 0) return { count: 0, alreadyPowered: false };
+
+      const wireExists = (wires: Record<string, Wire>, a: Endpoint, b: Endpoint): boolean => {
+        const ka = endpointKey(a);
+        const kb = endpointKey(b);
+        if (ka === kb) return true;
+        return Object.values(wires).some((w) => {
+          const wa = endpointKey(w.a);
+          const wb = endpointKey(w.b);
+          return (wa === ka && wb === kb) || (wa === kb && wb === ka);
+        });
+      };
+
+      const checkIcPwrStatus = (
+        icNode: Extract<CircuitNode, { kind: "ic" }>,
+        wires: Record<string, Wire>,
+      ) => {
+        const def = getIc(icNode.part);
+        if (!def) return { canPower: false, needsVcc: false, needsGnd: false, alreadyPowered: true };
+
+        const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
+        const gndIdx = def.pins.findIndex((p) => p.dir === "gnd");
+        if (vccIdx === -1 || gndIdx === -1) {
+          return { canPower: false, needsVcc: false, needsGnd: false, alreadyPowered: true };
+        }
+
+        const col = Math.round(icNode.pos.x);
+        const holes = dipHoles({ col }, def.pins.length);
+        const vccLeg = holes[vccIdx]!;
+        const gndLeg = holes[gndIdx]!;
+
+        const vccStrip = stripOf(spec, vccLeg);
+        const gndStrip = stripOf(spec, gndLeg);
+
+        const hasVccJumper = Object.values(wires).some((w) => {
+          if (w.a.kind !== "hole" || w.b.kind !== "hole") return false;
+          const sa = stripOf(spec, w.a.ref);
+          const sb = stripOf(spec, w.b.ref);
+          const posA = sa.startsWith("rail:+top") || sa.startsWith("rail:+bottom");
+          const posB = sb.startsWith("rail:+top") || sb.startsWith("rail:+bottom");
+          return (sa === vccStrip && posB) || (sb === vccStrip && posA);
+        });
+
+        const hasGndJumper = Object.values(wires).some((w) => {
+          if (w.a.kind !== "hole" || w.b.kind !== "hole") return false;
+          const sa = stripOf(spec, w.a.ref);
+          const sb = stripOf(spec, w.b.ref);
+          const gndA = sa.startsWith("rail:-top") || sa.startsWith("rail:-bottom");
+          const gndB = sb.startsWith("rail:-top") || sb.startsWith("rail:-bottom");
+          return (sa === gndStrip && gndB) || (sb === gndStrip && gndA);
+        });
+
+        const unpoweredDiag = diagnostics.find(
+          (d): d is Extract<Diagnostic, { code: "UNPOWERED_IC" }> =>
+            d.code === "UNPOWERED_IC" && d.node === icNode.id,
+        );
+
+        const missingVcc = unpoweredDiag ? unpoweredDiag.missing.includes("vcc") : !hasVccJumper;
+        const missingGnd = unpoweredDiag ? unpoweredDiag.missing.includes("gnd") : !hasGndJumper;
+
+        const needsVcc = !hasVccJumper && missingVcc;
+        const needsGnd = !hasGndJumper && missingGnd;
+        const alreadyPowered = !needsVcc && !needsGnd && (!unpoweredDiag || (hasVccJumper && hasGndJumper));
+
+        return {
+          canPower: true,
+          needsVcc,
+          needsGnd,
+          alreadyPowered,
+          vccLeg,
+          gndLeg,
+        };
+      };
+
+      const unpoweredIcs = icNodes.filter((n) => {
+        const st = checkIcPwrStatus(n, doc.wires);
+        return st.canPower && !st.alreadyPowered;
+      });
+
+      if (unpoweredIcs.length === 0) {
+        return { count: 0, alreadyPowered: true };
+      }
+
+      const nextNodes = { ...doc.nodes };
+      const nextWires = { ...doc.wires };
+      const taken = new Set<string>();
+
+      for (const n of Object.values(nextNodes)) {
+        if (n.kind === "ic") {
+          const d = getIc(n.part);
+          for (const h of dipHoles({ col: Math.round(n.pos.x) }, d?.pins.length ?? 14)) {
+            taken.add(`${h.col}/${h.row}`);
+          }
+        }
+      }
+      for (const w of Object.values(nextWires)) {
+        if (w.a.kind === "hole") taken.add(`${w.a.ref.col}/${w.a.ref.row}`);
+        if (w.b.kind === "hole") taken.add(`${w.b.ref.col}/${w.b.ref.row}`);
+      }
+
+      const pickFree = (col: number, rows: readonly ("A" | "B" | "C" | "D" | "G" | "H" | "I" | "J")[]): HoleRef => {
+        for (const r of rows) {
+          if (!taken.has(`${col}/${r}`)) {
+            taken.add(`${col}/${r}`);
+            return { col, row: r };
+          }
+        }
+        return { col, row: rows[0]! };
+      };
+
+      const pickFreeRail = (targetCol: number, row: "+top" | "-top" | "+bottom" | "-bottom"): HoleRef => {
+        const targetStrip = stripOf(spec, { col: targetCol, row });
+        for (let d = 0; d < spec.columns; d++) {
+          for (const c of d === 0 ? [targetCol] : [targetCol + d, targetCol - d]) {
+            if (c >= 1 && c <= spec.columns) {
+              const cand: HoleRef = { col: c, row };
+              if (stripOf(spec, cand) === targetStrip && !taken.has(`${c}/${row}`)) {
+                taken.add(`${c}/${row}`);
+                return cand;
+              }
+            }
+          }
+        }
+        return { col: targetCol, row };
+      };
+
+      // Ensure +5V and GND trainer rail nodes exist and feed the breadboard rails
+      let vccNode = Object.values(nextNodes).find((n) => n.kind === "rail" && n.rail === "vcc");
+      if (!vccNode) {
+        const id = asNodeId(nextId("n"));
+        vccNode = { id, kind: "rail", rail: "vcc", label: "+5V", pos: { x: 0, y: 0 } };
+        nextNodes[id] = vccNode;
+      }
+      let gndNode = Object.values(nextNodes).find((n) => n.kind === "rail" && n.rail === "gnd");
+      if (!gndNode) {
+        const id = asNodeId(nextId("n"));
+        gndNode = { id, kind: "rail", rail: "gnd", label: "GND", pos: { x: 0, y: 0 } };
+        nextNodes[id] = gndNode;
+      }
+
+      const hasVccFeed = Object.values(nextWires).some(
+        (w) =>
+          (w.a.kind === "pin" && w.a.ref.node === vccNode.id) ||
+          (w.b.kind === "pin" && w.b.ref.node === vccNode.id),
+      );
+      if (!hasVccFeed) {
+        const wFeed = asWireId(nextId("w"));
+        nextWires[wFeed] = {
+          id: wFeed,
+          a: pinEnd({ node: vccNode.id, pin: "VCC" }),
+          b: holeEnd(pickFreeRail(1, "+top")),
+          color: "#ef4444",
+        };
+      }
+
+      const hasVccTopBottomBridge = Object.values(nextWires).some(
+        (w) =>
+          w.a.kind === "hole" &&
+          w.b.kind === "hole" &&
+          stripOf(spec, w.a.ref) === "rail:+top:1" &&
+          stripOf(spec, w.b.ref) === "rail:+bottom:1",
+      );
+      if (!hasVccTopBottomBridge) {
+        const wBridge = asWireId(nextId("w"));
+        nextWires[wBridge] = {
+          id: wBridge,
+          a: holeEnd(pickFreeRail(1, "+top")),
+          b: holeEnd(pickFreeRail(1, "+bottom")),
+          color: "#ef4444",
+        };
+      }
+
+      const hasGndFeed = Object.values(nextWires).some(
+        (w) =>
+          (w.a.kind === "pin" && w.a.ref.node === gndNode.id) ||
+          (w.b.kind === "pin" && w.b.ref.node === gndNode.id),
+      );
+      if (!hasGndFeed) {
+        const wFeed = asWireId(nextId("w"));
+        nextWires[wFeed] = {
+          id: wFeed,
+          a: pinEnd({ node: gndNode.id, pin: "GND" }),
+          b: holeEnd(pickFreeRail(1, "-bottom")),
+          color: "#3b82f6",
+        };
+      }
+
+      const hasGndTopBottomBridge = Object.values(nextWires).some(
+        (w) =>
+          w.a.kind === "hole" &&
+          w.b.kind === "hole" &&
+          stripOf(spec, w.a.ref) === "rail:-top:1" &&
+          stripOf(spec, w.b.ref) === "rail:-bottom:1",
+      );
+      if (!hasGndTopBottomBridge) {
+        const wBridge = asWireId(nextId("w"));
+        nextWires[wBridge] = {
+          id: wBridge,
+          a: holeEnd(pickFreeRail(1, "-top")),
+          b: holeEnd(pickFreeRail(1, "-bottom")),
+          color: "#3b82f6",
+        };
+      }
+
+      // Bridge split rail segments if needed
+      if (spec.railSegments > 1) {
+        const perSegment = Math.ceil(spec.columns / spec.railSegments);
+        for (let seg = 1; seg < spec.railSegments; seg++) {
+          const cLeft = seg * perSegment;
+          const cRight = cLeft + 1;
+          if (cRight <= spec.columns) {
+            for (const r of ["+top", "-top", "+bottom", "-bottom"] as const) {
+              const alreadyBridged = Object.values(nextWires).some(
+                (w) =>
+                  w.a.kind === "hole" &&
+                  w.b.kind === "hole" &&
+                  w.a.ref.row === r &&
+                  w.b.ref.row === r &&
+                  Math.min(w.a.ref.col, w.b.ref.col) <= cLeft &&
+                  Math.max(w.a.ref.col, w.b.ref.col) >= cRight,
+              );
+              if (!alreadyBridged) {
+                const wb = asWireId(nextId("w"));
+                nextWires[wb] = {
+                  id: wb,
+                  a: holeEnd(pickFreeRail(cLeft, r)),
+                  b: holeEnd(pickFreeRail(cRight, r)),
+                  color: isPositiveRail(r) ? "#ef4444" : "#3b82f6",
+                };
+              }
+            }
+          }
+        }
+      }
+
+      let poweredCount = 0;
+      for (const ic of unpoweredIcs) {
+        const st = checkIcPwrStatus(ic, nextWires);
+        if (!st.canPower) continue;
+
+        let wired = false;
+        if (st.needsVcc && st.vccLeg) {
+          const vccHole = pickFree(st.vccLeg.col, st.vccLeg.row === "F" ? ["G", "H", "I", "J"] : ["D", "C", "B", "A"]);
+          const vccRail = pickFreeRail(st.vccLeg.col, st.vccLeg.row === "F" ? "+top" : "+bottom");
+          if (!wireExists(nextWires, holeEnd(vccHole), holeEnd(vccRail))) {
+            const w1 = asWireId(nextId("w"));
+            nextWires[w1] = { id: w1, a: holeEnd(vccHole), b: holeEnd(vccRail), color: "#ef4444" };
+            wired = true;
+          }
+        }
+
+        if (st.needsGnd && st.gndLeg) {
+          const gndHole = pickFree(st.gndLeg.col, st.gndLeg.row === "E" ? ["D", "C", "B", "A"] : ["G", "H", "I", "J"]);
+          const gndRail = pickFreeRail(st.gndLeg.col, st.gndLeg.row === "E" ? "-bottom" : "-top");
+          if (!wireExists(nextWires, holeEnd(gndHole), holeEnd(gndRail))) {
+            const w2 = asWireId(nextId("w"));
+            nextWires[w2] = { id: w2, a: holeEnd(gndHole), b: holeEnd(gndRail), color: "#3b82f6" };
+            wired = true;
+          }
+        }
+
+        if (wired) poweredCount++;
+      }
+
+      if (poweredCount > 0 || Object.keys(nextWires).length > Object.keys(doc.wires).length) {
+        commit({ ...doc, nodes: nextNodes, wires: nextWires });
+      }
+      return { count: poweredCount, alreadyPowered: false };
     },
 
     load: (doc, origin = null) => {
@@ -1012,7 +1414,9 @@ export const useCircuitStore = create<CircuitState>()(
     clear: () => {
       clearAllPulseTimers();
       const currentDoc = get().doc;
-      const nextDoc = emptyDocument();
+      const nextDoc: CircuitDocument = currentDoc.board
+        ? { ...emptyDocument(), board: currentDoc.board }
+        : emptyDocument();
       const { index, diagnostics, routes, flopState } = simulate(nextDoc, {});
       set({
         doc: nextDoc,

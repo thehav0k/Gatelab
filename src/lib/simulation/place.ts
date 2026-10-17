@@ -46,13 +46,15 @@ export interface PlacementResult {
 export interface PlaceBreadboardOptions {
   /**
    * When true, seats circuit for the Digital Logic Trainer Board:
-   * - Power rails are fed from panel VCC and GND terminals.
-   * - Top and bottom rails are bridged so power is distributed.
-   * - All seated ICs are auto-powered with jumpers from rails to pin 14 (VCC) and pin 7 (GND).
    * - Inputs (switches/clocks) and outputs (LEDs) stay in the trainer chassis panels,
    *   with wires connecting directly between panel sockets and the IC strip holes.
    */
   readonly panelMode?: boolean;
+  /**
+   * When true, automatically wires VCC and GND power rails, rail bridges,
+   * and jumpers to IC power pins. Default is false (power rails are not created by default).
+   */
+  readonly autoPower?: boolean;
 }
 
 /** The five rows of each half, in board order. */
@@ -83,6 +85,7 @@ export function placeOnBreadboard(
   options: PlaceBreadboardOptions = {},
 ): PlacementResult {
   const panelMode = options.panelMode ?? false;
+  const autoPower = options.autoPower ?? false;
   const nodes: Record<string, CircuitNode> = {};
   const wires: Record<string, Wire> = {};
   const unplaced: string[] = [];
@@ -202,71 +205,77 @@ export function placeOnBreadboard(
   };
 
   if (panelMode) {
-    // --- 2. In Trainer Panel mode: VCC and GND from DC Power Supply ---
-    let vccNode = rails.find((r) => r.rail === "vcc");
-    let gndNode = rails.find((r) => r.rail === "gnd");
-    if (!vccNode) {
-      vccNode = { id: asNodeId("vcc"), kind: "rail", rail: "vcc", label: "+5V", pos: { x: 0, y: 0 } };
-    }
-    if (!gndNode) {
-      gndNode = { id: asNodeId("gnd"), kind: "rail", rail: "gnd", label: "GND", pos: { x: 0, y: 0 } };
-    }
-    nodes[vccNode.id] = vccNode;
-    nodes[gndNode.id] = gndNode;
+    if (autoPower) {
+      // --- 2. In Trainer Panel mode: VCC and GND from DC Power Supply ---
+      let vccNode = rails.find((r) => r.rail === "vcc");
+      let gndNode = rails.find((r) => r.rail === "gnd");
+      if (!vccNode) {
+        vccNode = { id: asNodeId("vcc"), kind: "rail", rail: "vcc", label: "+5V", pos: { x: 0, y: 0 } };
+      }
+      if (!gndNode) {
+        gndNode = { id: asNodeId("gnd"), kind: "rail", rail: "gnd", label: "GND", pos: { x: 0, y: 0 } };
+      }
+      nodes[vccNode.id] = vccNode;
+      nodes[gndNode.id] = gndNode;
 
-    // Connect +5V socket to top positive rail (col 1, +top) and bridge to +bottom
-    const vccTop: HoleRef = { col: 1, row: "+top" };
-    const vccBottom: HoleRef = { col: 1, row: "+bottom" };
-    wirePinToHole({ node: vccNode.id, pin: "VCC" }, vccTop, "#ef4444");
-    jumper(vccTop, vccBottom, "#ef4444");
+      // Connect +5V socket to top positive rail (col 1, +top) and bridge to +bottom
+      const vccTop: HoleRef = { col: 1, row: "+top" };
+      const vccBottom: HoleRef = { col: 1, row: "+bottom" };
+      wirePinToHole({ node: vccNode.id, pin: "VCC" }, vccTop, "#ef4444");
+      jumper(vccTop, vccBottom, "#ef4444");
 
-    // Connect GND socket to bottom ground rail (col 1, -bottom) and bridge to -top
-    const gndTop: HoleRef = { col: 1, row: "-top" };
-    const gndBottom: HoleRef = { col: 1, row: "-bottom" };
-    wirePinToHole({ node: gndNode.id, pin: "GND" }, gndBottom, "#3b82f6");
-    jumper(gndTop, gndBottom, "#3b82f6");
+      // Connect GND socket to bottom ground rail (col 1, -bottom) and bridge to -top
+      const gndTop: HoleRef = { col: 1, row: "-top" };
+      const gndBottom: HoleRef = { col: 1, row: "-bottom" };
+      wirePinToHole({ node: gndNode.id, pin: "GND" }, gndBottom, "#3b82f6");
+      jumper(gndTop, gndBottom, "#3b82f6");
 
-    // Bridge power rails across segment boundaries if split
-    if (spec.railSegments > 1) {
-      const perSegment = Math.ceil(spec.columns / spec.railSegments);
-      for (let seg = 1; seg < spec.railSegments; seg++) {
-        const cLeft = seg * perSegment;
-        const cRight = cLeft + 1;
-        if (cRight <= spec.columns) {
-          jumper({ col: cLeft, row: "+top" }, { col: cRight, row: "+top" }, "#ef4444");
-          jumper({ col: cLeft, row: "-top" }, { col: cRight, row: "-top" }, "#3b82f6");
-          jumper({ col: cLeft, row: "+bottom" }, { col: cRight, row: "+bottom" }, "#ef4444");
-          jumper({ col: cLeft, row: "-bottom" }, { col: cRight, row: "-bottom" }, "#3b82f6");
+      // Bridge power rails across segment boundaries if split
+      if (spec.railSegments > 1) {
+        const perSegment = Math.ceil(spec.columns / spec.railSegments);
+        for (let seg = 1; seg < spec.railSegments; seg++) {
+          const cLeft = seg * perSegment;
+          const cRight = cLeft + 1;
+          if (cRight <= spec.columns) {
+            jumper({ col: cLeft, row: "+top" }, { col: cRight, row: "+top" }, "#ef4444");
+            jumper({ col: cLeft, row: "-top" }, { col: cRight, row: "-top" }, "#3b82f6");
+            jumper({ col: cLeft, row: "+bottom" }, { col: cRight, row: "+bottom" }, "#ef4444");
+            jumper({ col: cLeft, row: "-bottom" }, { col: cRight, row: "-bottom" }, "#3b82f6");
+          }
         }
       }
-    }
 
-    // Auto-power every seated IC based on actual VCC and GND pins (LAB-02)
-    for (const ic of ics) {
-      if (unplaced.includes(ic.id)) continue;
-      const def = getIc(ic.part);
-      if (!def) continue;
-      const icCol = Math.round(nodes[ic.id]!.pos.x);
-      const holes = dipHoles({ col: icCol }, def.pins.length);
-      const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
-      const gndIdx = def.pins.findIndex((p) => p.dir === "gnd");
-      if (vccIdx === -1 || gndIdx === -1) continue;
+      // Auto-power every seated IC based on actual VCC and GND pins (LAB-02)
+      for (const ic of ics) {
+        if (unplaced.includes(ic.id)) continue;
+        const def = getIc(ic.part);
+        if (!def) continue;
+        const icCol = Math.round(nodes[ic.id]!.pos.x);
+        const holes = dipHoles({ col: icCol }, def.pins.length);
+        const vccIdx = def.pins.findIndex((p) => p.dir === "pwr");
+        const gndIdx = def.pins.findIndex((p) => p.dir === "gnd");
+        if (vccIdx === -1 || gndIdx === -1) continue;
 
-      const vccLeg = holes[vccIdx]!;
-      const gndLeg = holes[gndIdx]!;
+        const vccLeg = holes[vccIdx]!;
+        const gndLeg = holes[gndIdx]!;
 
-      const vccHole = freeHoleOn({ col: vccLeg.col, row: vccLeg.row });
-      const vccRail = freeHoleOn({ col: vccLeg.col, row: vccLeg.row === "F" ? "+top" : "+bottom" });
-      if (vccHole && vccRail) {
-        jumper(vccHole, vccRail, "#ef4444");
+        const vccHole = freeHoleOn({ col: vccLeg.col, row: vccLeg.row });
+        const vccRail = freeHoleOn({ col: vccLeg.col, row: vccLeg.row === "F" ? "+top" : "+bottom" });
+        if (vccHole && vccRail) {
+          jumper(vccHole, vccRail, "#ef4444");
+        }
+
+        const gndHole = freeHoleOn({ col: gndLeg.col, row: gndLeg.row });
+        const gndRail =
+          freeHoleOn({ col: gndLeg.col, row: gndLeg.row === "E" ? "-bottom" : "-top" }) ??
+          freeHoleOn({ col: gndLeg.col, row: gndLeg.row === "E" ? "-top" : "-bottom" });
+        if (gndHole && gndRail) {
+          jumper(gndHole, gndRail, "#3b82f6");
+        }
       }
-
-      const gndHole = freeHoleOn({ col: gndLeg.col, row: gndLeg.row });
-      const gndRail =
-        freeHoleOn({ col: gndLeg.col, row: gndLeg.row === "E" ? "-bottom" : "-top" }) ??
-        freeHoleOn({ col: gndLeg.col, row: gndLeg.row === "E" ? "-top" : "-bottom" });
-      if (gndHole && gndRail) {
-        jumper(gndHole, gndRail, "#3b82f6");
+    } else {
+      for (const rail of rails) {
+        nodes[rail.id] = { ...rail, pos: { x: 0, y: 0 } };
       }
     }
 
@@ -350,7 +359,7 @@ export function placeOnBreadboard(
       };
 
       // Skip wires to IC power pins (VCC pin 14 / GND pin 7) since chips are auto-powered (lines 208-235)
-      if (isPowerPin(pinA) || isPowerPin(pinB)) {
+      if (autoPower && (isPowerPin(pinA) || isPowerPin(pinB))) {
         continue;
       }
 
@@ -572,6 +581,31 @@ export function seatOnBoard(
   }
   const clearOfChips = (from: number, to: number): boolean =>
     chipSpans.every(([a, b]) => to < a || from > b);
+
+  if (node.kind === "gate") {
+    const GATE_TO_IC: Record<string, string> = {
+      and: "7408",
+      or: "7432",
+      not: "7404",
+      nand: "7400",
+      nor: "7402",
+      xor: "7486",
+      xnor: "74266",
+    };
+    const part = GATE_TO_IC[node.op] ?? "7408";
+    const icNode: CircuitNode = {
+      id: node.id,
+      kind: "ic",
+      part,
+      label: part,
+      pos: { x: 0, y: 0 },
+    };
+    const span = pinsOf(icNode).length / 2;
+    for (let col = 2; col + span - 1 <= spec.columns; col++) {
+      if (clearOfChips(col, col + span - 1)) return { ...icNode, pos: { x: col, y: 0 } };
+    }
+    return null;
+  }
 
   if (node.kind === "ic") {
     const span = pinsOf(node).length / 2;

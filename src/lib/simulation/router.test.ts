@@ -92,6 +92,31 @@ describe("routeWire — basics", () => {
       expect(a.x === b.x || a.y === b.y).toBe(true);
     }
   });
+
+  it("produces a purely orthogonal path even with off-grid endpoints", () => {
+    // Endpoints that are not multiples of CELL (8px)
+    const from = { x: 44, y: 76 };
+    const to = { x: 148, y: 124 };
+    const path = routeWire(emptyGrid(30, 20), from, to, 1)!;
+    expect(path).not.toBeNull();
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1] as Point;
+      const b = path[i] as Point;
+      expect(Math.abs(a.x - b.x) < 1e-3 || Math.abs(a.y - b.y) < 1e-3).toBe(true);
+    }
+    // Also test collinear off-grid (horizontal and vertical)
+    const collinearPath = routeWire(emptyGrid(30, 20), { x: 44, y: 76 }, { x: 180, y: 76 }, 1)!;
+    expect(collinearPath).toEqual([{ x: 44, y: 76 }, { x: 180, y: 76 }]);
+
+    const verticalCollinear = routeWire(emptyGrid(30, 20), { x: 80, y: 16 }, { x: 80, y: 120 }, 1)!;
+    expect(verticalCollinear).toEqual([{ x: 80, y: 16 }, { x: 80, y: 120 }]);
+
+    // Endpoints in same cell with diagonal separation
+    const sameCellDiag = routeWire(emptyGrid(30, 20), { x: 81, y: 81 }, { x: 83, y: 83 }, 1)!;
+    expect(sameCellDiag).toHaveLength(3);
+    expect(sameCellDiag[0]).toEqual({ x: 81, y: 81 });
+    expect(sameCellDiag[2]).toEqual({ x: 83, y: 83 });
+  });
 });
 
 describe("routeWire — obstacles", () => {

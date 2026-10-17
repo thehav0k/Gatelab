@@ -264,6 +264,47 @@ class Heap {
   }
 }
 
+/** Check if a straight horizontal or vertical line between two points is clear of obstacles. */
+function isDirectClear(
+  grid: OccupancyGrid,
+  from: Point,
+  to: Point,
+  net: number,
+): boolean {
+  const sx = toCell(from.x);
+  const sy = toCell(from.y);
+  const tx = toCell(to.x);
+  const ty = toCell(to.y);
+
+  if (Math.abs(from.y - to.y) < 1e-3) {
+    const minX = Math.min(sx, tx);
+    const maxX = Math.max(sx, tx);
+    for (let cx = minX; cx <= maxX; cx++) {
+      const i = index(grid, cx, sy);
+      if (i < 0) return false;
+      const occ = grid.cells[i] as number;
+      if (occ === -1 && cx !== sx && cx !== tx) return false;
+      if (occ > 0 && occ !== net) return false;
+    }
+    return true;
+  }
+
+  if (Math.abs(from.x - to.x) < 1e-3) {
+    const minY = Math.min(sy, ty);
+    const maxY = Math.max(sy, ty);
+    for (let cy = minY; cy <= maxY; cy++) {
+      const i = index(grid, sx, cy);
+      if (i < 0) return false;
+      const occ = grid.cells[i] as number;
+      if (occ === -1 && cy !== sy && cy !== ty) return false;
+      if (occ > 0 && occ !== net) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Route one wire. `net` is the id whose existing cells are free to reuse — that
  * is the Steiner trick: a second wire on the same net can merge into the first
@@ -282,7 +323,21 @@ export function routeWire(
   const ty = toCell(to.y);
 
   if (index(grid, sx, sy) < 0 || index(grid, tx, ty) < 0) return null;
-  if (sx === tx && sy === ty) return [{ x: from.x, y: from.y }];
+  if (sx === tx && sy === ty) {
+    if (Math.abs(from.x - to.x) < 1e-3 || Math.abs(from.y - to.y) < 1e-3) {
+      return [{ x: from.x, y: from.y }, { x: to.x, y: to.y }];
+    }
+    return [
+      { x: from.x, y: from.y },
+      { x: to.x, y: from.y },
+      { x: to.x, y: to.y },
+    ];
+  }
+
+  // Fast-path: straight collinear shot with no intervening obstacles
+  if (isDirectClear(grid, from, to, net)) {
+    return [{ x: from.x, y: from.y }, { x: to.x, y: to.y }];
+  }
 
   const size = grid.w * grid.h;
   const stateCount = size * DIRS;
@@ -369,29 +424,89 @@ export function routeWire(
   }
   cells.reverse();
 
-  // Snap the endpoints back to the exact pin positions — the pins are what the
-  // wire must visibly touch, and they may sit off the grid.
-  cells[0] = { x: from.x, y: from.y };
-  cells[cells.length - 1] = { x: to.x, y: to.y };
+  const gridPath = simplify(cells);
 
-  return simplify(cells);
+  // Connect `from` and `to` orthogonally to `gridPath`
+  if (gridPath.length <= 1) {
+    if (Math.abs(from.x - to.x) < 1e-3 || Math.abs(from.y - to.y) < 1e-3) {
+      return [{ x: from.x, y: from.y }, { x: to.x, y: to.y }];
+    }
+    return [
+      { x: from.x, y: from.y },
+      { x: to.x, y: from.y },
+      { x: to.x, y: to.y },
+    ];
+  }
+
+  const pts: Point[] = [{ x: from.x, y: from.y }];
+  const p0 = gridPath[0]!;
+  const p1 = gridPath[1]!;
+  const firstIsHoriz = Math.abs(p0.y - p1.y) < 1e-3;
+
+  if (firstIsHoriz) {
+    if (Math.abs(from.y - p0.y) >= 1e-3) {
+      pts.push({ x: p0.x, y: from.y });
+      pts.push(p0);
+    }
+  } else {
+    if (Math.abs(from.x - p0.x) >= 1e-3) {
+      pts.push({ x: from.x, y: p0.y });
+      pts.push(p0);
+    }
+  }
+
+  for (let i = 1; i < gridPath.length - 1; i++) {
+    pts.push(gridPath[i]!);
+  }
+
+  const pn_1 = gridPath[gridPath.length - 2]!;
+  const pn = gridPath[gridPath.length - 1]!;
+  const lastIsHoriz = Math.abs(pn_1.y - pn.y) < 1e-3;
+
+  if (lastIsHoriz) {
+    if (Math.abs(to.y - pn.y) >= 1e-3) {
+      pts.push(pn);
+      pts.push({ x: pn.x, y: to.y });
+    }
+  } else {
+    if (Math.abs(to.x - pn.x) >= 1e-3) {
+      pts.push(pn);
+      pts.push({ x: to.x, y: pn.y });
+    }
+  }
+  pts.push({ x: to.x, y: to.y });
+
+  return simplify(pts);
 }
 
 /** Collapse runs of collinear points down to their corners. */
 export function simplify(path: readonly Point[]): Point[] {
-  if (path.length <= 2) return [...path];
-  const out: Point[] = [path[0] as Point];
+  const dedup: Point[] = [];
+  for (const p of path) {
+    if (dedup.length === 0) {
+      dedup.push(p);
+    } else {
+      const prev = dedup[dedup.length - 1]!;
+      if (Math.abs(prev.x - p.x) >= 1e-3 || Math.abs(prev.y - p.y) >= 1e-3) {
+        dedup.push(p);
+      }
+    }
+  }
 
-  for (let i = 1; i < path.length - 1; i++) {
-    const a = out[out.length - 1] as Point;
-    const b = path[i] as Point;
-    const c = path[i + 1] as Point;
+  if (dedup.length <= 2) return dedup;
+  const out: Point[] = [dedup[0]!];
+
+  for (let i = 1; i < dedup.length - 1; i++) {
+    const a = out[out.length - 1]!;
+    const b = dedup[i]!;
+    const c = dedup[i + 1]!;
     const collinear =
-      (a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y);
+      (Math.abs(a.x - b.x) < 1e-3 && Math.abs(b.x - c.x) < 1e-3) ||
+      (Math.abs(a.y - b.y) < 1e-3 && Math.abs(b.y - c.y) < 1e-3);
     if (!collinear) out.push(b);
   }
 
-  out.push(path[path.length - 1] as Point);
+  out.push(dedup[dedup.length - 1]!);
   return out;
 }
 

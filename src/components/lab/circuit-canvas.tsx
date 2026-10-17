@@ -315,38 +315,20 @@ export function CircuitCanvas() {
 /** Corner radius on wire bends. Purely cosmetic; real jumpers do not fold sharp. */
 const BEND_R = 5;
 
-function wireOffset(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return ((Math.abs(h) % 3) - 1) * 2.5; // -2.5, 0, or 2.5 px
-}
-
-/** Round the corners of an orthogonal polyline with subtle parallel offset. */
-function orthPath(points: readonly Point[], offset = 0): string {
+/** Round the corners of an orthogonal polyline with clean tangent arcs. */
+function orthPath(points: readonly Point[]): string {
   if (points.length < 2) return "";
+  if (points.length === 2) {
+    return `M ${points[0]!.x} ${points[0]!.y} L ${points[1]!.x} ${points[1]!.y}`;
+  }
 
-  // Apply subtle parallel offset to intermediate path points
-  const pts = points.map((p, i) => {
-    if (i === 0 || i === points.length - 1 || offset === 0) return p;
-    const prev = points[i - 1]!;
-    const next = points[i + 1]!;
-    const isHorizIn = Math.abs(p.y - prev.y) < 2;
-    const isHorizOut = Math.abs(next.y - p.y) < 2;
-    if (isHorizIn && isHorizOut) return { x: p.x, y: p.y + offset };
-    if (!isHorizIn && !isHorizOut) return { x: p.x + offset, y: p.y };
-    return {
-      x: isHorizIn ? p.x : p.x + offset,
-      y: isHorizIn ? p.y + offset : p.y,
-    };
-  });
-
-  const first = pts[0] as Point;
+  const first = points[0]!;
   let d = `M ${first.x} ${first.y}`;
 
-  for (let i = 1; i < pts.length - 1; i++) {
-    const prev = pts[i - 1] as Point;
-    const cur = pts[i] as Point;
-    const next = pts[i + 1] as Point;
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1]!;
+    const cur = points[i]!;
+    const next = points[i + 1]!;
 
     const inLen = Math.hypot(cur.x - prev.x, cur.y - prev.y);
     const outLen = Math.hypot(next.x - cur.x, next.y - cur.y);
@@ -356,15 +338,18 @@ function orthPath(points: readonly Point[], offset = 0): string {
       continue;
     }
 
-    const ax = cur.x - Math.sign(cur.x - prev.x) * r;
-    const ay = cur.y - Math.sign(cur.y - prev.y) * r;
-    const bx = cur.x + Math.sign(next.x - cur.x) * r;
-    const by = cur.y + Math.sign(next.y - cur.y) * r;
+    const inHoriz = Math.abs(cur.y - prev.y) <= Math.abs(cur.x - prev.x);
+    const outHoriz = Math.abs(next.y - cur.y) <= Math.abs(next.x - cur.x);
+
+    const ax = inHoriz ? cur.x - Math.sign(cur.x - prev.x) * r : cur.x;
+    const ay = inHoriz ? cur.y : cur.y - Math.sign(cur.y - prev.y) * r;
+    const bx = outHoriz ? cur.x + Math.sign(next.x - cur.x) * r : cur.x;
+    const by = outHoriz ? cur.y : cur.y + Math.sign(next.y - cur.y) * r;
 
     d += ` L ${ax} ${ay} Q ${cur.x} ${cur.y} ${bx} ${by}`;
   }
 
-  const last = pts[pts.length - 1] as Point;
+  const last = points[points.length - 1]!;
   return `${d} L ${last.x} ${last.y}`;
 }
 
@@ -397,8 +382,7 @@ function WireLine({
   if (!a || !b) return null;
 
   const unrouted = !route;
-  const offset = wireOffset(wire.id);
-  const d = route ? orthPath(route, offset) : `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+  const d = route ? orthPath(route) : `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
 
   const paint = wirePaint(value, ordinal);
   const color = wire.color || paint.color;

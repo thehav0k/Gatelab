@@ -270,7 +270,35 @@ describe("seating a part onto a board that is already built", () => {
     expect(seatOnBoard(doc, node({ kind: "ic", part: "7400" }), tiny)).toBeNull();
   });
 
+  it("seats a gate primitive onto the board by mapping it to its 74xx IC", () => {
+    const doc = seated();
+    const andGate = seatOnBoard(doc, node({ kind: "gate", op: "and", arity: 2 }), DEFAULT_BOARD)!;
+    expect(andGate).not.toBeNull();
+    expect(andGate.kind).toBe("ic");
+    expect((andGate as Extract<CircuitNode, { kind: "ic" }>).part).toBe("7408");
+    expect(andGate.pos.x).toBeGreaterThan(0);
+
+    const tiny = { ...DEFAULT_BOARD, columns: 4 };
+    expect(seatOnBoard(doc, node({ kind: "gate", op: "or", arity: 2 }), tiny)).toBeNull();
+  });
+
   describe("panelMode", () => {
+    it("does not create power rails or power jumpers by default without autoPower", () => {
+      const doc = circuit().ic("U1", "7400").build();
+      const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
+      const { index, netlist } = elaborate(placed);
+      const st = evaluate(netlist, netlist.inputs.map(() => 0 as const));
+      const unpowered = diagnose(placed, index, netlist, st).filter((d) => d.code === "UNPOWERED_IC");
+      expect(unpowered).toHaveLength(1);
+      // No rail jumpers
+      const railWires = Object.values(placed.wires).filter(
+        (w) =>
+          (w.a.kind === "hole" && (w.a.ref.row.startsWith("+") || w.a.ref.row.startsWith("-"))) ||
+          (w.b.kind === "hole" && (w.b.ref.row.startsWith("+") || w.b.ref.row.startsWith("-"))),
+      );
+      expect(railWires).toHaveLength(0);
+    });
+
     it("wires breadboard rails to VCC and GND without proxy switch/LED on-board holes", () => {
       const schematic = realize(
         technologyMap(
@@ -278,7 +306,7 @@ describe("seating a part onto a board that is already built", () => {
           "mixed",
         ),
       );
-      const { doc } = placeOnBreadboard(schematic, DEFAULT_BOARD, { panelMode: true });
+      const { doc } = placeOnBreadboard(schematic, DEFAULT_BOARD, { panelMode: true, autoPower: true });
 
       // No switches or LEDs should have boardRow set (they live in trainer panels)
       for (const n of Object.values(doc.nodes)) {
@@ -308,7 +336,7 @@ describe("seating a part onto a board that is already built", () => {
 
     it("preserves VCC logic tie-off wires for sequential circuits on breadboard", () => {
       const doc = getSequentialPreset("ripple-2")!.build();
-      const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
+      const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true, autoPower: true });
       const { index, netlist } = elaborate(placed);
       const state = evaluate(netlist, netlist.inputs.map(() => 0 as const));
       const floating = diagnose(placed, index, netlist, state).filter(
@@ -319,7 +347,7 @@ describe("seating a part onto a board that is already built", () => {
 
     it("simulates and counts correctly on a breadboard-seated sequential circuit", () => {
       const doc = getSequentialPreset("ripple-2")!.build();
-      const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
+      const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true, autoPower: true });
       const { netlist } = elaborate(placed);
       let state = initialState(netlist);
       const clrIdx = netlist.inputs.findIndex((p) => p.label === "CLR");
@@ -350,7 +378,7 @@ describe("seating a part onto a board that is already built", () => {
     it("auto-powers 14-pin and 16-pin chips correctly without assuming corner pins (LAB-02)", () => {
       // 74LS76A has VCC on pin 5 (row E) and GND on pin 13 (row F)
       const doc76 = circuit().ic("U1", "74LS76A").build();
-      const { doc: placed76 } = placeOnBreadboard(doc76, DEFAULT_BOARD, { panelMode: true });
+      const { doc: placed76 } = placeOnBreadboard(doc76, DEFAULT_BOARD, { panelMode: true, autoPower: true });
       const { index: idx76, netlist: nl76 } = elaborate(placed76);
       const st76 = evaluate(nl76, nl76.inputs.map(() => 0 as const));
       const unpowered76 = diagnose(placed76, idx76, nl76, st76).filter((d) => d.code === "UNPOWERED_IC");
@@ -358,7 +386,7 @@ describe("seating a part onto a board that is already built", () => {
 
       // Verify 14-pin 7400
       const doc00 = circuit().ic("U1", "7400").build();
-      const { doc: placed00 } = placeOnBreadboard(doc00, DEFAULT_BOARD, { panelMode: true });
+      const { doc: placed00 } = placeOnBreadboard(doc00, DEFAULT_BOARD, { panelMode: true, autoPower: true });
       const { index: idx00, netlist: nl00 } = elaborate(placed00);
       const st00 = evaluate(nl00, nl00.inputs.map(() => 0 as const));
       const unpowered00 = diagnose(placed00, idx00, nl00, st00).filter((d) => d.code === "UNPOWERED_IC");
@@ -367,7 +395,7 @@ describe("seating a part onto a board that is already built", () => {
       // Verify 16-pin 74174 and 74175
       for (const part of ["74174", "74175"]) {
         const doc = circuit().ic("U1", part).build();
-        const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true });
+        const { doc: placed } = placeOnBreadboard(doc, DEFAULT_BOARD, { panelMode: true, autoPower: true });
         const { index, netlist } = elaborate(placed);
         const st = evaluate(netlist, netlist.inputs.map(() => 0 as const));
         const unpowered = diagnose(placed, index, netlist, st).filter((d) => d.code === "UNPOWERED_IC");

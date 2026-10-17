@@ -54,7 +54,7 @@ import {
 import { useViewBox } from "@/hooks/use-viewbox";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CircuitBoard, Cpu, Eye, EyeOff, Layers, Maximize2, Plus, Radio, RotateCcw, X, Zap } from "lucide-react";
+import { Check, CircuitBoard, Cpu, Eye, EyeOff, Layers, Maximize2, Plus, Radio, RotateCcw, X, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { useConstraint, useWorkspaceStore } from "@/stores/workspace-store";
 import { useSpecStore } from "@/stores/spec-store";
@@ -100,6 +100,7 @@ export function BreadboardView() {
   const setWireColor = useCircuitStore((s) => s.setWireColor);
   const setLedColor = useCircuitStore((s) => s.setLedColor);
   const autoWireIcPower = useCircuitStore((s) => s.autoWireIcPower);
+  const autoWireAllIcPower = useCircuitStore((s) => s.autoWireAllIcPower);
   const toggleSwitch = useCircuitStore((s) => s.toggleSwitch);
   const toggleClock = useCircuitStore((s) => s.toggleClock);
   const pulseClock = useCircuitStore((s) => s.pulseClock);
@@ -508,14 +509,18 @@ export function BreadboardView() {
 
       {/* Top Breadboard Action Toolbar */}
       <div className="no-print absolute right-2 top-2 z-10 flex items-center gap-1.5">
-        {unpoweredNodes.length > 0 && (
+        {unpoweredNodes.length > 0 ? (
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs border-amber-500/50 bg-card/90 text-amber-500 hover:bg-amber-500/10 shadow-xs"
+            className="h-7 text-xs border-amber-500/50 bg-card/90 text-amber-500 hover:bg-amber-500/10 shadow-xs cursor-pointer"
             onClick={() => {
-              unpoweredNodes.forEach((n) => autoWireIcPower(n.id));
-              toast.success(`Auto-powered ${unpoweredNodes.length} IC${unpoweredNodes.length > 1 ? "s" : ""}`);
+              const res = autoWireAllIcPower();
+              if (res.alreadyPowered) {
+                toast.info("All ICs are already powered");
+              } else {
+                toast.success(`Auto-powered ${res.count} IC${res.count > 1 ? "s" : ""}`);
+              }
             }}
             aria-label={`Auto-wire VCC and GND to power rails for ${unpoweredNodes.length} ICs`}
             title="Auto-wire VCC and GND to power rails for all unpowered ICs"
@@ -523,7 +528,21 @@ export function BreadboardView() {
             <Zap className="size-3.5 mr-1 fill-amber-500" />
             <span>Auto-Power ({unpoweredNodes.length})</span>
           </Button>
-        )}
+        ) : icNodes.length > 0 ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs border-emerald-500/30 bg-card/90 text-emerald-500/90 hover:bg-emerald-500/10 shadow-xs cursor-pointer"
+            onClick={() => {
+              toast.info("All ICs are already powered");
+            }}
+            aria-label="All ICs are already powered"
+            title="All ICs are already powered"
+          >
+            <Check className="size-3.5 mr-1 text-emerald-500" />
+            <span>Already Powered</span>
+          </Button>
+        ) : null}
         <Button
           variant={showXRay ? "default" : "outline"}
           size="sm"
@@ -2215,7 +2234,7 @@ function SeatedIc({
   renderPart?: "body" | "overlay" | undefined;
   onSelect: () => void;
   onDelete: () => void;
-  onAutoPower: (nodeId: string) => void;
+  onAutoPower: (nodeId: string) => boolean | void;
   onMove: (newCol: number) => void;
   camZoom: number;
 }) {
@@ -2337,52 +2356,95 @@ function SeatedIc({
         {/* Floating Action Pill on Selected IC */}
         {isSelected && (
           <g
-            transform={`translate(${midX - 55}, ${bodyY - 26})`}
+            transform={`translate(${midX - 58}, ${bodyY - 26})`}
             className="cursor-default pointer-events-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <rect
-              width={110}
+              width={116}
               height={22}
               rx={4}
               className="fill-card/95 stroke-border"
               strokeWidth={1}
               style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}
             />
-            <g
-              role="button"
-              tabIndex={0}
-              aria-label={`Auto-power ${node.label}`}
-              className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
-              onClick={() => {
-                onAutoPower(node.id);
-                toast.success(`Auto-powered ${node.label}`);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  onAutoPower(node.id);
-                  toast.success(`Auto-powered ${node.label}`);
-                }
-              }}
-            >
-              <rect
-                x={3}
-                y={3}
-                width={48}
-                height={16}
-                rx={3}
-                className="fill-amber-500/20 hover:fill-amber-500/35"
-              />
-              <text
-                x={27}
-                y={14.5}
-                textAnchor="middle"
-                className="fill-amber-500 font-mono text-[8.5px] font-bold pointer-events-none"
+            {isUnpowered ? (
+              <g
+                role="button"
+                tabIndex={0}
+                aria-label={`Auto-power ${node.label}`}
+                className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
+                onClick={() => {
+                  const wired = onAutoPower(node.id);
+                  if (wired !== false) {
+                    toast.success(`Auto-powered ${node.label}`);
+                  } else {
+                    toast.info(`${node.label} is already powered`);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    const wired = onAutoPower(node.id);
+                    if (wired !== false) {
+                      toast.success(`Auto-powered ${node.label}`);
+                    } else {
+                      toast.info(`${node.label} is already powered`);
+                    }
+                  }
+                }}
               >
-                ⚡ +PWR
-              </text>
-            </g>
+                <rect
+                  x={3}
+                  y={3}
+                  width={52}
+                  height={16}
+                  rx={3}
+                  className="fill-amber-500/20 hover:fill-amber-500/35"
+                />
+                <text
+                  x={29}
+                  y={14.5}
+                  textAnchor="middle"
+                  className="fill-amber-500 font-mono text-[8.5px] font-bold pointer-events-none"
+                >
+                  ⚡ +PWR
+                </text>
+              </g>
+            ) : (
+              <g
+                role="button"
+                tabIndex={0}
+                aria-label={`${node.label} is already powered`}
+                className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-emerald-500 rounded"
+                onClick={() => {
+                  toast.info(`${node.label} is already powered`);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    toast.info(`${node.label} is already powered`);
+                  }
+                }}
+              >
+                <rect
+                  x={3}
+                  y={3}
+                  width={56}
+                  height={16}
+                  rx={3}
+                  className="fill-emerald-500/15 hover:fill-emerald-500/25"
+                />
+                <text
+                  x={31}
+                  y={14.5}
+                  textAnchor="middle"
+                  className="fill-emerald-400 font-mono text-[8px] font-bold pointer-events-none"
+                >
+                  ✓ POWERED
+                </text>
+              </g>
+            )}
             <g
               role="button"
               tabIndex={0}
@@ -2401,15 +2463,15 @@ function SeatedIc({
               }}
             >
               <rect
-                x={55}
+                x={62}
                 y={3}
-                width={52}
+                width={51}
                 height={16}
                 rx={3}
                 className="fill-destructive/20 hover:fill-destructive/35"
               />
               <text
-                x={81}
+                x={87.5}
                 y={14.5}
                 textAnchor="middle"
                 className="fill-destructive font-mono text-[8.5px] font-bold pointer-events-none"
@@ -2486,52 +2548,95 @@ function SeatedIc({
 
           {isSelected && (
             <g
-              transform={`translate(${midX - 55}, ${bodyY - 26})`}
+              transform={`translate(${midX - 58}, ${bodyY - 26})`}
               className="cursor-default pointer-events-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <rect
-                width={110}
+                width={116}
                 height={22}
                 rx={4}
                 className="fill-card/95 stroke-border"
                 strokeWidth={1}
                 style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.35))" }}
               />
-              <g
-                role="button"
-                tabIndex={0}
-                aria-label={`Auto-power ${node.label}`}
-                className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
-                onClick={() => {
-                  onAutoPower(node.id);
-                  toast.success(`Auto-powered ${node.label}`);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    onAutoPower(node.id);
-                    toast.success(`Auto-powered ${node.label}`);
-                  }
-                }}
-              >
-                <rect
-                  x={3}
-                  y={3}
-                  width={48}
-                  height={16}
-                  rx={3}
-                  className="fill-amber-500/20 hover:fill-amber-500/35"
-                />
-                <text
-                  x={27}
-                  y={14.5}
-                  textAnchor="middle"
-                  className="fill-amber-500 font-mono text-[8.5px] font-bold pointer-events-none"
+              {isUnpowered ? (
+                <g
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Auto-power ${node.label}`}
+                  className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-amber-500 rounded"
+                  onClick={() => {
+                    const wired = onAutoPower(node.id);
+                    if (wired !== false) {
+                      toast.success(`Auto-powered ${node.label}`);
+                    } else {
+                      toast.info(`${node.label} is already powered`);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      const wired = onAutoPower(node.id);
+                      if (wired !== false) {
+                        toast.success(`Auto-powered ${node.label}`);
+                      } else {
+                        toast.info(`${node.label} is already powered`);
+                      }
+                    }
+                  }}
                 >
-                  ⚡ +PWR
-                </text>
-              </g>
+                  <rect
+                    x={3}
+                    y={3}
+                    width={52}
+                    height={16}
+                    rx={3}
+                    className="fill-amber-500/20 hover:fill-amber-500/35"
+                  />
+                  <text
+                    x={29}
+                    y={14.5}
+                    textAnchor="middle"
+                    className="fill-amber-500 font-mono text-[8.5px] font-bold pointer-events-none"
+                  >
+                    ⚡ +PWR
+                  </text>
+                </g>
+              ) : (
+                <g
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${node.label} is already powered`}
+                  className="cursor-pointer group/pwr focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-emerald-500 rounded"
+                  onClick={() => {
+                    toast.info(`${node.label} is already powered`);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      toast.info(`${node.label} is already powered`);
+                    }
+                  }}
+                >
+                  <rect
+                    x={3}
+                    y={3}
+                    width={56}
+                    height={16}
+                    rx={3}
+                    className="fill-emerald-500/15 hover:fill-emerald-500/25"
+                  />
+                  <text
+                    x={31}
+                    y={14.5}
+                    textAnchor="middle"
+                    className="fill-emerald-400 font-mono text-[8px] font-bold pointer-events-none"
+                  >
+                    ✓ POWERED
+                  </text>
+                </g>
+              )}
               <g
                 role="button"
                 tabIndex={0}
@@ -2550,15 +2655,15 @@ function SeatedIc({
                 }}
               >
                 <rect
-                  x={55}
+                  x={62}
                   y={3}
-                  width={52}
+                  width={51}
                   height={16}
                   rx={3}
                   className="fill-destructive/20 hover:fill-destructive/35"
                 />
                 <text
-                  x={81}
+                  x={87.5}
                   y={14.5}
                   textAnchor="middle"
                   className="fill-destructive font-mono text-[8.5px] font-bold pointer-events-none"
@@ -2621,8 +2726,12 @@ function SeatedIc({
           className="cursor-pointer"
           onClick={(e) => {
             e.stopPropagation();
-            onAutoPower(node.id);
-            toast.success(`Auto-powered ${node.label} (${node.part})`);
+            const wired = onAutoPower(node.id);
+            if (wired !== false) {
+              toast.success(`Auto-powered ${node.label} (${node.part})`);
+            } else {
+              toast.info(`${node.label} is already powered`);
+            }
           }}
         >
           <rect
