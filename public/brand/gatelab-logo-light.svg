@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40" fill="none" role="img" aria-label="GateLab">
+  <!--
+    GateLab horizontal logo — light surface treatment.
+    Wordmark switches to deep navy for contrast on white.
+  -->
+  <g transform="translate(4, 4)">
+    <path
+      d="M24.65 28.35
+         A14 14 0 1 1 34 20
+         L27.5 20"
+      stroke="#2583FF"
+      stroke-width="3.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <line x1="20" y1="20" x2="27.5" y2="20" stroke="#2583FF" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="34" cy="20" r="2.2" fill="#1E6ED4"/>
+  </g>
+  <!-- Dark wordmark for light surfaces -->
+  <text
+    x="50"
+    y="26"
+    font-family="'Geist', 'Inter', system-ui, -apple-system, sans-serif"
+    font-size="18"
+    font-weight="600"
+    letter-spacing="-0.02em"
+    fill="#0B1220"
+  >GateLab</text>
+</svg>

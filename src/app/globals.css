@@ -145,6 +145,12 @@
     --glow-color: color-mix(in oklch, var(--logic-high) 22%, transparent);
     --signal-1: var(--logic-high);
 
+    /* GateLab brand identity tokens */
+    --brand-blue: #2583FF;
+    --brand-cyan: #35C9FF;
+    --brand-navy: #0B1220;
+    --brand-navy-2: #172235;
+
     /* Ambient showcase beam tokens (high contrast > 5.2:1 in light mode, luminous neon glow in dark mode) */
     --beam-cyan: #0369a1;
     --beam-emerald: #047857;

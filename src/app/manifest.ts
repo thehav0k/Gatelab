@@ -10,8 +10,13 @@ export default function manifest(): MetadataRoute.Manifest {
     scope: "/",
     display: "standalone",
     orientation: "any",
-    background_color: "#020617",
-    theme_color: "#020617",
+    /**
+     * Brand colors:
+     *   background_color — the deep navy of the app icon (matches icon background)
+     *   theme_color      — electric blue accent (matches tab bar on Android)
+     */
+    background_color: "#0B1220",
+    theme_color: "#2583FF",
     categories: ["education", "utilities", "developer tools"],
     icons: [
       {
@@ -39,24 +44,28 @@ export default function manifest(): MetadataRoute.Manifest {
         short_name: "Theory",
         description: "Derive Boolean functions, truth tables, and K-maps",
         url: "/theory",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
       {
         name: "2. Diagram Workbench",
         short_name: "Diagram",
         description: "Build schematics and export LaTeX TikZ / SVG",
         url: "/diagram",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
       {
         name: "3. Practical 74xx Lab",
         short_name: "Lab",
         description: "Simulate 74xx TTL chips on schematic or breadboard",
         url: "/lab",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
       {
         name: "User Manual & Quickstart",
         short_name: "Manual",
         description: "74xx pinout tables, shortcuts, and quickstart guide",
         url: "/manual",
+        icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }],
       },
     ],
   };

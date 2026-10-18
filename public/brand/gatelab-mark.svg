@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" role="img" aria-label="GateLab mark">
+  <!--
+    GateLab standalone mark — transparent background.
+    Design: An open-arc G, stroke-drawn as a circuit trace.
+    The arc starts at ~300° and sweeps ~300° (leaving the right-side notch open).
+    A short horizontal stub with terminal pin fills the notch, referencing a logic gate.
+    Stroke-based so it scales perfectly to 16px favicon.
+  -->
+  <!-- Main G arc: from bottom-right, sweeping CCW, leaving notch at right -->
+  <path
+    d="M23.2 24.7
+       A11 11 0 1 1 27 16
+       L21.5 16"
+    stroke="#2583FF"
+    stroke-width="3"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Gate stub horizontal bar (the cross-bar of the G) -->
+  <line x1="16" y1="16" x2="21.5" y2="16" stroke="#2583FF" stroke-width="3" stroke-linecap="round"/>
+  <!-- Terminal pin dot (logic pin indicator) -->
+  <circle cx="27" cy="16" r="1.8" fill="#35C9FF"/>
+</svg>

@@ -1,19 +1,20 @@
 import { ImageResponse } from "next/og";
 
 /**
- * The share card, generated at build time.
+ * The share card, generated at build time via next/og.
  *
- * `summary_large_image` is declared in the metadata, and a large-image card with
- * no image is a worse result than no card at all — it renders as a broken box. So
- * the image has to exist.
+ * Uses the new GateLab brand identity:
+ *   - Deep navy background (#0B1220)
+ *   - Electric blue accent (#2583FF)
+ *   - Cyan pin accent (#35C9FF)
+ *   - White headline
+ *   - Slate descriptor text (#94A3B8)
  *
- * Drawn with `next/og` rather than shipped as a PNG: it is text on a background,
- * it stays in sync with the tagline, and it costs no binary in the repo. No
- * external fonts — the system stack renders fine at this size, and a remote font
- * fetch is one more thing that can fail a build.
+ * The G-mark is rendered as inline SVG so no font fetch is needed for the logo.
+ * No external font fetch — system sans renders cleanly at 78px headline size.
  */
 export const alt =
-  "Gatelab — Boolean minimizer, K-map solver and 74xx logic circuit simulator";
+  "GateLab — Boolean minimizer, K-map solver and 74xx logic circuit simulator";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -27,31 +28,74 @@ export default function OpengraphImage() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
-          background: "#0a0a0a",
+          background: "#0B1220",
           color: "#fafafa",
           padding: "80px",
-          fontFamily: "sans-serif",
+          fontFamily: "system-ui, -apple-system, sans-serif",
+          position: "relative",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              border: "4px solid #4ade80",
-              display: "flex",
-            }}
-          />
-          <div style={{ fontSize: 34, color: "#a1a1aa" }}>Gatelab</div>
-        </div>
-
+        {/* Subtle circuit trace decoration — top right */}
         <div
           style={{
-            fontSize: 78,
+            position: "absolute",
+            top: 0,
+            right: 0,
+            width: 320,
+            height: 220,
+            display: "flex",
+            opacity: 0.12,
+          }}
+        >
+          <svg viewBox="0 0 320 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M320 20 H260 L240 40 H180 L160 60 H100" stroke="#2583FF" strokeWidth="2"/>
+            <path d="M320 60 H280 L260 80 H200 L180 100 H120" stroke="#2583FF" strokeWidth="2"/>
+            <path d="M320 100 H290 L270 120 H220" stroke="#35C9FF" strokeWidth="1.5"/>
+            <circle cx="260" cy="40" r="4" fill="#2583FF"/>
+            <circle cx="180" cy="100" r="3" fill="#35C9FF"/>
+            <circle cx="270" cy="120" r="3" fill="#2583FF"/>
+          </svg>
+        </div>
+
+        {/* Brand logo row */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 40 }}>
+          {/* G-mark icon */}
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              background: "#0B1220",
+              borderRadius: 11,
+              border: "2px solid #172235",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <svg width="36" height="36" viewBox="0 0 32 32" fill="none">
+              <path
+                d="M24.1 23.1 A10 10 0 1 1 25.5 16 L21 16"
+                stroke="#2583FF"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <line x1="16" y1="16" x2="21" y2="16" stroke="#2583FF" strokeWidth="2.4" strokeLinecap="round"/>
+              <circle cx="25.5" cy="16" r="1.6" fill="#35C9FF"/>
+            </svg>
+          </div>
+          <div style={{ fontSize: 28, color: "#94A3B8", fontWeight: 600, display: "flex" }}>
+            GateLab
+          </div>
+        </div>
+
+        {/* Headline */}
+        <div
+          style={{
+            fontSize: 80,
             fontWeight: 700,
             letterSpacing: "-0.03em",
-            marginTop: 32,
+            lineHeight: 1.05,
             display: "flex",
           }}
         >
@@ -59,35 +103,37 @@ export default function OpengraphImage() {
         </div>
         <div
           style={{
-            fontSize: 78,
+            fontSize: 80,
             fontWeight: 700,
             letterSpacing: "-0.03em",
-            color: "#4ade80",
+            color: "#2583FF",
+            lineHeight: 1.05,
             display: "flex",
           }}
         >
           wired up.
         </div>
 
+        {/* Description */}
         <div
           style={{
-            fontSize: 30,
-            color: "#a1a1aa",
+            fontSize: 28,
+            color: "#94A3B8",
             marginTop: 32,
-            maxWidth: 900,
-            lineHeight: 1.4,
+            maxWidth: 880,
+            lineHeight: 1.5,
             display: "flex",
           }}
         >
-          K-map solver, block diagram builder, and a 74xx TTL circuit simulator
-          that checks what you built against what you derived.
+          K-map solver · Block diagram builder · 74xx TTL circuit simulator
         </div>
 
+        {/* Domain */}
         <div
           style={{
-            fontSize: 24,
-            color: "#52525b",
-            marginTop: 44,
+            fontSize: 22,
+            color: "#334155",
+            marginTop: 48,
             display: "flex",
           }}
         >

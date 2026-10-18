@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 40" fill="none" role="img" aria-label="GateLab wordmark">
+  <!--
+    GateLab wordmark — standalone, no mark symbol.
+    Two weights: "Gate" normal, "Lab" same weight — kept as one word per brand spec.
+    White for dark surfaces. Switch fill to #0B1220 for light surfaces.
+  -->
+  <text
+    x="4"
+    y="28"
+    font-family="'Geist', 'Inter', system-ui, -apple-system, sans-serif"
+    font-size="22"
+    font-weight="600"
+    letter-spacing="-0.025em"
+    fill="#FFFFFF"
+  >GateLab</text>
+</svg>

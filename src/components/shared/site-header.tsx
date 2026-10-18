@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { TLink as Link } from "@/components/motion/transition-link";
 import { usePathname } from "next/navigation";
-import { CircuitBoard, Menu, MessageSquare } from "lucide-react";
+import { Menu, MessageSquare } from "lucide-react";
+import { GateLabLogo } from "@/components/shared/gatelab-logo";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { FeedbackDialog } from "@/components/shared/feedback-dialog";
@@ -40,9 +41,8 @@ export function SiteHeader() {
   return (
     <header className="site-header bg-background/80 print:hidden no-print sticky top-0 z-50 border-b backdrop-blur">
       <div className="flex h-14 items-center gap-2 px-3 sm:gap-6 sm:px-4">
-        <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-          <CircuitBoard className="text-logic-high size-5" />
-          <span>Gatelab</span>
+        <Link href="/" className="flex shrink-0 items-center rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+          <GateLabLogo variant="full" surface="dark" size={28} />
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
@@ -108,10 +108,9 @@ export function SiteHeader() {
                   <Link
                     href="/"
                     onClick={() => setMenu(false)}
-                    className="flex items-center gap-2"
+                    className="flex items-center"
                   >
-                    <CircuitBoard className="text-logic-high size-5" />
-                    <span>Gatelab</span>
+                    <GateLabLogo variant="full" surface="dark" size={26} />
                   </Link>
                 </SheetTitle>
               </SheetHeader>
