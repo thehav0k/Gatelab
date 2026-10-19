@@ -7,6 +7,7 @@ import { GithubIcon } from "@/components/shared/github-icon";
 import { FeedbackDialog } from "@/components/shared/feedback-dialog";
 import { CONTACT } from "@/lib/feedback";
 import { openTermsModal } from "@/components/legal/terms-and-system-gate";
+import { GateLabMark } from "@/components/brand/Logo";
 
 /**
  * NOT on the lab.
@@ -23,9 +24,12 @@ export function SiteFooter() {
   return (
     <footer className="no-print print:hidden mt-auto border-t">
       <div className="text-muted-foreground mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 py-6 text-xs sm:flex-row sm:items-center sm:px-6">
-        <p className="text-pretty">
-          Gatelab runs entirely in your browser. Nothing you build is uploaded.
-        </p>
+        <div className="flex items-center gap-2">
+          <GateLabMark className="size-4 shrink-0 text-brand" />
+          <p className="text-pretty">
+            Gatelab runs entirely in your browser. Nothing you build is uploaded.
+          </p>
+        </div>
 
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 sm:ml-auto">
           <Link href="/manual" className="hover:text-foreground transition-colors">

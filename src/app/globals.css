@@ -47,6 +47,14 @@
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
 
+    /* Brand identity tokens from brand-tokens.css */
+    --color-brand: var(--brand);
+    --color-brand-strong: var(--brand-strong);
+    --color-brand-deep: var(--brand-deep);
+    --color-surface-0: var(--surface-0);
+    --color-surface-1: var(--surface-1);
+    --color-surface-line: var(--surface-line);
+
     /* 4-state logic. The SVG renderer reads these same vars directly via
        var(--color-logic-*), so wires and utility classes can never drift apart. */
     --color-logic-high: var(--logic-high);
@@ -147,7 +155,7 @@
     --signal-1: var(--logic-high);
 
     /* GateLab brand identity tokens */
-    --brand-blue: #2583FF;
+    --brand-blue: var(--brand, #65D98A);
     --brand-cyan: #35C9FF;
     --brand-navy: #0B1220;
     --brand-navy-2: #172235;
