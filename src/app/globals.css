@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./brand-tokens.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -476,11 +477,6 @@ button[data-slot="button"]:active:not(:disabled) {
   }
 }
 
-@keyframes trace-flow {
-  to {
-    stroke-dashoffset: -48;
-  }
-}
 
 @keyframes beam-flow {
   from {
@@ -492,6 +488,7 @@ button[data-slot="button"]:active:not(:disabled) {
 }
 
 @keyframes signal-pulse {
+
   0%, 100% {
     opacity: 0.35;
   }
@@ -755,7 +752,14 @@ button[data-slot="button"]:active:not(:disabled) {
 }
 
 .circuit-trace-pulse {
-  animation: trace-flow 4.5s linear infinite;
+  /* Duration and delay are set per-element via inline style so each trace
+     can have a different speed. Longhand properties are used so that the
+     inline style override wins — a shorthand 'animation:' would reset
+     animation-duration back to 4.5s on every element. */
+  animation-name: trace-flow;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-duration: 4.5s; /* fallback; overridden per-element */
 }
 
 @keyframes via-pulse {

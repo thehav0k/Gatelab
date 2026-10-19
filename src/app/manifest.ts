@@ -12,11 +12,11 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "any",
     /**
      * Brand colors:
-     *   background_color — the deep navy of the app icon (matches icon background)
-     *   theme_color      — electric blue accent (matches tab bar on Android)
+     *   background_color — graphite from brand-tokens.css (#0E1311)
+     *   theme_color      — same graphite (matches Android tab bar)
      */
-    background_color: "#0B1220",
-    theme_color: "#2583FF",
+    background_color: "#0E1311",
+    theme_color: "#0E1311",
     categories: ["education", "utilities", "developer tools"],
     icons: [
       {
@@ -29,10 +29,16 @@ export default function manifest(): MetadataRoute.Manifest {
         src: "/icons/icon-512.png",
         sizes: "512x512",
         type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icons/icon-512-maskable.png",
+        sizes: "512x512",
+        type: "image/png",
         purpose: "maskable",
       },
       {
-        src: "/icons/icon.svg",
+        src: "/icons/favicon.svg",
         sizes: "any",
         type: "image/svg+xml",
         purpose: "any",

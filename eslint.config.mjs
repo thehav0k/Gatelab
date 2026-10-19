@@ -45,6 +45,7 @@ const eslintConfig = defineConfig([
     "coverage/**",
     "next-env.d.ts",
     "src/components/ui/**",
+    "gatelab-assets/**",
   ]),
 ]);
 

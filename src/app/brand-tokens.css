@@ -1,0 +1,20 @@
+/* GateLab brand tokens. Import once from globals.css. Brand = green; semantic colours stay separate. */
+:root {
+  --brand: #65D98A;          /* signal green: brand, active, verified */
+  --brand-strong: #1B7F4A;   /* signal green on light surfaces (5.0:1 on white) */
+  --brand-deep: #163D2B;
+  --surface-0: #0E1311;      /* graphite */
+  --surface-1: #1A231D;      /* panel */
+  --surface-line: #2A372E;
+  --fg: #E8F0EA;
+  --fg-muted: #9BA99F;       /* 6.6:1 on panel */
+  /* semantic signal colours: never reuse the brand green for these */
+  --sig-error: #FF6B5E;
+  --sig-warn: #F2B84B;
+  --sig-unknown: #B794F6;    /* X / floating */
+  --sig-net: #5AA9FF;        /* wires / nets */
+  --focus-ring: 0 0 0 2px var(--surface-0), 0 0 0 4px var(--brand);
+}
+:where(a, button, [role="button"], input, select, textarea, summary):focus-visible {
+  outline: none; box-shadow: var(--focus-ring); border-radius: 6px;
+}

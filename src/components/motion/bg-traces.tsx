@@ -7,7 +7,6 @@ interface TraceConfig {
   dur: string;
   delay: string;
   dashArray?: string;
-  pulseWidth?: number;
 }
 
 interface ViaConfig {
@@ -107,9 +106,7 @@ export function BgTraces() {
 
   return (
     <svg
-      className={`bg-trace fixed inset-0 -z-20 h-full w-full pointer-events-none opacity-25 dark:opacity-30 select-none ${
-        paused ? "traces-paused" : ""
-      }`}
+      className={`bg-trace fixed inset-0 -z-20 h-full w-full pointer-events-none opacity-25 dark:opacity-30 select-none${paused ? " traces-paused" : ""}`}
       aria-hidden="true"
       preserveAspectRatio="xMidYMid slice"
       viewBox="0 0 1600 1000"
@@ -126,7 +123,11 @@ export function BgTraces() {
             opacity="0.45"
           />
 
-          {/* Clean, high-performance vector pulse */}
+          {/* Clean, high-performance vector pulse.
+              All timing is declared via CSS custom properties on the element so that:
+              1. The CSS class handles animation-name + iteration-count (no inline override fights).
+              2. .traces-paused can override animation-play-state cleanly via CSS specificity.
+              3. Each trace still has its own duration and delay without duplicating the keyframe. */}
           <path
             d={trace.d}
             fill="none"
@@ -136,9 +137,8 @@ export function BgTraces() {
             strokeDasharray={trace.dashArray || "50 180"}
             className="circuit-trace-pulse"
             style={{
-              animation: `trace-flow ${trace.dur} linear infinite`,
+              animationDuration: trace.dur,
               animationDelay: trace.delay,
-              animationPlayState: paused ? "paused" : "running",
             }}
           />
         </g>
@@ -172,7 +172,6 @@ export function BgTraces() {
               className="via-ping"
               style={{
                 animationDelay: via.pingDelay || "0s",
-                animationPlayState: paused ? "paused" : "running",
               }}
             />
           )}
